@@ -19,7 +19,7 @@ include = [
     "scripts/**/*",
     "template",
 ]
-rust-version = "1.87"
+rust-version = "1.88"
 
 [dependencies]
 ansiterm = "0.12.2"
