@@ -40,12 +40,15 @@ cp README.md docs/VURINFO.md docs/AUR2XBPS.md etc/vary.conf.example dest/usr/sha
 cp LICENSE dest/usr/share/licenses/vary/
 
 rm -f "${PKGVER}.${ARCH}.xbps"
+# XBPS requires versioned dependencies ("git>=x.y"); a bare name fails to
+# parse at transaction time ("can't guess pkgname for dependency").
+GIT_FULL="$(xbps-query -p pkgver git | tr -d '\n')"
 xbps-create -A "$ARCH" -n "$PKGVER" \
     -s "Void User Repository (VUR) helper and build automator" \
     -m "Dicov (SrDicov) <https://github.com/SrDicov>" \
     -l "GPL-3.0" \
     -H "https://github.com/SrDicov/Vary" \
-    -D "git" \
+    -D "git>=${GIT_FULL#git-}" \
     dest
 printf '%s\n' "$VER" > version.txt
 ls -lh "${PKGVER}.${ARCH}.xbps" version.txt

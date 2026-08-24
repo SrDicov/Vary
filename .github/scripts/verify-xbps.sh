@@ -13,12 +13,14 @@ mkdir -p /etc/xbps.d
 echo "repository=$REPO" > /etc/xbps.d/00-repository-main.conf
 
 xbps-install -S
+# The glibc image ships an ancient xbps that refuses to install anything
+# until itself is updated; on musl this is a no-op.
+xbps-install -u xbps -y
 
-cd pkgs
-ls -lh
-xbps-rindex -a vary-*.xbps
-# -y because there is no TTY; git is pulled automatically as a dependency.
-xbps-install -Sy --repository="$PWD" vary
+ls -lh pkgs
+xbps-rindex -a pkgs/vary-*.xbps
+# 'git' is pulled automatically as a versioned dependency of vary.
+xbps-install -y --repository="$PWD/pkgs" vary
 
 # --- Functional smoke tests -------------------------------------------------
 xbps-query vary | head -5
