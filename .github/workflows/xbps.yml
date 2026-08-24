@@ -1,0 +1,107 @@
+name: XBPS packages
+
+on:
+  push:
+    branches: [vary-mvp]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish a GitHub release with the built .xbps'
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - libc: glibc
+            image: docker.io/voidlinux/voidlinux:latest
+          - libc: musl
+            image: ghcr.io/void-linux/void-musl:latest
+    name: build ${{ matrix.libc }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build .xbps in Void container
+        run: >
+          docker run --rm -v "$PWD:/work" -w /work
+          ${{ matrix.image }} sh .github/scripts/build-xbps.sh ${{ matrix.libc }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xbps-${{ matrix.libc }}
+          path: |
+            *.xbps
+            version.txt
+          if-no-files-found: error
+
+  verify:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - libc: glibc
+            image: docker.io/voidlinux/voidlinux:latest
+          - libc: musl
+            image: ghcr.io/void-linux/void-musl:latest
+    name: verify ${{ matrix.libc }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbps-${{ matrix.libc }}
+          path: pkgs
+      - name: Install and smoke-test .xbps in fresh Void container
+        run: >
+          docker run --rm -v "$PWD:/work" -w /work
+          ${{ matrix.image }} sh .github/scripts/verify-xbps.sh ${{ matrix.libc }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_release == true
+    needs: verify
+    name: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: xbps-*
+          merge-multiple: true
+          path: rel
+      - name: Checksums
+        run: cd rel && sha256sum *.xbps > sha256sums.txt
+      - id: meta
+        run: |
+          VER="$(tr -d '\n' < rel/version.txt)"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then TAG="$GITHUB_REF_NAME"; else TAG="v${VER}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=vary $VER" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          body: |
+            Binary packages for ${{ steps.meta.outputs.name }} — see [CHANGELOG.md](https://github.com/SrDicov/Vary/blob/vary-mvp/CHANGELOG.md).
+
+            - `vary-*_1.x86_64.xbps` — glibc
+            - `vary-*_1.x86_64-musl.xbps` — musl
+
+            Install (Void): `xbps-install --repository=<dir> vary`
+            Verify downloads: `sha256sum -c sha256sums.txt`
+
+            Both packages were built and functionally verified inside official
+            Void Linux containers (install + `vary -V` / `vary -h` / `vary --repo list`).
+          files: |
+            rel/*.xbps
+            rel/sha256sums.txt
+          fail_on_unmatched_files: true

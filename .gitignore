@@ -9,5 +9,6 @@ x86_64-repodata
 hostdir/
 masterdir/
 *.log
-AGENTS.md
+version.txt
+dest/
 .opencode/
