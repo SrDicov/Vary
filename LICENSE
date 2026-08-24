@@ -1,3 +1,11 @@
+vary — Void User Repository (VUR) helper and build automator for Void Linux
+Copyright (C) 2025-2026 Dicov (SrDicov) and vary contributors
+https://github.com/SrDicov/Vary
+
+This program is a port of paru to the Void Linux / XBPS ecosystem.
+paru — Copyright (C) Morganamilo and paru contributors
+https://github.com/Morganamilo/paru
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 

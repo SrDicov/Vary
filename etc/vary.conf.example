@@ -1,0 +1,33 @@
+# Archivo de ejemplo de configuración de vary.
+# Cópialo a ~/.config/vary/vary.conf y ajusta según necesidad.
+# Todas las claves son opcionales; los valores mostrados son los defaults.
+
+[general]
+# Directorio raíz de las cachés de vary. Contiene:
+#   void-packages/  (checkout de void-packages usado por xbps-src)
+#   cache.json      (caché de búsquedas/metadatos)
+#   installed.json  (base de datos de paquetes gestionados por vary)
+#   logs/           (registros de compilación)
+cache_dir = "~/.cache/vary"
+
+# Datos persistentes de vary: clones de repos VUR en vurs/, etc.
+data_dir = "~/.local/share/vary"
+
+# Nivel de detalle del log: "error", "warn", "info", "debug".
+log_level = "info"
+
+[build]
+# Placeholder (MVP): los builds son secuenciales; se usará con tokio::sync::Semaphore en fase 2
+max_concurrent_builds = 2
+
+# Recompilar desde fuente aunque exista binario firmado o caché válida
+# (equivalente a pasar --force-build en cada operación).
+force_rebuild = false
+
+[search]
+# Tiempo de vida (en segundos) de las entradas de la caché de búsqueda
+# (cache.json). Caducadas, la próxima búsqueda vuelve a consultar los repos.
+ttl_cache_seconds = 3600
+
+# NOTA: los repos VUR no se declaran aquí; se gestionan en
+# ~/.config/vary/repos.conf (o con `vary --repo add|list|remove`).

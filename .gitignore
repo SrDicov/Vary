@@ -1,5 +1,13 @@
 /target
-paru.tar.*
+vary.tar.*
 po/*.mo
 locale/
 testdata/pkg/*
+*.xbps
+x86_64-repodata
+*-repodata
+hostdir/
+masterdir/
+*.log
+AGENTS.md
+.opencode/

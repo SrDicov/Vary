@@ -1,0 +1,25 @@
+# Template file for 'vary'
+pkgname=vary
+version=0.1.0
+revision=1
+hostmakedepends="cargo git"
+depends="git"
+short_desc="Void User Repository (VUR) helper and build automator"
+maintainer="vary contributors <vary@localhost>"
+license="GPL-3.0"
+homepage="https://github.com/vary-linux/vary"
+distfiles="https://example.com/${pkgname}-${version}.tar.gz"
+checksum=c5f3b8575ca108875e6a8dcf3614b76b08d2c5fe279874e3dd56dadf1e3249f1
+
+do_build() {
+	cargo build --release --locked
+}
+
+do_install() {
+	vbin target/release/vary
+	vdoc README.md
+	vdoc docs/AUR2XBPS.md
+	vdoc docs/VURINFO.md
+	vinstall vary.conf.example 644 usr/share/vary
+	vlicense LICENSE
+}

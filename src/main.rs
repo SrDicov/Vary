@@ -1,9 +1,7 @@
-use paru::run;
+use vary::run;
 use std::process::exit;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    let ret = run(&args).await;
-    exit(ret);
+    exit(run(&args));
 }

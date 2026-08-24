@@ -1,80 +1,41 @@
 [package]
-name = "paru"
-version = "2.1.0"
-authors = ["morganamilo <morganamilo@archlinux.org>"]
+name = "vary"
+version = "0.1.0"
+authors = ["Dicov (SrDicov) <https://github.com/SrDicov>"]
 edition = "2021"
 
-description = "Feature packed AUR helper"
-homepage = "https://github.com/Morganamilo/paru"
-repository = "https://github.com/Morganamilo/paru"
-documentation = "https://docs.rs/paru"
+description = "Void User Repository (VUR) helper and build automator for Void Linux"
+homepage = "https://github.com/SrDicov/Vary"
+repository = "https://github.com/SrDicov/Vary"
 license = "GPL-3.0"
-keywords = ["archlinux", "arch", "alpm", "pacman", "aur"]
-include = ["src/**/*", "LICENSE", "README.md", "CHANGELOG.md", "help"]
+keywords = ["void-linux", "xbps", "vur", "packaging", "helper"]
+include = [
+    "src/**/*",
+    "LICENSE",
+    "README.md",
+    "README.es.md",
+    "docs/**/*",
+    "etc/**/*",
+    "scripts/**/*",
+    "template",
+]
 rust-version = "1.87"
 
-
 [dependencies]
-alpm = "5.0.2"
-alpm-utils = "5.0.0"
-aur-depends = "5.0.0"
-aur-fetch = "0.11.3"
-cini = "1.0.0"
-pacmanconf = "3.1.0"
-raur = "7.0.0"
-srcinfo = "2.1.0"
-
-
 ansiterm = "0.12.2"
 anyhow = { version = "1.0.100", features = ["backtrace"] }
-chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
+base64 = "0.22"
 dirs = "6.0.0"
-futures = "0.3.31"
-globset = "0.4.18"
-htmlescape = "0.3.1"
-indicatif = "0.18.3"
-scraper = "0.25.0"
-nix = { version = "0.30.1", features = ["fs", "user"] }
-reqwest = { version = "0.11.27", features = ["gzip", "socks"] }
-rss = { version = "2.0.12", default-features = false }
+petgraph = "0.6"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-smart-default = "0.7.1"
+sha2 = "0.10"
 tempfile = "3.24.0"
-terminal_size = "0.4.3"
-tokio = { version = "1.49.0", features = [
-    "process",
-    "macros",
-    "rt-multi-thread",
-] }
-url = "2.5.8"
-env_logger = "0.11.8"
-log = "0.4.29"
-async-trait = { version = "0.1.89", optional = true }
-tr = "0.1.11"
-unicode-width = "0.2.2"
-regex = "1.12.2"
-signal-hook = "0.4.1"
-bitflags = "2.10.0"
 toml = { version = "0.9.10", features = ["preserve_order"] }
-flate2 = "1.1.5"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [profile.release]
 codegen-units = 1
 lto = true
-
-[features]
-git = ["alpm/git", "alpm-utils/git", "aur-depends/git"]
-backtrace = []
-generate = ["alpm/generate"]
-static = ["alpm/static"]
-mock = ["async-trait"]
-mock_chroot = ["mock"]
-#default = ["git", "generate"]
-
-[patch.crates-io]
-#alpm = { path = "../alpm.rs/alpm" }
-#alpm-utils = { path = "../alpm.rs/alpm-utils" }
-#aur-depends = { path = "../aur-depends" }
-#srcinfo = { path = "../srcinfo.rs" }
-#aur-fetch = { path = "../aur-fetch" }
