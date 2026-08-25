@@ -37,6 +37,8 @@ for ARCH in x86_64 x86_64-musl; do
 done
 rm -f /tmp/priv.pem
 sha256sum *.xbps *.sig2 *-repodata > sha256sums.txt
+# Publicar también la clave pública de firma junto al índice.
+cp /work/keys/vary-repo.pub.pem .
 # El contenedor corre como root: deja los artefactos legibles para el
 # usuario del runner (que sube los assets en el siguiente paso).
 chmod -R a+rX .

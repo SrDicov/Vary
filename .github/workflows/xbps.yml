@@ -99,7 +99,6 @@ jobs:
           for id in $ASSET_IDS; do
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id" >/dev/null
           done
-          cp keys/vary-repo.pub.pem repo/
           gh release upload repo --repo "$GITHUB_REPOSITORY" --clobber repo/*
 
   release:
