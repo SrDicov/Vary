@@ -67,6 +67,18 @@ branch = "main"
 priority = 10
 ```
 
+## Binary repository
+
+A rolling XBPS repository with signed packages lives at a fixed URL and is refreshed on every successful build:
+
+```sh
+echo 'repository=https://github.com/SrDicov/Vary/releases/download/repo' | sudo tee /etc/xbps.d/20-vary.conf
+sudo xbps-install -S        # accept the RSA fingerprint when prompted
+sudo xbps-install vary      # later: sudo xbps-install -Su keeps it current
+```
+
+Both glibc and musl are served from that single URL (`x86_64` / `x86_64-musl`). The signing public key is published as [`keys/vary-repo.pub.pem`](./keys/vary-repo.pub.pem).
+
 ## Architecture
 
 ```mermaid

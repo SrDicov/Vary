@@ -67,6 +67,18 @@ branch = "main"
 priority = 10
 ```
 
+## Repositorio binario
+
+Un repositorio XBPS rodante con paquetes firmados vive en una URL fija y se refresca en cada build exitoso:
+
+```sh
+echo 'repository=https://github.com/SrDicov/Vary/releases/download/repo' | sudo tee /etc/xbps.d/20-vary.conf
+sudo xbps-install -S        # acepta la huella RSA cuando pregunte
+sudo xbps-install vary      # luego: sudo xbps-install -Su lo mantiene al día
+```
+
+Se sirven glibc y musl desde esa única URL (`x86_64` / `x86_64-musl`). La clave pública de firma está publicada en [`keys/vary-repo.pub.pem`](./keys/vary-repo.pub.pem).
+
 ## Arquitectura
 
 ```mermaid
