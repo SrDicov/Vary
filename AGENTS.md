@@ -13,7 +13,7 @@ Vary: gestor de paquetes comunitarios (helper VUR) para Void Linux — port de [
 ## CI
 
 - `ci.yml` — test + build release en push/PR.
-- `xbps.yml` — construye `.xbps` para glibc+musl en contenedores oficiales de Void, verifica cada paquete funcionalmente en un contenedor FRESCO (instalar + `vary -V/-h/--repo list`) y publica GitHub Release al pushear tag `v*`.
+- `xbps.yml` — construye `.xbps` para glibc+musl en contenedores oficiales de Void, verifica cada paquete funcionalmente en un contenedor FRESCO (instalar + `vary -V/-h/--repo list`), publica GitHub Release al pushear tag `v*`, y mantiene el release rodante `repo` (URL fija con repodata firmado por arch; clave privada en el secret `XBPSSIGN_PRIVKEY`, pública en `keys/vary-repo.pub.pem`).
 - Gotcha de contenedores Void: `voidlinux/voidlinux:latest` apunta a `alpha.de.repo.voidlinux.org` cuyo certificado TLS no coincide — hay que reescribir `/etc/xbps.d/00-repository-main.conf` a `https://repo-default.voidlinux.org/current` y correr `xbps-install -u xbps -y` antes de instalar nada (la imagen musl no necesita esto). Esa lógica vive en `.github/scripts/{build,verify}-xbps.sh` — edita ahí, no YAML inline.
 
 ## Arquitectura
