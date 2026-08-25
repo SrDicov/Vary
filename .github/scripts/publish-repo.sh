@@ -17,8 +17,8 @@ xbps-install -y openssl >/dev/null
     echo "XBPSSIGN_PRIVKEY no está definido" >&2
     exit 1
 }
-umask 077
 printf '%s\n' "$XBPSSIGN_PRIVKEY" > /tmp/priv.pem
+chmod 600 /tmp/priv.pem
 
 SIGNER="Dicov (SrDicov) <https://github.com/SrDicov>"
 mkdir -p repo
@@ -37,4 +37,7 @@ for ARCH in x86_64 x86_64-musl; do
 done
 rm -f /tmp/priv.pem
 sha256sum *.xbps *.sig2 *-repodata > sha256sums.txt
+# El contenedor corre como root: deja los artefactos legibles para el
+# usuario del runner (que sube los assets en el siguiente paso).
+chmod -R a+rX .
 ls -la
