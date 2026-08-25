@@ -24,12 +24,12 @@ pub fn vary_conf_contents(binpkgs_root: &Path) -> String {
 }
 
 fn write_root_file(tmp_path: &Path, dest: &str, sudo_bin: &str, sudo_flags: &[String]) -> Result<()> {
-    let mut cmd = std::process::Command::new(sudo_bin);
-    cmd.args(sudo_flags)
-        .args(["install", "-m", "644"])
+    let status = crate::elevate::elevate(sudo_bin, sudo_flags, "install")?
+        .args(["-m", "644"])
         .arg(tmp_path)
-        .arg(dest);
-    let status = cmd.status().context("escalando privilegios (sudo)")?;
+        .arg(dest)
+        .status()
+        .context("elevando privilegios para escribir archivo del sistema")?;
     if !status.success() {
         bail!("no se pudo escribir {} (código {:?})", dest, status.code());
     }

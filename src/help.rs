@@ -31,7 +31,8 @@ pub fn help() {
     println!("{}", "    --force-build           Force build from source even if binary exists");
     println!("{}", "    --prefer-binary         Prefer binary repos when available (default)");
     println!("{}", "    --no-prefer-binary      Always build from source");
-    println!("{}", "    --sudo <bin>            sudo binary to use");
+    println!("{}", "    --sudo <bin>            privilege escalation tool: sudo, doas or run0 (default: auto-detected; unused as root)");
+    println!("{}", "    --sudoflags <flags>     extra flags for the elevation tool");
     println!("{}", "    --git <bin>             git binary to use");
     println!();
     println!("Repo management:");

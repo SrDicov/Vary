@@ -16,6 +16,15 @@ data_dir = "~/.local/share/vary"
 # Nivel de detalle del log: "error", "warn", "info", "debug".
 log_level = "info"
 
+# Herramienta de elevación de privilegios para xbps-install/xbps-remove y
+# escribir en /etc: sudo, doas o run0. Por defecto (vacío) se autodetecta
+# en ese orden; ejecutando vary como root no se usa ninguna.
+# Equivalente CLI: --sudo <bin>
+#sudo_bin = ""
+
+# Flags extra que se anteponen al wrapper (equivalente CLI: --sudoflags).
+#sudo_flags = []
+
 [build]
 # Placeholder (MVP): los builds son secuenciales; se usará con tokio::sync::Semaphore en fase 2
 max_concurrent_builds = 2

@@ -2,6 +2,24 @@
 
 All notable changes to vary will be documented in this file.
 
+## 0.2.0 - 2026-08-25
+
+### Added
+
+- Privilege-escalation agnosticism (`src/elevate.rs`): any `BIN [flags] cmd args…`
+  wrapper works — `sudo`, `doas`, `run0`. Resolution order: explicit config wins
+  (`--sudo`/`--sudoflags` or `[general] sudo_bin/sudo_flags` in vary.conf) →
+  running as root executes directly with no wrapper → otherwise auto-detection
+  in PATH (`sudo` → `doas` → `run0`) with an actionable error when none exists.
+
+### Fixed
+
+- CI packaging: `.xbps` now declares a versioned `git>=x.y` dependency (bare
+  names fail XBPS transaction parsing: "can't guess pkgname for dependency").
+- Docs: correct `repos.conf` TOML format in READMEs (`[vur.<name>]`, not
+  `[[repo]]`); clarified that auto-bootstrap happens on install flows, not on
+  plain `-Syu`.
+
 ## 0.1.0 - 2026-08-24
 
 First public MVP release on the `vary-mvp` branch.

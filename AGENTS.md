@@ -23,7 +23,7 @@ Entrada: `src/main.rs` → `vary::run()` (`src/lib.rs:58`) → `Config::new()` �
 - `resolver.rs` — resolver DAG puro, sin I/O; dependencias inyectadas vía `trait PackageSource`. **Los paquetes del repo oficial son hojas** (no se recursa en sus deps); solo `Action::Build` expande hostmakedepends+makedepends+depends.
 - `metadata.rs` — esquema `.VURINFO` v1 + validación (parsea objeto único o array).
 - `vur_client.rs` — clona repos VUR, fusiona índice desde `srcpkgs/*/.VURINFO` + `.VURINFO` raíz + fallback parseando template; pkgname duplicado = error. Copia (no symlink) las plantillas a `void-packages/srcpkgs/`.
-- `bootstrap.rs`/`masterdir.rs` — idempotentes: clonar void-packages → `binary-bootstrap` → escribir `/etc/xbps.d/10-vary.conf`. `-Syu` auto-bootstrapea.
+- `bootstrap.rs`/`masterdir.rs` — idempotentes: clonar void-packages → `binary-bootstrap` → escribir `/etc/xbps.d/10-vary.conf`. El bootstrap corre en flujos de instalación (`-S <pkg>`), NO en `-Syu` plano; además `xbps-src` se niega a correr como root (política de Void), así que los flujos completos requieren usuario normal + wrapper de elevación.
 - `config.rs`/`command_line.rs` — flags compatibles con pacman + subcomandos `--repo`.
 - Todos los binarios externos pasan por config: `git` (`--git`), sudo (`--sudo`). Nunca invoques `std::process::Command` sobre ellos directamente.
 
@@ -46,6 +46,7 @@ Entrada: `src/main.rs` → `vary::run()` (`src/lib.rs:58`) → `Config::new()` �
 - Resolución de arquitectura: override `--arch` → `xbps-query -R -p architecture base-system` → `std::env::consts::ARCH`.
 - Un `.VURINFO` inválido se salta con warning, nunca es fatal.
 - Builds secuenciales en MVP (`max_concurrent_builds` es placeholder).
+- Elevación de privilegios agnóstica (`src/elevate.rs`): binario explícito gana → root (uid 0) ejecuta sin wrapper → autodetección en PATH sudo→doas→run0. `sudo_bin` vacío = auto; configurable vía `--sudo`/`--sudoflags` o `[general] sudo_bin/sudo_flags` en vary.conf.
 
 ## Proyectos complementarios (mismo autor)
 

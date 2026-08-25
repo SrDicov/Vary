@@ -56,11 +56,12 @@ force_rebuild = false
 ttl_cache_seconds = 3600
 ```
 
+Privilege escalation is tool-agnostic: vary uses whatever is configured via `--sudo` / `sudo_bin` (`sudo`, `doas`, `run0`), auto-detects in that order when unset, and skips the wrapper entirely when running as root.
+
 VUR repos are declared in `~/.config/vary/repos.conf`:
 
 ```toml
-[[repo]]
-name = "my-vur"
+[vur.my-vur]
 url = "https://git.example.com/user/vur.git"
 branch = "main"
 priority = 10

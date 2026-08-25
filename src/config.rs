@@ -101,8 +101,7 @@ pub struct Config {
 
     pub sudo_bin: String,
     pub sudo_flags: Vec<String>,
-    pub git_bin: String,
-    /// Override de arquitectura (--arch); si es None se consulta a xbps.
+    pub git_bin: String,    /// Override de arquitectura (--arch); si es None se consulta a xbps.
     pub arch_override: Option<String>,
 
     // Rutas base
@@ -142,6 +141,10 @@ struct GeneralSection {
     cache_dir: Option<String>,
     data_dir: Option<String>,
     log_level: Option<String>,
+    /// Herramienta de elevación (sudo, doas, run0). Vacío/ausente = autodetectar.
+    sudo_bin: Option<String>,
+    /// Flags extra para el wrapper de elevación.
+    sudo_flags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -182,7 +185,9 @@ impl Config {
             interactive: false,
             no_confirm: false,
             verbose: 0,
-            sudo_bin: "sudo".to_string(),
+            // Vacío = autodetectar (sudo→doas→run0) o directo si somos root.
+            // Ver crate::elevate.
+            sudo_bin: String::new(),
             sudo_flags: Vec::new(),
             git_bin: "git".to_string(),
             arch_override: None,
@@ -227,6 +232,12 @@ impl Config {
         }
         if let Some(l) = file.general.log_level.as_deref() {
             self.log_level = l.to_string();
+        }
+        if let Some(b) = file.general.sudo_bin.as_deref() {
+            self.sudo_bin = b.to_string();
+        }
+        if let Some(f) = file.general.sudo_flags.clone() {
+            self.sudo_flags = f;
         }
         if let Some(n) = file.build.max_concurrent_builds {
             self.max_concurrent_builds = n;

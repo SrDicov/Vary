@@ -294,25 +294,25 @@ pub fn query_architecture() -> Result<String> {
 }
 
 /// Instala `targets` ejecutando
-/// `sudo_bin sudo_flags xbps-install -S ...extra_flags ...targets`
+/// `[wrapper] xbps-install -S ...extra_flags ...targets`
 /// heredando stdio; devuelve el código de salida (-1 si muere por señal).
+/// La elevación es agnóstica (ver `crate::elevate`): sudo, doas, run0 o
+/// directa si ya somos root.
 pub fn install(
     targets: &[String],
     extra_flags: &[String],
     sudo_bin: &str,
     sudo_flags: &[String],
 ) -> Result<i32> {
-    let mut cmd = Command::new(sudo_bin);
-    cmd.args(sudo_flags)
-        .arg("xbps-install")
-        .arg("-S")
+    let mut cmd = crate::elevate::elevate(sudo_bin, sudo_flags, "xbps-install")?;
+    cmd.arg("-S")
         .args(extra_flags)
         .args(targets);
-    status_code(&mut cmd, sudo_bin)
+    status_code(&mut cmd)
 }
 
 /// Elimina recursivamente `targets` ejecutando
-/// `sudo_bin sudo_flags xbps-remove -Ro ...extra_flags ...targets` heredando
+/// `[wrapper] xbps-remove -Ro ...extra_flags ...targets` heredando
 /// stdio; devuelve el código de salida (-1 si muere por señal).
 pub fn remove_recursive(
     targets: &[String],
@@ -320,17 +320,18 @@ pub fn remove_recursive(
     sudo_bin: &str,
     sudo_flags: &[String],
 ) -> Result<i32> {
-    let mut cmd = Command::new(sudo_bin);
-    cmd.args(sudo_flags)
-        .arg("xbps-remove")
-        .arg("-Ro")
+    let mut cmd = crate::elevate::elevate(sudo_bin, sudo_flags, "xbps-remove")?;
+    cmd.arg("-Ro")
         .args(extra_flags)
         .args(targets);
-    status_code(&mut cmd, sudo_bin)
+    status_code(&mut cmd)
 }
 
-fn status_code(cmd: &mut Command, bin: &str) -> Result<i32> {
-    let status = cmd.status().map_err(|e| spawn_error(bin, e))?;
+fn status_code(cmd: &mut Command) -> Result<i32> {
+    // get_program() es el wrapper si hay elevación, o el programa directo
+    // como root: el mensaje de error siempre nombra al binario que falló.
+    let prog = cmd.get_program().to_string_lossy().to_string();
+    let status = cmd.status().map_err(|e| spawn_error(&prog, e))?;
     Ok(status.code().unwrap_or(-1))
 }
 
@@ -348,7 +349,7 @@ pub fn xbps_src(masterdir: &Path, args: &[&str]) -> Result<i32> {
     }
     let mut cmd = Command::new("./xbps-src");
     cmd.current_dir(masterdir).args(args);
-    status_code(&mut cmd, "./xbps-src")
+    status_code(&mut cmd)
 }
 
 #[cfg(test)]

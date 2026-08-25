@@ -56,11 +56,12 @@ force_rebuild = false
 ttl_cache_seconds = 3600
 ```
 
+La elevación de privilegios es agnóstica: vary usa lo configurado en `--sudo`/`sudo_bin` (`sudo`, `doas`, `run0`), autodetecta en ese orden si no hay nada configurado, y no usa wrapper alguno al correr como root.
+
 Los repos VUR se declaran en `~/.config/vary/repos.conf`:
 
 ```toml
-[[repo]]
-name = "mi-vur"
+[vur.mi-vur]
 url = "https://git.example.com/usuario/vur.git"
 branch = "main"
 priority = 10

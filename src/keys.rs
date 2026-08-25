@@ -27,7 +27,7 @@ pub fn key_dest_path(name: &str) -> String {
     format!("{}/vary-vur-{}.pem", keys_dir(), name)
 }
 
-fn sudo_write_file(
+fn write_root_file(
     contents: &str,
     dest: &str,
     mode: &str,
@@ -39,13 +39,12 @@ fn sudo_write_file(
         std::process::id()
     ));
     std::fs::write(&tmp, contents).context("escribiendo archivo temporal")?;
-    let status = std::process::Command::new(sudo_bin)
-        .args(sudo_flags)
-        .args(["install", "-m", mode])
+    let status = crate::elevate::elevate(sudo_bin, sudo_flags, "install")?
+        .args(["-m", mode])
         .arg(&tmp)
         .arg(dest)
         .status()
-        .context("escalando privilegios (sudo)")?;
+        .context("elevando privilegios para escribir archivo del sistema")?;
     let _ = std::fs::remove_file(&tmp);
     if !status.success() {
         bail!("no se pudo escribir {} (código {:?})", dest, status.code());
@@ -112,11 +111,11 @@ pub fn setup_binary_repo(
     let pem = std::fs::read_to_string(&key_path)
         .with_context(|| format!("leyendo {}", key_path.display()))?;
     let dest_key = key_dest_path(&repo.name);
-    sudo_write_file(&pem, &dest_key, "644", sudo_bin, sudo_flags)?;
+    write_root_file(&pem, &dest_key, "644", sudo_bin, sudo_flags)?;
 
     // (5) Registrar el repositorio binario
     let conf = format!("repository={}\n", binary_url);
-    sudo_write_file(&conf, &repo_conf_path(&repo.name), "644", sudo_bin, sudo_flags)?;
+    write_root_file(&conf, &repo_conf_path(&repo.name), "644", sudo_bin, sudo_flags)?;
     tracing::info!("repositorio binario '{}' registrado en {}", repo.name, repo_conf_path(&repo.name));
     Ok(())
 }
@@ -130,12 +129,11 @@ pub fn teardown_binary_repo(
     for dest in [key_dest_path(name), repo_conf_path(name)] {
         match std::fs::metadata(&dest) {
             Ok(_) => {
-                let status = std::process::Command::new(sudo_bin)
-                    .args(sudo_flags)
-                    .args(["rm", "-f"])
+                let status = crate::elevate::elevate(sudo_bin, sudo_flags, "rm")?
+                    .args(["-f"])
                     .arg(&dest)
                     .status()
-                    .context("escalando privilegios (sudo)")?;
+                    .context("elevando privilegios para eliminar archivo del sistema")?;
                 if !status.success() {
                     bail!("no se pudo eliminar {}", dest);
                 }

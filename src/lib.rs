@@ -4,6 +4,7 @@ mod cache;
 mod command_line;
 mod config;
 mod db;
+mod elevate;
 mod help;
 mod keys;
 mod logging;
@@ -99,7 +100,7 @@ fn run2<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<i32> {
         return Ok(0);
     }
     if config.version {
-        println!("vary 0.1.0");
+        println!("vary {}", env!("CARGO_PKG_VERSION"));
         return Ok(0);
     }
 
