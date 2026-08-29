@@ -1,6 +1,6 @@
 [package]
 name = "vary"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Dicov (SrDicov) <https://github.com/SrDicov>"]
 edition = "2021"
 
