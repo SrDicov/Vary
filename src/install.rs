@@ -224,6 +224,16 @@ pub fn install(config: &mut Config) -> Result<i32> {
     }
     println!();
 
+    if !config.no_confirm {
+        for item in &plan.builds {
+            if let Ok(repo_name) = vur_map_lookup_repo(&item.name, &repos, &mut cache) {
+                if let Some(repo) = repos.iter().find(|r| r.name == repo_name) {
+                    let _ = crate::review::prompt_review(&item.name, &repo.path);
+                }
+            }
+        }
+    }
+
     if !confirm("Proceed with installation?", config.no_confirm)? {
         return Ok(1);
     }
@@ -309,6 +319,9 @@ pub fn install(config: &mut Config) -> Result<i32> {
         let code = xbps::install(&all_install_names, &extra, &config.sudo_bin, &config.sudo_flags)?;
         if code != 0 {
             return Ok(code);
+        }
+        for name in &all_install_names {
+            let _ = crate::init::post_install_hook(name, config.no_confirm);
         }
     }
 

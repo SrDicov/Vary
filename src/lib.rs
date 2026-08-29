@@ -174,3 +174,5 @@ mod install;
 mod search;
 mod info;
 mod upgrade;
+mod review;
+mod init;
