@@ -88,6 +88,9 @@ pub trait PackageSource {
     fn official_exists(&self, name: &str) -> bool;
     /// busca paquete VUR por nombre; None si ningún repo VUR lo tiene
     fn vur_lookup(&self, name: &str) -> Option<(String, VurInfo)>;
+    /// busca paquete VUR por nombre IGNORANDO la arquitectura; se usa para
+    /// detectar paquetes existentes pero incompatibles con la arch actual.
+    fn vur_lookup_any_arch(&self, name: &str) -> Option<(String, VurInfo)>;
     /// mejor candidato VUR que PROVIDE el nombre virtual dado (ranking: priority asc de repo, luego mayor version)
     fn vur_lookup_provides(&self, virtual_name: &str) -> Option<(String, VurInfo)>;
     /// hay binario firmado disponible para este pkg en ese repo y arquitectura?
@@ -155,21 +158,6 @@ impl<'a> Ctx<'a> {
     }
 
     /// Puntos 1b y 5: candidato VUR por nombre y, si falla o es descartado
-    /// por arquitectura, por `provides`; `None` si no queda ninguno válido.
-    fn vur_candidate(&self, name: &str) -> Option<(String, VurInfo)> {
-        if let Some(found) = self.source.vur_lookup(name) {
-            if self.arch_supported(&found.1) {
-                return Some(found);
-            }
-        }
-        if let Some(found) = self.source.vur_lookup_provides(name) {
-            if self.arch_supported(&found.1) {
-                return Some(found);
-            }
-        }
-        None
-    }
-
     /// Nodo hoja para un paquete oficial. `VurInfo` es aquí un placeholder
     /// mínimo (los oficiales no tienen template VUR); solo importa el nombre.
     fn official_item(name: &str, arch: &str) -> PlanItem {
@@ -242,7 +230,30 @@ impl<'a> Ctx<'a> {
         }
 
         // Puntos 1b/1c y 5: VUR por nombre o provides, filtrando arquitectura.
-        let Some((repo, info)) = self.vur_candidate(name) else {
+        let mut candidate = None;
+        if let Some(found) = self.source.vur_lookup(name) {
+            if self.arch_supported(&found.1) {
+                candidate = Some(found);
+            }
+        }
+        if candidate.is_none() {
+            if let Some(found) = self.source.vur_lookup_provides(name) {
+                if self.arch_supported(&found.1) {
+                    candidate = Some(found);
+                }
+            }
+        }
+        let Some((repo, info)) = candidate else {
+            // El paquete existe en algún VUR pero es incompatible con la
+            // arquitectura actual: lo reportamos como tal en vez de "no encontrado".
+            if let Some((mrepo, _)) = self.source.vur_lookup_any_arch(name) {
+                bail!(
+                    "el paquete '{}' existe en VUR(s) {} pero no está disponible para tu arquitectura '{}'",
+                    name,
+                    mrepo,
+                    self.arch
+                );
+            }
             bail!("paquete no encontrado en repos oficiales ni VURs: {}", name);
         };
 
@@ -381,6 +392,9 @@ mod tests {
             self.official.contains(name)
         }
         fn vur_lookup(&self, name: &str) -> Option<(String, VurInfo)> {
+            self.vur.get(name).map(|(repo, info)| ((*repo).to_string(), info.clone()))
+        }
+        fn vur_lookup_any_arch(&self, name: &str) -> Option<(String, VurInfo)> {
             self.vur.get(name).map(|(repo, info)| ((*repo).to_string(), info.clone()))
         }
         fn vur_lookup_provides(&self, virtual_name: &str) -> Option<(String, VurInfo)> {
@@ -548,7 +562,14 @@ mod tests {
             ..MockSource::default()
         };
         let err = resolve(&targets(&["arm-only"]), &solo_arm, &ResolveOptions::default()).unwrap_err();
-        assert!(err.to_string().contains("no encontrado"), "error inesperado: {err}");
+        // El paquete existe pero es incompatible con la arquitectura: el mensaje
+        // debe aclararlo en vez de decir "no encontrado".
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no está disponible para tu arquitectura"),
+            "error inesperado: {msg}"
+        );
+        assert!(msg.contains("vur-arm"), "el mensaje debe nombrar el VUR: {msg}");
 
         let con_alternativa = MockSource {
             vur: [("gpukit", ("vur-arm", vur_info("gpukit", &["aarch64"])))].into(),

@@ -6,6 +6,26 @@ use std::fmt;
 
 use anyhow::{bail, Result};
 
+/// Arquitecturas soportadas por Void Linux. `--arch` solo acepta estos
+/// valores para evitar pasar silenciosamente un arch inválido a xbps.
+const KNOWN_ARCHS: &[&str] = &[
+    "x86_64", "x86_64-musl",
+    "i686", "i686-musl",
+    "aarch64", "aarch64-musl",
+    "armv7l", "armv7l-musl",
+    "armv6l", "armv6l-musl",
+    "ppc64le", "ppc64le-musl",
+    "ppc64", "ppc64-musl",
+    "ppc", "ppc-musl",
+    "mips", "mips-musl",
+    "mipsel", "mipsel-musl",
+    "riscv64", "riscv64-musl",
+];
+
+fn is_valid_arch(arch: &str) -> bool {
+    KNOWN_ARCHS.contains(&arch)
+}
+
 thread_local! {
     static REPO_CMD: RefCell<Option<RepoCmd>> = const { RefCell::new(None) };
 }
@@ -244,10 +264,26 @@ impl Config {
             Arg::Long("version") | Arg::Short('V') => self.version = true,
             Arg::Long("noconfirm") => self.no_confirm = true,
             Arg::Long("confirm") => self.no_confirm = false,
-            Arg::Long("color") => self.color = crate::config::Colors::from(value.unwrap_or("auto")),
+            Arg::Long("color") => {
+                let v = value.unwrap_or("auto");
+                if v != "always" && v != "never" && v != "auto" {
+                    bail!("invalid --color value '{}' (expected always|never|auto)", v);
+                }
+                self.color = crate::config::Colors::from(v);
+            }
             Arg::Long("verbose") | Arg::Short('v') => self.verbose = self.verbose.saturating_add(1),
             Arg::Long("quiet") | Arg::Short('q') => self.quiet = true,
-            Arg::Long("arch") => self.arch_override = Some(value.unwrap().to_string()),
+            Arg::Long("arch") => {
+                let v = value.unwrap();
+                if !is_valid_arch(v) {
+                    bail!(
+                        "invalid --arch value '{}' (supported: {})",
+                        v,
+                        KNOWN_ARCHS.join(", ")
+                    );
+                }
+                self.arch_override = Some(v.to_string());
+            }
             Arg::Long("sudo") => self.sudo_bin = value.unwrap().to_string(),
             Arg::Long("sudoflags") => self.sudo_flags.extend(value.unwrap().split_whitespace().map(|s| s.to_string())),
             Arg::Long("git") => self.git_bin = value.unwrap().to_string(),

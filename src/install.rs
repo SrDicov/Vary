@@ -38,6 +38,14 @@ impl PackageSource for VurSource {
         None
     }
 
+    fn vur_lookup_any_arch(&self, name: &str) -> Option<(String, VurInfo)> {
+        // Raw lookup: no filtra por arquitectura (sirve para detectar
+        // paquetes existentes pero incompatibles con la arch actual).
+        self.vur_map
+            .get(name)
+            .map(|(repo, info)| (repo.clone(), info.clone()))
+    }
+
     fn vur_lookup_provides(&self, virtual_name: &str) -> Option<(String, VurInfo)> {
         let candidates = self.provides_map.get(virtual_name)?;
         // Choose best by priority (lowest) then return first
@@ -105,6 +113,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         &config.void_packages_dir(),
         &config.sudo_bin,
         &config.sudo_flags,
+        &config.git_bin,
     )?;
 
     // 2. Load repos
@@ -117,6 +126,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             name: name.clone(),
             path: path.clone(),
             entry: entry.clone(),
+            git_bin: config.git_bin.clone(),
         };
         match repo.ensure_cloned() {
             Ok(_) => repos.push(repo),
@@ -348,13 +358,14 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
         &config.void_packages_dir(),
         &config.sudo_bin,
         &config.sudo_flags,
+        &config.git_bin,
     )?;
 
     let repos_conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
     let mut repos: Vec<VurRepo> = Vec::new();
     for (name, entry) in repos_conf.sorted_by_priority() {
         let path = config.vurs_dir().join(&name);
-        let repo = VurRepo { name: name.clone(), path, entry: entry.clone() };
+        let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
         if repo.ensure_cloned().is_ok() {
             repos.push(repo);
         }

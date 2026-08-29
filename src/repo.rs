@@ -46,6 +46,7 @@ fn repo_add(config: &Config, url: &str, name_opt: Option<&str>) -> Result<i32> {
         name: name.clone(),
         path: dest.clone(),
         entry: entry.clone(),
+        git_bin: config.git_bin.clone(),
     };
 
     println!("Cloning VUR '{}' from {}...", name, url);
@@ -97,25 +98,35 @@ fn repo_list(config: &Config) -> Result<i32> {
 
 fn repo_remove(config: &Config, name: &str, purge: bool) -> Result<i32> {
     let mut conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
-    if !conf.vur.contains_key(name) {
+    let in_conf = conf.vur.contains_key(name);
+    let clone_path = config.vurs_dir().join(name);
+
+    // Permitir purgar un clon huérfano (repo ya dado de baja sin -p): si no
+    // está en repos.conf pero su clon existe, se puede eliminar con -p.
+    if !in_conf && !clone_path.exists() {
         bail!("VUR '{}' not found in repos.conf", name);
     }
 
-    // Tear down binary repo artifacts (keys/conf)
-    let _ = teardown_binary_repo(name, &config.sudo_bin, &config.sudo_flags);
+    if in_conf {
+        // Tear down binary repo artifacts (keys/conf)
+        let _ = teardown_binary_repo(name, &config.sudo_bin, &config.sudo_flags);
 
-    conf.vur.remove(name);
-    conf.save(config.repos_conf_path())?;
-    println!("VUR '{}' removed from repos.conf", name);
+        conf.vur.remove(name);
+        conf.save(config.repos_conf_path())?;
+        println!("VUR '{}' removed from repos.conf", name);
+    }
 
-    let clone_path = config.vurs_dir().join(name);
     if clone_path.exists() {
         if purge {
             std::fs::remove_dir_all(&clone_path)
                 .with_context(|| format!("removing {}", clone_path.display()))?;
             println!("Clone purged.");
         } else {
-            println!("Clone kept at {}. Use --repo remove {} -p to purge it.", name, name);
+            println!(
+                "Clone kept at {}. Use --repo remove {} -p to purge it.",
+                clone_path.display(),
+                name
+            );
         }
     }
 

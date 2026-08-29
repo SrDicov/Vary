@@ -38,7 +38,7 @@ pub fn info(config: &Config) -> Result<i32> {
         // Search VUR indexes
         for (name, entry) in repos_conf.sorted_by_priority() {
             let path = config.vurs_dir().join(&name);
-            let repo = VurRepo { name: name.clone(), path, entry: entry.clone() };
+            let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
             if repo.ensure_cloned().is_err() {
                 continue;
             }

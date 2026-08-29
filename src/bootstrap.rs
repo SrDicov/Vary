@@ -8,8 +8,8 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 /// Verifica que git está instalado (vary usa git CLI, no git2)
-pub fn git_available() -> bool {
-    std::process::Command::new("git")
+pub fn git_available(git_bin: &str) -> bool {
+    std::process::Command::new(git_bin)
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -47,16 +47,17 @@ pub fn initialize_environment(
     void_packages_dir: &Path,
     sudo_bin: &str,
     sudo_flags: &[String],
+    git_bin: &str,
 ) -> Result<Masterdir> {
     // Verificar que git está instalado (vary usa git CLI, no git2)
-    if !git_available() {
+    if !git_available(git_bin) {
         bail!(
             "git es requerido por vary pero no está instalado.\n\
              Instálalo con: xbps-install git"
         );
     }
 
-    clone_void_packages(void_packages_dir)?;
+    clone_void_packages(void_packages_dir, git_bin)?;
 
     let md = Masterdir::new(void_packages_dir);
     if !md.bootstrapped() {
@@ -96,6 +97,6 @@ mod tests {
     fn git_disponible_en_host_de_desarrollo() {
         // En hosts de desarrollo normales git existe; en una imagen mínima de
         // prueba podría faltar, así que solo verificamos que no entra en pánico.
-        let _ = git_available();
+        let _ = git_available("git");
     }
 }

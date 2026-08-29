@@ -14,7 +14,7 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
             continue;
         }
         let path = config.vurs_dir().join(&name);
-        let repo = VurRepo { name: name.clone(), path, entry: entry.clone() };
+        let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
         if let Err(e) = repo.ensure_cloned() {
             tracing::warn!("failed to clone VUR '{}': {}", name, e);
             any_failed = true;
@@ -56,7 +56,7 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     let mut current_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for (name, entry) in repos_conf.sorted_by_priority() {
         let path = config.vurs_dir().join(&name);
-        let repo = VurRepo { name: name.clone(), path, entry: entry.clone() };
+        let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
         if repo.ensure_cloned().is_err() {
             continue;
         }
