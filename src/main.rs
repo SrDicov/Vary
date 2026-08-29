@@ -1,7 +1,48 @@
 use vary::run;
 use std::process::exit;
 
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+fn drop_privileges() {
+    use nix::unistd::{setresuid, setresgid, setgroups, Uid, Gid, User};
+    use std::env;
+
+    if nix::unistd::getuid().is_root() {
+        let mut target_uid = None;
+        let mut target_gid = None;
+
+        if let Ok(sudo_uid) = env::var("SUDO_UID") {
+            if let Ok(uid_val) = sudo_uid.parse::<u32>() {
+                target_uid = Some(Uid::from_raw(uid_val));
+            }
+        }
+        if let Ok(sudo_gid) = env::var("SUDO_GID") {
+            if let Ok(gid_val) = sudo_gid.parse::<u32>() {
+                target_gid = Some(Gid::from_raw(gid_val));
+            }
+        }
+
+        if target_uid.is_none() {
+            if let Ok(doas_user) = env::var("DOAS_USER") {
+                if let Ok(Some(user)) = User::from_name(&doas_user) {
+                    target_uid = Some(user.uid);
+                    target_gid = Some(user.gid);
+                }
+            }
+        }
+
+        if let (Some(uid), Some(gid)) = (target_uid, target_gid) {
+            setgroups(&[]).expect("failed to drop supplementary groups");
+            setresgid(gid, gid, gid).expect("failed to set gid");
+            setresuid(uid, uid, uid).expect("failed to set uid");
+        }
+    }
+}
+
 fn main() {
+    drop_privileges();
     // Install a panic hook that swallows the benign "Broken pipe" panic that
     // occurs when a downstream consumer of our stdout closes the pipe early
     // (e.g. `vary -Ss foo | head`, `vary -Si x | less`, `vary ... | true`).

@@ -46,11 +46,79 @@ impl Masterdir {
         self.path.join("hostdir").join("binpkgs")
     }
 
-    /// Compila un paquete: `./xbps-src pkg <pkg>` dentro del masterdir.
+    /// Compila un paquete: `./xbps-src pkg <pkg>` dentro del masterdir usando OverlayFS si es posible.
     pub fn build_pkg(&self, pkg: &str) -> Result<()> {
-        tracing::info!("compilando {} con xbps-src...", pkg);
-        let code = xbps_src(&self.path, &["pkg", pkg])
+        let lower = &self.path;
+        let upper = std::env::temp_dir().join(format!("vary-upper-{}", pkg));
+        let work = std::env::temp_dir().join(format!("vary-work-{}", pkg));
+        let merged = std::env::temp_dir().join(format!("vary-merged-{}", pkg));
+        
+        let mut isolated = false;
+        let mut used_sudo = false;
+        if std::fs::create_dir_all(&upper).is_ok() && std::fs::create_dir_all(&work).is_ok() && std::fs::create_dir_all(&merged).is_ok() {
+            let mount_cmd = std::process::Command::new("sudo")
+                .args([
+                    "mount", "-t", "overlay", "overlay",
+                    "-o", &format!("lowerdir={},upperdir={},workdir={}", lower.display(), upper.display(), work.display()),
+                    &merged.display().to_string(),
+                ])
+                .status();
+            
+            isolated = match mount_cmd {
+                Ok(s) if s.success() => {
+                    used_sudo = true;
+                    true
+                }
+                _ => {
+                    let fuse_cmd = std::process::Command::new("fuse-overlayfs")
+                        .args([
+                            "-o", &format!("lowerdir={},upperdir={},workdir={}", lower.display(), upper.display(), work.display()),
+                            &merged.display().to_string(),
+                        ])
+                        .status();
+                    matches!(fuse_cmd, Ok(s) if s.success())
+                }
+            };
+        }
+
+        let target_dir = if isolated { &merged } else { lower };
+
+        tracing::info!("compilando {} con xbps-src (aislado: {})...", pkg, isolated);
+        let code = xbps_src(target_dir, &["pkg", pkg])
             .with_context(|| format!("falló ./xbps-src pkg {}", pkg))?;
+            
+        if isolated {
+            let merged_binpkgs = merged.join("hostdir").join("binpkgs");
+            let target_binpkgs = lower.join("hostdir").join("binpkgs");
+            if merged_binpkgs.exists() {
+                std::fs::create_dir_all(&target_binpkgs).ok();
+                // Copiar el contenido para evitar binpkgs/binpkgs
+                let copy_cmd = if used_sudo {
+                    std::process::Command::new("sudo")
+                        .args(["cp", "-aT", &merged_binpkgs.display().to_string(), &target_binpkgs.display().to_string()])
+                        .status()
+                } else {
+                    std::process::Command::new("cp")
+                        .args(["-aT", &merged_binpkgs.display().to_string(), &target_binpkgs.display().to_string()])
+                        .status()
+                };
+                if let Err(e) = copy_cmd {
+                    tracing::warn!("falló al copiar binpkgs: {}", e);
+                }
+            }
+            
+            if used_sudo {
+                let _ = std::process::Command::new("sudo").args(["umount", &merged.display().to_string()]).status();
+                let _ = std::process::Command::new("sudo").args(["rm", "-rf", &upper.display().to_string(), &work.display().to_string(), &merged.display().to_string()]).status();
+            } else {
+                let unmount = std::process::Command::new("fusermount3").args(["-u", &merged.display().to_string()]).status();
+                if !matches!(unmount, Ok(s) if s.success()) {
+                    let _ = std::process::Command::new("umount").args([&merged.display().to_string()]).status();
+                }
+                let _ = std::process::Command::new("rm").args(["-rf", &upper.display().to_string(), &work.display().to_string(), &merged.display().to_string()]).status();
+            }
+        }
+
         if code != 0 {
             anyhow::bail!("xbps-src pkg {} terminó con código {}", pkg, code);
         }

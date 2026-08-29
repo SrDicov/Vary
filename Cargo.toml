@@ -1,6 +1,6 @@
 [package]
 name = "vary"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Dicov (SrDicov) <https://github.com/SrDicov>"]
 edition = "2021"
 
@@ -32,6 +32,7 @@ serde_json = "1.0.149"
 sha2 = "0.10"
 tempfile = "3.24.0"
 toml = { version = "0.9.10", features = ["preserve_order"] }
+heed = "0.20.0"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
@@ -39,3 +40,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 [profile.release]
 codegen-units = 1
 lto = true
+
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", features = ["user"] }
