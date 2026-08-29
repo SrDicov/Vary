@@ -602,7 +602,7 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     let archs_raw = vars.get("only_for_archs").or_else(|| vars.get("archs")).cloned().unwrap_or_default();
     // Normalizar wildcards de Void ("x86_64*", "aarch64*") a la base
     let archs = if archs_raw.is_empty() {
-        vec!["x86_64".to_string()]
+        vec!["all".to_string()]
     } else {
         archs_raw
             .split_whitespace()
