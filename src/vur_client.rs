@@ -18,8 +18,35 @@ pub struct VurRepo {
 impl VurRepo {
     pub fn ensure_cloned(&self) -> Result<()> {
         if self.path.join(".git").exists() {
+            // Migrar clone legacy (sin --filter) a partial clone
+            let promisor = Command::new(&self.git_bin)
+                .arg("-C").arg(&self.path)
+                .args(["config", "--get", "remote.origin.promisor"])
+                .output();
+            let is_partial = matches!(promisor, Ok(ref o) if o.status.success());
+            if !is_partial {
+                tracing::info!("migrando clone legacy de '{}' a partial clone...", self.name);
+                let backup = self.path.with_extension("legacy-backup");
+                if backup.exists() {
+                    let _ = std::fs::remove_dir_all(&backup);
+                }
+                std::fs::rename(&self.path, &backup)
+                    .with_context(|| format!("no se pudo mover {} para migración", self.path.display()))?;
+                match self.clone_partial() {
+                    Ok(()) => { let _ = std::fs::remove_dir_all(&backup); }
+                    Err(e) => {
+                        // Restaurar backup si falló el re-clone
+                        let _ = std::fs::rename(&backup, &self.path);
+                        return Err(e);
+                    }
+                }
+            }
             return Ok(());
         }
+        self.clone_partial()
+    }
+
+    fn clone_partial(&self) -> Result<()> {
         if let Some(parent) = self.path.parent() {
             if !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent)
@@ -28,7 +55,13 @@ impl VurRepo {
         }
         let branch = self.entry.branch_or_default();
         let output = Command::new(&self.git_bin)
-            .args(["clone", "--depth", "1", "--branch", branch])
+            .args([
+                "clone",
+                "--filter=blob:none",
+                "--no-checkout",
+                "--depth", "1",
+                "--branch", branch,
+            ])
             .arg(&self.entry.url)
             .arg(&self.path)
             .output()
@@ -62,20 +95,171 @@ impl VurRepo {
     }
 
     pub fn pull(&self) -> Result<String> {
-        let output = Command::new(&self.git_bin)
-            .arg("-C")
-            .arg(&self.path)
-            .args(["pull", "--ff-only"])
+        let branch = self.entry.branch_or_default();
+        // Fetch sin tocar worktree
+        let fetch_out = Command::new(&self.git_bin)
+            .arg("-C").arg(&self.path)
+            .args(["fetch", "--depth", "1", "origin", branch])
             .output()
-            .context("no se pudo ejecutar git pull")?;
-        if !output.status.success() {
+            .context("no se pudo ejecutar git fetch")?;
+        if !fetch_out.status.success() {
             bail!(
-                "git pull --ff-only falló en {}:\n{}",
+                "git fetch falló en {}:\n{}",
                 self.path.display(),
-                String::from_utf8_lossy(&output.stderr).trim()
+                String::from_utf8_lossy(&fetch_out.stderr).trim()
+            );
+        }
+        // Actualizar HEAD sin checkout completo
+        let reset_out = Command::new(&self.git_bin)
+            .arg("-C").arg(&self.path)
+            .args(["reset", "--soft", "FETCH_HEAD"])
+            .output()
+            .context("no se pudo ejecutar git reset --soft")?;
+        if !reset_out.status.success() {
+            bail!(
+                "git reset --soft falló en {}:\n{}",
+                self.path.display(),
+                String::from_utf8_lossy(&reset_out.stderr).trim()
             );
         }
         self.head_sha()
+    }
+
+    /// Lista los nombres de paquetes disponibles usando git ls-tree (sin checkout).
+    /// Soporta layout flat (`<pkg>/template`) y void-packages (`srcpkgs/<pkg>/template`).
+    pub fn list_packages(&self) -> Result<Vec<String>> {
+        let output = Command::new(&self.git_bin)
+            .arg("-C").arg(&self.path)
+            .args(["ls-tree", "--name-only", "HEAD"])
+            .output()
+            .context("no se pudo ejecutar git ls-tree")?;
+
+        if !output.status.success() {
+            bail!("git ls-tree falló en {}", self.path.display());
+        }
+
+        let top_entries: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|s| s.to_string())
+            .collect();
+
+        // Detectar layout: ¿existe `srcpkgs/` como directorio?
+        if top_entries.iter().any(|e| e == "srcpkgs") {
+            let output2 = Command::new(&self.git_bin)
+                .arg("-C").arg(&self.path)
+                .args(["ls-tree", "--name-only", "HEAD", "srcpkgs/"])
+                .output()
+                .context("no se pudo ejecutar git ls-tree srcpkgs/")?;
+
+            Ok(String::from_utf8_lossy(&output2.stdout)
+                .lines()
+                .filter_map(|line| line.strip_prefix("srcpkgs/"))
+                .filter(|s| !s.is_empty() && !s.starts_with('.'))
+                .map(|s| s.to_string())
+                .collect())
+        } else {
+            // Layout flat (como cnr): cada directorio de nivel 1 = paquete potencial
+            // Excluir archivos sueltos (README.md, LICENSE, etc.)
+            let output_full = Command::new(&self.git_bin)
+                .arg("-C").arg(&self.path)
+                .args(["ls-tree", "HEAD"])
+                .output()
+                .context("no se pudo ejecutar git ls-tree")?;
+            Ok(String::from_utf8_lossy(&output_full.stdout)
+                .lines()
+                .filter(|line| line.contains("\ttree\t") || line.contains(" tree ") || {
+                    // ls-tree format: "<mode> <type> <hash>\t<name>"
+                    let parts: Vec<&str> = line.splitn(4, |c: char| c.is_whitespace()).collect();
+                    parts.len() >= 4 && parts[1] == "tree"
+                })
+                .filter_map(|line| line.split('\t').nth(1))
+                .filter(|name| !name.starts_with('.'))
+                .map(|s| s.to_string())
+                .collect())
+        }
+    }
+
+    /// Detecta el prefijo de layout del repo (\"srcpkgs\" o vacío para flat).
+    fn detect_layout_prefix(&self) -> Result<String> {
+        let output = Command::new(&self.git_bin)
+            .arg("-C").arg(&self.path)
+            .args(["ls-tree", "--name-only", "HEAD"])
+            .output()?;
+        let entries = String::from_utf8_lossy(&output.stdout);
+        if entries.lines().any(|l| l == "srcpkgs") {
+            Ok("srcpkgs".to_string())
+        } else {
+            Ok(String::new())
+        }
+    }
+
+    /// Lee el contenido de un archivo del repo sin materializarlo en disco.
+    /// Usa `git show HEAD:<path>` para acceder directo al object store.
+    pub fn git_show_file(&self, tree_path: &str) -> Result<String> {
+        let output = Command::new(&self.git_bin)
+            .arg("-C").arg(&self.path)
+            .args(["show", &format!("HEAD:{}", tree_path)])
+            .output()
+            .with_context(|| format!("no se pudo ejecutar git show HEAD:{}", tree_path))?;
+        if !output.status.success() {
+            bail!("archivo no encontrado en el repo: {}", tree_path);
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Materializa solo el directorio de un paquete específico en el worktree
+    /// usando git sparse-checkout. Descarga solo los blobs necesarios.
+    pub fn materialize_pkg(&self, pkg_name: &str) -> Result<PathBuf> {
+        let prefix = self.detect_layout_prefix()?;
+        let sparse_path = if prefix.is_empty() {
+            pkg_name.to_string()
+        } else {
+            format!("{}/{}", prefix, pkg_name)
+        };
+
+        // Inicializar sparse-checkout si no está configurado
+        if !self.path.join(".git/info/sparse-checkout").exists() {
+            let _ = Command::new(&self.git_bin)
+                .arg("-C").arg(&self.path)
+                .args(["sparse-checkout", "init", "--cone"])
+                .output();
+        }
+
+        // Añadir el paquete al sparse-checkout
+        let add_out = Command::new(&self.git_bin)
+            .arg("-C").arg(&self.path)
+            .args(["sparse-checkout", "add", &sparse_path])
+            .output()
+            .with_context(|| format!("no se pudo agregar {} al sparse-checkout", sparse_path))?;
+
+        if !add_out.status.success() {
+            tracing::warn!(
+                "sparse-checkout add falló para {}: {}",
+                sparse_path,
+                String::from_utf8_lossy(&add_out.stderr).trim()
+            );
+        }
+
+        // Hacer checkout (Git descargará solo los blobs faltantes)
+        let co_out = Command::new(&self.git_bin)
+            .arg("-C").arg(&self.path)
+            .args(["checkout"])
+            .output()
+            .context("no se pudo ejecutar git checkout")?;
+
+        if !co_out.status.success() {
+            tracing::warn!(
+                "git checkout parcial: {}",
+                String::from_utf8_lossy(&co_out.stderr).trim()
+            );
+        }
+
+        let materialized = self.path.join(&sparse_path);
+        if !materialized.exists() {
+            bail!("el paquete '{}' no existe en el VUR '{}'", pkg_name, self.name);
+        }
+
+        Ok(materialized)
     }
 
     pub fn load_index(
@@ -89,108 +273,72 @@ impl VurRepo {
             return Ok(cached.to_vec());
         }
 
+        // Invalidar entradas antiguas de este repo antes de reconstruir
+        cache.invalidate_repo(&self.name);
+
         let mut packages: Vec<VurInfo> = Vec::new();
         let mut files_seen = 0usize;
 
-        let srcpkgs = self.path.join("srcpkgs");
-        if srcpkgs.is_dir() {
-            let mut dirs: Vec<PathBuf> = std::fs::read_dir(&srcpkgs)?
-                .filter_map(|entry| entry.ok())
-                .map(|entry| entry.path())
-                .filter(|p| p.is_dir())
-                .collect();
-            dirs.sort();
-            for dir in dirs {
-                let info_path = dir.join(".VURINFO");
-                if !info_path.is_file() {
-                    continue;
-                }
+        let prefix = self.detect_layout_prefix()?;
+        let pkg_names = self.list_packages()?;
+
+        // Intentar leer .VURINFO de cada paquete vía git show (sin checkout)
+        for pkg in &pkg_names {
+            let vurinfo_path = if prefix.is_empty() {
+                format!("{}/.VURINFO", pkg)
+            } else {
+                format!("{}/{}/.VURINFO", prefix, pkg)
+            };
+            if let Ok(text) = self.git_show_file(&vurinfo_path) {
                 files_seen += 1;
-                match std::fs::read_to_string(&info_path)
-                    .map_err(anyhow::Error::from)
-                    .and_then(|text| metadata::parse(&text))
-                {
+                match metadata::parse(&text) {
                     Ok(info) => packages.push(info),
                     Err(err) => tracing::warn!(
-                        ".VURINFO inválido ignorado en {}: {err:#}",
-                        info_path.display()
+                        ".VURINFO inválido ignorado en {}:{}: {err:#}",
+                        self.name, vurinfo_path
                     ),
                 }
             }
         }
 
-        let root_info = self.path.join(".VURINFO");
-        if root_info.is_file() {
+        // Intentar .VURINFO raíz (array de paquetes)
+        if let Ok(text) = self.git_show_file(".VURINFO") {
             files_seen += 1;
-            match std::fs::read_to_string(&root_info)
-                .map_err(anyhow::Error::from)
-                .and_then(|text| metadata::parse_many(&text))
-            {
+            match metadata::parse_many(&text) {
                 Ok(mut infos) => packages.append(&mut infos),
                 Err(err) => tracing::warn!(
                     ".VURINFO raíz inválido ignorado en {}: {err:#}",
-                    root_info.display()
+                    self.name
                 ),
             }
         }
 
-        // Fallback: si no hay .VURINFO, intentar parsear plantillas Void directamente
-        // Soporta tanto layout void-packages (srcpkgs/<pkg>/template) como
-        // layout plano estilo cnr (/<pkg>/template) escaneando recursivo.
+        // Fallback: si no hay .VURINFO, parsear templates vía git show
         if packages.is_empty() && files_seen == 0 {
-            let mut template_files: Vec<PathBuf> = Vec::new();
-            // srcpkgs/*/template
-            if srcpkgs.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&srcpkgs) {
-                    for entry in entries.flatten() {
-                        let p = entry.path().join("template");
-                        if p.is_file() {
-                            template_files.push(p);
+            for pkg in &pkg_names {
+                let tmpl_path = if prefix.is_empty() {
+                    format!("{}/template", pkg)
+                } else {
+                    format!("{}/{}/template", prefix, pkg)
+                };
+                if let Ok(text) = self.git_show_file(&tmpl_path) {
+                    files_seen += 1;
+                    match parse_template_text(&text, &format!("{}:{}", self.name, tmpl_path)) {
+                        Ok(info) => {
+                            tracing::debug!("template parseado {} -> {}", tmpl_path, info.pkgname);
+                            packages.push(info);
                         }
+                        Err(err) => tracing::warn!(
+                            "template inválido ignorado en {}:{}: {err:#}",
+                            self.name, tmpl_path
+                        ),
                     }
-                }
-            }
-            // */template (cnr flat) y */*/template por si acaso
-            if let Ok(entries) = std::fs::read_dir(&self.path) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.is_dir() {
-                        let tmpl = p.join("template");
-                        if tmpl.is_file() {
-                            if !template_files.contains(&tmpl) {
-                                template_files.push(tmpl);
-                            }
-                        }
-                        // Buscar un nivel más profundo (por compatibilidad)
-                        if let Ok(subs) = std::fs::read_dir(&p) {
-                            for sub in subs.flatten() {
-                                let tmpl2 = sub.path().join("template");
-                                if tmpl2.is_file() && !template_files.contains(&tmpl2) {
-                                    template_files.push(tmpl2);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            template_files.sort();
-            for tmpl_path in template_files {
-                files_seen += 1;
-                match parse_template_file(&tmpl_path) {
-                    Ok(info) => {
-                        tracing::debug!("template parseado {} -> {}", tmpl_path.display(), info.pkgname);
-                        packages.push(info);
-                    }
-                    Err(err) => tracing::warn!(
-                        "template inválido ignorado en {}: {err:#}",
-                        tmpl_path.display()
-                    ),
                 }
             }
         }
 
         if packages.is_empty() && files_seen == 0 {
-            bail!("no se encontró ningún .VURINFO ni template en {}", self.path.display());
+            bail!("no se encontró ningún .VURINFO ni template en {}", self.name);
         }
 
         cache.store(&key, packages.clone());
@@ -220,12 +368,15 @@ impl VurRepo {
                         for entry in entries.flatten() {
                             let p = entry.path();
                             if p.is_dir() {
-                                if let Ok(info) = parse_template_file(&p.join("template")) {
-                                    if info.pkgname == pkgname || info.subpackages.iter().any(|s| s.pkgname == pkgname) {
-                                        found = Some(p);
-                                        break;
+                                if let Ok(text) = std::fs::read_to_string(p.join("template")) {
+                                    if let Ok(info) = parse_template_text(&text, p.join("template").to_string_lossy().as_ref()) {
+                                        if info.pkgname == pkgname || info.subpackages.iter().any(|s| s.pkgname == pkgname) {
+                                            found = Some(p);
+                                            break;
+                                        }
                                     }
-                                } else if p.file_name().and_then(|n| n.to_str()) == Some(pkgname) {
+                                }
+                                if p.file_name().and_then(|n| n.to_str()) == Some(pkgname) {
                                     found = Some(p);
                                     break;
                                 }
@@ -357,10 +508,7 @@ impl VurRepo {
     }
 }
 
-fn parse_template_file(path: &Path) -> Result<VurInfo> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("no se pudo leer {}", path.display()))?;
-
+fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     // Unir continuaciones con \ y manejar valores multilínea entre comillas
     let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut lines = content.lines().peekable();
@@ -448,7 +596,7 @@ fn parse_template_file(path: &Path) -> Result<VurInfo> {
     }
 
     let pkgname = vars.get("pkgname").cloned().filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("template sin pkgname: {}", path.display()))?;
+        .ok_or_else(|| anyhow::anyhow!("template sin pkgname: {}", debug_path))?;
     let version = vars.get("version").cloned().unwrap_or_else(|| "1.0".to_string());
     let revision: u32 = vars.get("revision").and_then(|s| s.parse().ok()).unwrap_or(1);
     let archs_raw = vars.get("only_for_archs").or_else(|| vars.get("archs")).cloned().unwrap_or_default();
@@ -621,12 +769,12 @@ mod tests {
         assert_eq!(idx[0].archs, vec!["x86_64".to_string()]);
         assert_eq!(idx[0].checksum, vec!["sha256:aa".to_string()]);
 
-        std::fs::remove_file(repo.path.join("srcpkgs/hello/.VURINFO"))?;
         let idx2 = repo.load_index(&mut cache, None)?;
         assert_eq!(idx2.len(), 1, "la segunda lectura debe venir de caché");
 
         let master = fx._clone_tmp.path().join("master");
         for name in ["hello"] {
+            repo.materialize_pkg(name)?;
             repo.project_pkg(&master, name, false)?;
         }
         let dest = master.join("hello");

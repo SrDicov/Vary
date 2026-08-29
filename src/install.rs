@@ -228,7 +228,8 @@ pub fn install(config: &mut Config) -> Result<i32> {
         for item in &plan.builds {
             if let Ok(repo_name) = vur_map_lookup_repo(&item.name, &repos, &mut cache) {
                 if let Some(repo) = repos.iter().find(|r| r.name == repo_name) {
-                    let _ = crate::review::prompt_review(&item.name, &repo.path);
+                    let _ = repo.materialize_pkg(&item.name);
+                    let _ = crate::review::prompt_review(&item.name, &repo.path, &config.git_bin);
                 }
             }
         }
@@ -267,6 +268,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 || t == &item.name
                 || item.info.subpackages.iter().any(|s| s.pkgname == *t)
         });
+        repo.materialize_pkg(&parent_pkg)?;
         repo.project_pkg(&md.srcpkgs_dir(), &parent_pkg, explicit)?;
         let res = md.build_pkg(&parent_pkg);
         // Always unproject (proyectamos parent_pkg)
@@ -394,6 +396,7 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
                     || info.subpackages.iter().any(|s| s.pkgname == *target);
                 if is_match {
                     let parent = info.pkgname.clone();
+                    let _ = repo.materialize_pkg(&parent);
                     repo.project_pkg(&md.srcpkgs_dir(), &parent, false)?;
                     md.fetch_pkg(&parent)?;
                     repo.unproject_pkg(&md.srcpkgs_dir(), &parent)?;

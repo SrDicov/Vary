@@ -1,5 +1,5 @@
 use crate::metadata::VurInfo;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use heed::{EnvOpenOptions, Database, types::*};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -60,6 +60,25 @@ impl CacheIndex {
             }
         }
         Some(cached.packages)
+    }
+
+    pub fn invalidate_repo(&mut self, repo_name: &str) {
+        if let Ok(mut txn) = self.env.write_txn() {
+            let mut keys_to_delete = Vec::new();
+            if let Ok(iter) = self.db.iter(&txn) {
+                for item in iter {
+                    if let Ok((key, _)) = item {
+                        if key.starts_with(&format!("{}:", repo_name)) {
+                            keys_to_delete.push(key.to_string());
+                        }
+                    }
+                }
+            }
+            for key in keys_to_delete {
+                let _ = self.db.delete(&mut txn, &key);
+            }
+            let _ = txn.commit();
+        }
     }
 
     pub fn save(&self) -> Result<()> {
