@@ -2,6 +2,17 @@
 
 All notable changes to vary will be documented in this file.
 
+## 0.2.1 - 2026-08-29
+
+### Fixed
+
+- CLI robustness and pipe panic (PR #1): no more fatal "Broken pipe" panic
+  (`exit 101`) when output is piped to `head`/`less`/`true`; `--git` is now
+  honored end-to-end; invalid `--color`/`--arch` are rejected; better
+  architecture-incompatibility messages; `--repo remove <name> -p` purges
+  orphan clones; `--noconfirm` defaults to `-Syu` and bare `-S` reports missing
+  targets correctly.
+
 ## 0.2.0 - 2026-08-25
 
 ### Added
