@@ -83,7 +83,7 @@ pub fn search(config: &Config) -> Result<i32> {
             continue;
         }
         let path = config.vurs_dir().join(&name);
-        let repo = VurRepo { name: name.clone(), path, entry: entry.clone() };
+        let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
         if repo.ensure_cloned().is_err() {
             continue;
         }

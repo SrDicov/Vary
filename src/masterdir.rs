@@ -69,7 +69,7 @@ impl Masterdir {
 }
 
 /// Clona void-packages (shallow) si aún no existe.
-pub fn clone_void_packages(target: &Path) -> Result<()> {
+pub fn clone_void_packages(target: &Path, git_bin: &str) -> Result<()> {
     if target.join(".git").exists() {
         return Ok(());
     }
@@ -78,7 +78,7 @@ pub fn clone_void_packages(target: &Path) -> Result<()> {
             .with_context(|| format!("creando {}", parent.display()))?;
     }
     tracing::info!("clonando void-packages (depth 1)...");
-    let out = std::process::Command::new("git")
+    let out = std::process::Command::new(git_bin)
         .args([
             "clone",
             "--depth",
@@ -87,7 +87,7 @@ pub fn clone_void_packages(target: &Path) -> Result<()> {
             &target.display().to_string(),
         ])
         .status()
-        .context("`git` no encontrado: ¿está instalado?")?;
+        .context(format!("`{}` no encontrado: ¿está instalado?", git_bin))?;
     if !out.success() {
         anyhow::bail!("git clone de void-packages falló con código {:?}", out.code());
     }

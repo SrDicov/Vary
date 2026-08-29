@@ -158,14 +158,16 @@ fn handle_sync(config: &mut Config) -> Result<i32> {
         return install::install(config);
     }
 
-    bail!("no operation specified (use -h for help)");
+    bail!("no targets specified (use -h for help)");
 }
 
 fn handle_default(config: &mut Config) -> Result<i32> {
     if !config.targets.is_empty() {
         return handle_sync(config);
     }
-    bail!("no operation specified (use -h for help)");
+    // Sin operación ni objetivos: comportamiento documentado de `vary` => -Syu
+    // (igual que invocar vary sin argumentos, p. ej. `vary --noconfirm`).
+    upgrade::upgrade(config)
 }
 
 mod install;

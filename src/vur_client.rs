@@ -11,6 +11,8 @@ pub struct VurRepo {
     pub name: String,
     pub path: PathBuf,
     pub entry: RepoEntry,
+    /// Binario de git a usar (--git); por defecto "git".
+    pub git_bin: String,
 }
 
 impl VurRepo {
@@ -25,7 +27,7 @@ impl VurRepo {
             }
         }
         let branch = self.entry.branch_or_default();
-        let output = Command::new("git")
+        let output = Command::new(&self.git_bin)
             .args(["clone", "--depth", "1", "--branch", branch])
             .arg(&self.entry.url)
             .arg(&self.path)
@@ -43,7 +45,7 @@ impl VurRepo {
     }
 
     pub fn head_sha(&self) -> Result<String> {
-        let output = Command::new("git")
+        let output = Command::new(&self.git_bin)
             .arg("-C")
             .arg(&self.path)
             .args(["rev-parse", "HEAD"])
@@ -60,7 +62,7 @@ impl VurRepo {
     }
 
     pub fn pull(&self) -> Result<String> {
-        let output = Command::new("git")
+        let output = Command::new(&self.git_bin)
             .arg("-C")
             .arg(&self.path)
             .args(["pull", "--ff-only"])
@@ -286,7 +288,7 @@ impl VurRepo {
                 if master_srcpkgs.parent().and_then(|p| p.file_name()).map(|n| n == "void-packages").unwrap_or(false)
                     || master_srcpkgs.join("../.git").exists()
                 {
-                    let _ = Command::new("git")
+                    let _ = Command::new(&self.git_bin)
                         .args(["checkout", "--", &format!("srcpkgs/{}", pkgname)])
                         .current_dir(master_srcpkgs.parent().unwrap_or(Path::new(".")))
                         .output();
@@ -586,6 +588,7 @@ mod tests {
                 name: "mi-repo".into(),
                 path,
                 entry,
+                git_bin: "git".to_string(),
             },
         })
     }
@@ -717,6 +720,7 @@ mod tests {
                 url: format!("file://{}/", origin.display()),
                 ..Default::default()
             },
+            git_bin: "git".to_string(),
         };
         repo.ensure_cloned()?;
 
