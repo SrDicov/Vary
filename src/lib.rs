@@ -15,6 +15,7 @@ mod repo;
 mod reposconf;
 mod resolver;
 mod util;
+mod vup_index;
 mod vur_client;
 mod xbps;
 

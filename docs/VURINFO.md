@@ -6,7 +6,7 @@
 
 Un repo VUR puede publicar el índice de dos formas complementarias:
 
-- **Uno por plantilla:** `srcpkgs/<pkg>/.VURINFO` — es lo que genera `scripts/vur-generator.sh`.
+- **Uno por plantilla:** `srcpkgs/<pkg>/.VURINFO` (o `pkgs/<pkg>/.VURINFO` en repos que usen ese alias, p. ej. voiders) — es lo que genera `scripts/vur-generator.sh` (asume `srcpkgs/`).
 - **Índice raíz:** un único `.VURINFO` en la raíz del repo, que puede ser un objeto (un paquete) o un array de objetos (varios paquetes).
 
 Al cargar, vary fusiona ambas fuentes; los duplicados por `pkgname` son un error.

@@ -84,13 +84,64 @@ pub fn search(config: &Config) -> Result<i32> {
         }
         let path = config.vurs_dir().join(&name);
         let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
-        if repo.ensure_cloned().is_err() {
+        // Sin clon no hay índice git; pero un repo con index_url aún puede
+        // listar desde el índice remoto (caché mediante).
+        let cloned = repo.ensure_cloned().is_ok();
+        if !cloned && !entry.has_vup_index() {
             continue;
         }
-        let infos = match repo.load_index(&mut cache, ttl) {
-            Ok(v) => v,
-            Err(_) => continue,
+        let infos = if cloned {
+            match repo.load_index(&mut cache, ttl) {
+                Ok(v) => v,
+                Err(_) => Vec::new(),
+            }
+        } else {
+            Vec::new()
         };
+        // Adaptador VUP Fase 1: los repos con index_url no traen .VURINFO;
+        // sus paquetes se listan desde el índice remoto (solo binarios).
+        if let Some(index_url) = entry.index_url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            let arch = if config.arch_override.is_none() {
+                xbps::query_architecture().unwrap_or(config.arch())
+            } else {
+                config.arch()
+            };
+            let cache_path = config.cache_dir.join(format!(
+                "vup-index-{}.json",
+                crate::vup_index::sanitize_repo_name(&name)
+            ));
+            if let Ok(idx) = crate::vup_index::fetch_index(
+                &config.curl_bin,
+                index_url,
+                &cache_path,
+                config.ttl_cache_seconds,
+            ) {
+                for (pkgname, vpkg) in &idx.packages {
+                    let Some((info, _url)) = crate::vup_index::to_vur_info(pkgname, vpkg, &arch)
+                    else {
+                        continue;
+                    };
+                    let desc = format!("{} {}", vpkg.category, info.version);
+                    if !matches_words(&words, pkgname, &desc) {
+                        continue;
+                    }
+                    let row = Row {
+                        name: pkgname.clone(),
+                        pkgver: info.pkgver(),
+                        desc,
+                        rank: Rank::VulBinary,
+                        repo: format!("vur:{}", name),
+                    };
+                    rows.entry(pkgname.clone())
+                        .and_modify(|existing| {
+                            if row.rank < existing.rank {
+                                *existing = Row { name: row.name.clone(), pkgver: row.pkgver.clone(), desc: row.desc.clone(), rank: row.rank.clone(), repo: row.repo.clone() };
+                            }
+                        })
+                        .or_insert(row);
+                }
+            }
+        }
         for info in infos {
             let candidates = std::iter::once((info.pkgname.clone(), None::<&crate::metadata::Subpackage>))
                 .chain(info.subpackages.iter().map(|s| (s.pkgname.clone(), Some(s))));

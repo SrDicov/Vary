@@ -15,6 +15,11 @@ pub struct VurRepo {
     pub git_bin: String,
 }
 
+/// Directorios de plantillas aceptados en un VUR, en orden de preferencia:
+/// el clásico `srcpkgs/` de void-packages y el alias `pkgs/` que usan repos
+/// como voiders-community/repository. "" (ausente) = repo flat.
+pub(crate) const TEMPLATE_PREFIXES: &[&str] = &["srcpkgs", "pkgs"];
+
 impl VurRepo {
     pub fn ensure_cloned(&self) -> Result<()> {
         if self.path.join(".git").exists() {
@@ -77,6 +82,34 @@ impl VurRepo {
         Ok(())
     }
 
+    /// Detecta la rama por defecto del remoto (`main`, `master`, ...) sin clonar.
+    ///
+    /// Usa `git ls-remote --symref <url> HEAD` y lee la línea
+    /// `ref: refs/heads/<rama>`. Devuelve `None` si no se puede determinar
+    /// (sin red, remoto vacío o git ausente); el llamador aplica su fallback.
+    pub fn detect_default_branch(git_bin: &str, url: &str) -> Option<String> {
+        let output = Command::new(git_bin)
+            .args(["ls-remote", "--symref", url, "HEAD"])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if let Some(rest) = line.strip_prefix("ref:") {
+                let rest = rest.trim();
+                if let Some(branch) = rest.strip_prefix("refs/heads/") {
+                    let branch = branch.split_whitespace().next().unwrap_or(branch);
+                    if !branch.is_empty() {
+                        return Some(branch.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn head_sha(&self) -> Result<String> {
         let output = Command::new(&self.git_bin)
             .arg("-C")
@@ -126,7 +159,8 @@ impl VurRepo {
     }
 
     /// Lista los nombres de paquetes disponibles usando git ls-tree (sin checkout).
-    /// Soporta layout flat (`<pkg>/template`) y void-packages (`srcpkgs/<pkg>/template`).
+    /// Soporta layout flat (`<pkg>/template`), void-packages
+    /// (`srcpkgs/<pkg>/template`) y su alias (`pkgs/<pkg>/template`, p. ej. voiders).
     pub fn list_packages(&self) -> Result<Vec<String>> {
         let output = Command::new(&self.git_bin)
             .arg("-C").arg(&self.path)
@@ -143,17 +177,22 @@ impl VurRepo {
             .map(|s| s.to_string())
             .collect();
 
-        // Detectar layout: ¿existe `srcpkgs/` como directorio?
-        if top_entries.iter().any(|e| e == "srcpkgs") {
+        // Detectar layout: ¿existe `srcpkgs/` o su alias `pkgs/`?
+        if let Some(prefix) = TEMPLATE_PREFIXES
+            .iter()
+            .find(|p| top_entries.iter().any(|e| e == *p))
+        {
+            let prefix = *prefix;
+            let subdir = format!("{prefix}/");
             let output2 = Command::new(&self.git_bin)
                 .arg("-C").arg(&self.path)
-                .args(["ls-tree", "--name-only", "HEAD", "srcpkgs/"])
+                .args(["ls-tree", "--name-only", "HEAD", subdir.as_str()])
                 .output()
-                .context("no se pudo ejecutar git ls-tree srcpkgs/")?;
+                .with_context(|| format!("no se pudo ejecutar git ls-tree {subdir}"))?;
 
             Ok(String::from_utf8_lossy(&output2.stdout)
                 .lines()
-                .filter_map(|line| line.strip_prefix("srcpkgs/"))
+                .filter_map(|line| line.strip_prefix(subdir.as_str()))
                 .filter(|s| !s.is_empty() && !s.starts_with('.'))
                 .map(|s| s.to_string())
                 .collect())
@@ -179,18 +218,20 @@ impl VurRepo {
         }
     }
 
-    /// Detecta el prefijo de layout del repo (\"srcpkgs\" o vacío para flat).
+    /// Detecta el prefijo de layout del repo: `srcpkgs`, su alias `pkgs`,
+    /// o vacío para flat.
     fn detect_layout_prefix(&self) -> Result<String> {
         let output = Command::new(&self.git_bin)
             .arg("-C").arg(&self.path)
             .args(["ls-tree", "--name-only", "HEAD"])
             .output()?;
         let entries = String::from_utf8_lossy(&output.stdout);
-        if entries.lines().any(|l| l == "srcpkgs") {
-            Ok("srcpkgs".to_string())
-        } else {
-            Ok(String::new())
+        for prefix in TEMPLATE_PREFIXES {
+            if entries.lines().any(|l| l == *prefix) {
+                return Ok(prefix.to_string());
+            }
         }
+        Ok(String::new())
     }
 
     /// Lee el contenido de un archivo del repo sin materializarlo en disco.
@@ -355,15 +396,20 @@ impl VurRepo {
     pub fn project_pkg(&self, master_srcpkgs: &Path, pkgname: &str, force: bool) -> Result<()> {
         std::fs::create_dir_all(master_srcpkgs)
             .with_context(|| format!("no se pudo crear {}", master_srcpkgs.display()))?;
-        // Buscar el directorio fuente del paquete
-        let candidates = [
-            self.path.join("srcpkgs").join(pkgname),
-            self.path.join(pkgname),
-        ];
+        // Buscar el directorio fuente del paquete (prefijos conocidos + flat)
+        let mut candidates = Vec::new();
+        for prefix in TEMPLATE_PREFIXES {
+            candidates.push(self.path.join(prefix).join(pkgname));
+        }
+        candidates.push(self.path.join(pkgname));
         let src = candidates.iter().find(|p| p.join("template").is_file()).cloned()
             .or_else(|| {
                 let mut found = None;
-                for base in [self.path.join("srcpkgs"), self.path.clone()] {
+                for base in TEMPLATE_PREFIXES
+                    .iter()
+                    .map(|p| self.path.join(p))
+                    .chain(std::iter::once(self.path.clone()))
+                {
                     if let Ok(entries) = std::fs::read_dir(&base) {
                         for entry in entries.flatten() {
                             let p = entry.path();
@@ -703,6 +749,10 @@ mod tests {
     }
 
     fn setup_repo(extra_pkgs: &[&str]) -> Result<Fixture> {
+        setup_repo_on_branch(extra_pkgs, "main")
+    }
+
+    fn setup_repo_on_branch(extra_pkgs: &[&str], branch: &str) -> Result<Fixture> {
         let origin_tmp = tempfile::tempdir()?;
         let origin = origin_tmp.path().join("origin");
         std::fs::create_dir_all(origin.join("srcpkgs/hello"))?;
@@ -719,13 +769,13 @@ mod tests {
         run_git(&origin, &["config", "user.name", "Vary Test"])?;
         run_git(&origin, &["add", "."])?;
         run_git(&origin, &["commit", "--no-gpg-sign", "-m", "init"])?;
-        run_git(&origin, &["branch", "-M", "main"])?;
+        run_git(&origin, &["branch", "-M", branch])?;
 
         let clone_tmp = tempfile::tempdir()?;
         let path = clone_tmp.path().join("mi-repo");
         let entry = RepoEntry {
             url: format!("file://{}/", origin.display()),
-            branch: Some("main".into()),
+            branch: Some(branch.into()),
             ..Default::default()
         };
         Ok(Fixture {
@@ -880,5 +930,88 @@ mod tests {
     #[test]
     fn decode_pem_body_rejects_input_without_body() {
         assert!(decode_pem_body("sin marcadores pem").is_err());
+    }
+
+    #[test]
+    fn clone_supports_master_branch() -> Result<()> {
+        // Regresión: los repos clásicos en `master` (p. ej. z-packages)
+        // deben clonarse cuando la entrada declara esa rama.
+        let fx = setup_repo_on_branch(&[], "master")?;
+        fx.repo.ensure_cloned()?;
+        assert!(fx.repo.path.join(".git").exists());
+
+        let (_cache_dir, mut cache) = fresh_cache()?;
+        let idx = fx.repo.load_index(&mut cache, None)?;
+        assert_eq!(idx.len(), 1);
+        assert_eq!(idx[0].pkgname, "hello");
+        Ok(())
+    }
+
+    #[test]
+    fn detect_default_branch_reads_remote_head() -> Result<()> {
+        let fx_main = setup_repo(&[])?;
+        let fx_master = setup_repo_on_branch(&[], "master")?;
+        let url_main = format!("file://{}/", fx_main.origin.display());
+        let url_master = format!("file://{}/", fx_master.origin.display());
+        assert_eq!(
+            VurRepo::detect_default_branch("git", &url_main).as_deref(),
+            Some("main")
+        );
+        assert_eq!(
+            VurRepo::detect_default_branch("git", &url_master).as_deref(),
+            Some("master")
+        );
+        assert!(VurRepo::detect_default_branch("git", "file:///no/existe").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn pkgs_layout_resuelve_por_fallback_de_template() -> Result<()> {
+        // Forma voiders-community/repository: dir `pkgs/`, sin .VURINFO.
+        // El índice debe salir del parseo del template (datos no evaluados).
+        let origin_tmp = tempfile::tempdir()?;
+        let origin = origin_tmp.path().join("origin");
+        std::fs::create_dir_all(origin.join("pkgs/hyfetch"))?;
+        std::fs::write(
+            origin.join("pkgs/hyfetch/template"),
+            "pkgname=hyfetch\nversion=2.1.0\nrevision=1\n",
+        )?;
+        run_git(&origin, &["init"])?;
+        run_git(&origin, &["config", "user.email", "test@vary.local"])?;
+        run_git(&origin, &["config", "user.name", "Vary Test"])?;
+        run_git(&origin, &["add", "."])?;
+        run_git(&origin, &["commit", "--no-gpg-sign", "-m", "init"])?;
+        run_git(&origin, &["branch", "-M", "main"])?;
+
+        let clone_tmp = tempfile::tempdir()?;
+        let repo = VurRepo {
+            name: "voiders".into(),
+            path: clone_tmp.path().join("voiders"),
+            entry: RepoEntry {
+                url: format!("file://{}/", origin.display()),
+                branch: Some("main".into()),
+                ..Default::default()
+            },
+            git_bin: "git".to_string(),
+        };
+        repo.ensure_cloned()?;
+
+        assert_eq!(repo.list_packages(), vec!["hyfetch".to_string()]);
+
+        let (_cache_dir, mut cache) = fresh_cache()?;
+        let idx = repo.load_index(&mut cache, None)?;
+        assert_eq!(idx.len(), 1);
+        assert_eq!(idx[0].pkgname, "hyfetch");
+        assert_eq!(idx[0].version, "2.1.0");
+        assert_eq!(idx[0].revision, 1);
+
+        // El template debe ser proyectable al árbol maestro.
+        let master = clone_tmp.path().join("master");
+        repo.materialize_pkg("hyfetch")?;
+        repo.project_pkg(&master, "hyfetch", false)?;
+        let dest = master.join("hyfetch");
+        assert!(dest.join("template").is_file());
+        assert!(dest.join(".vur_projection_marker").exists());
+        Ok(())
     }
 }

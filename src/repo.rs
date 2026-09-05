@@ -4,6 +4,7 @@ use crate::keys::teardown_binary_repo;
 use crate::reposconf::{RepoEntry, ReposConf};
 use crate::vur_client::VurRepo;
 use anyhow::{bail, Context, Result};
+use std::process::Command;
 
 fn derive_name_from_url(url: &str) -> String {
     let url = url.trim_end_matches('/');
@@ -13,14 +14,22 @@ fn derive_name_from_url(url: &str) -> String {
 
 pub fn handle_repo_cmd(config: &Config, cmd: RepoCmd) -> Result<i32> {
     match cmd {
-        RepoCmd::Add { url, name } => repo_add(config, &url, name.as_deref()),
+        RepoCmd::Add { url, name, branch, index_url } => {
+            repo_add(config, &url, name.as_deref(), branch.as_deref(), index_url.as_deref())
+        }
         RepoCmd::List => repo_list(config),
         RepoCmd::Remove { name, purge } => repo_remove(config, &name, purge),
         RepoCmd::Rekey(name) => repo_rekey(config, &name),
     }
 }
 
-fn repo_add(config: &Config, url: &str, name_opt: Option<&str>) -> Result<i32> {
+fn repo_add(
+    config: &Config,
+    url: &str,
+    name_opt: Option<&str>,
+    branch_opt: Option<&str>,
+    index_url_opt: Option<&str>,
+) -> Result<i32> {
     let name = name_opt
         .map(|s| s.to_string())
         .unwrap_or_else(|| derive_name_from_url(url));
@@ -29,16 +38,40 @@ fn repo_add(config: &Config, url: &str, name_opt: Option<&str>) -> Result<i32> {
         bail!("could not derive repo name from url; please provide a name");
     }
 
+    // Rama: flag explícita > autodetección del remoto > "main".
+    // (z-packages y otros repos clásicos viven en `master`.)
+    let branch = match branch_opt.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(b) => b.to_string(),
+        None => match VurRepo::detect_default_branch(&config.git_bin, url) {
+            Some(b) => {
+                println!("Detected default branch '{}' for {}", b, url);
+                b
+            }
+            None => {
+                tracing::warn!(
+                    "no se pudo detectar la rama por defecto de {}; usando 'main' \
+                     (si el clon falla, repite con --branch <rama>)",
+                    url
+                );
+                "main".to_string()
+            }
+        },
+    };
+
     let vurs_dir = config.vurs_dir();
     std::fs::create_dir_all(&vurs_dir).context("creating vurs dir")?;
     let dest = vurs_dir.join(&name);
 
     let entry = RepoEntry {
         url: url.to_string(),
-        branch: Some("main".to_string()),
+        branch: Some(branch),
         priority: Some(100),
         key_fingerprint: None,
         binary_repo_url: None,
+        index_url: index_url_opt
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
         enabled: Some(true),
     };
 
@@ -49,17 +82,20 @@ fn repo_add(config: &Config, url: &str, name_opt: Option<&str>) -> Result<i32> {
         git_bin: config.git_bin.clone(),
     };
 
-    println!("Cloning VUR '{}' from {}...", name, url);
-    repo.ensure_cloned()
-        .with_context(|| format!("cloning VUR {}", name))?;
+    println!("Cloning VUR '{}' from {} (branch {})...", name, url, entry.branch_or_default());
+    repo.ensure_cloned().with_context(|| {
+        format!(
+            "cloning VUR {} (branch {}); si el repo usa otra rama, repite con --branch <rama>",
+            name,
+            entry.branch_or_default()
+        )
+    })?;
 
-    // Validate it has at least one .VURINFO
-    let has_vurinfo = dest.join(".VURINFO").exists()
-        || std::fs::read_dir(dest.join("srcpkgs"))
-            .map(|mut d| d.any(|e| e.map(|e| e.path().join(".VURINFO").exists()).unwrap_or(false)))
-            .unwrap_or(false);
-    if !has_vurinfo {
-        tracing::warn!("VUR '{}' has no .VURINFO (neither root nor srcpkgs/*/.VURINFO)", name);
+    // El clon es --no-checkout: inspeccionar el object store, no el worktree.
+    // Vale tanto el .VURINFO raíz (array, p. ej. z-packages) como los
+    // <prefijo>/*/.VURINFO por plantilla (srcpkgs/ o su alias pkgs/).
+    if !repo_has_vurinfo(&repo) {
+        tracing::warn!("VUR '{}' has no .VURINFO (neither root nor per-template)", name);
     }
 
     // Save to repos.conf
@@ -78,6 +114,29 @@ fn repo_add(config: &Config, url: &str, name_opt: Option<&str>) -> Result<i32> {
     }
 
     Ok(0)
+}
+
+/// ¿El repo publica algún índice .VURINFO?
+///
+/// Inspecciona el object store (`git ls-tree -r HEAD`): los clones de vary
+/// son `--no-checkout`, así que mirar el worktree siempre daría falso.
+/// Detecta tanto el `.VURINFO` raíz (array) como los per-template
+/// (`srcpkgs/*/.VURINFO` o su alias `pkgs/*/.VURINFO`).
+fn repo_has_vurinfo(repo: &VurRepo) -> bool {
+    let output = Command::new(&repo.git_bin)
+        .arg("-C")
+        .arg(&repo.path)
+        .args(["ls-tree", "-r", "--name-only", "HEAD"])
+        .output();
+    let Ok(out) = output else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|l| l == ".VURINFO" || l.ends_with("/.VURINFO"))
 }
 
 fn repo_list(config: &Config) -> Result<i32> {

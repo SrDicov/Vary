@@ -27,7 +27,7 @@ pub fn key_dest_path(name: &str) -> String {
     format!("{}/vary-vur-{}.pem", keys_dir(), name)
 }
 
-fn write_root_file(
+pub(crate) fn write_root_file(
     contents: &str,
     dest: &str,
     mode: &str,
@@ -117,6 +117,77 @@ pub fn setup_binary_repo(
     let conf = format!("repository={}\n", binary_url);
     write_root_file(&conf, &repo_conf_path(&repo.name), "644", sudo_bin, sudo_flags)?;
     tracing::info!("repositorio binario '{}' registrado en {}", repo.name, repo_conf_path(&repo.name));
+    Ok(())
+}
+
+/// Registra un repo binario estilo VUP (adaptador Fase 1).
+///
+/// A diferencia de `setup_binary_repo` (una sola `binary_repo_url` + llave
+/// PEM en el clon), aquí hay una URL de repo por tupla categoría-arquitectura
+/// y la llave viene ya decodificada del plist del repo (`keys/*.plist`).
+/// Se escriben TODAS las `repository=` necesarias en el mismo conf, que es
+/// lo que xbps espera (un conf admite varias líneas `repository=`).
+pub fn setup_vup_binary_repo(
+    name: &str,
+    repo_urls: &[String],
+    key_pem: &str,
+    entry: &RepoEntry,
+    sudo_bin: &str,
+    sudo_flags: &[String],
+    no_confirm: bool,
+) -> Result<()> {
+    let mut urls: Vec<&str> = Vec::new();
+    for u in repo_urls {
+        let u = u.trim();
+        if !u.is_empty() && !urls.contains(&u) {
+            urls.push(u);
+        }
+    }
+    if urls.is_empty() {
+        bail!(
+            "el repo VUP '{}' no aporta ninguna URL binaria para esta arquitectura",
+            name
+        );
+    }
+
+    // Fingerprint sobre un temporal (reutiliza el cálculo estándar PEM→SHA256).
+    let tmp = tempfile::NamedTempFile::new().context("creando temporal para la llave")?;
+    std::fs::write(tmp.path(), key_pem).context("escribiendo llave temporal")?;
+    let fp = VurRepo::fingerprint_sha256(tmp.path())?;
+
+    if let Some(expected) = entry.key_fingerprint.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if expected.to_lowercase() != fp.to_lowercase() {
+            bail!(
+                "fingerprint de llave del repo '{}' NO coincide:\n  esperado (repos.conf): {}\n  recibido:              {}\n\
+                 Si el mantenedor rotó la llave legítimamente, ejecuta: vary --repo rekey {}",
+                name, expected, fp, name
+            );
+        }
+    } else {
+        tracing::warn!(
+            "el repo '{}' no declara key_fingerprint en repos.conf; verifica visualmente",
+            name
+        );
+    }
+    println!("Repo VUP '{}': llave pública verificada", name);
+    println!("  SHA256: {}", fp);
+    for u in &urls {
+        println!("  binary repo: {}", u);
+    }
+    if !confirm("¿Confiás en esta llave y deseas registrar estos repositorios binarios?", no_confirm)?
+    {
+        bail!("registro de repositorio binario cancelado por el usuario");
+    }
+
+    let dest_key = key_dest_path(name);
+    write_root_file(key_pem, &dest_key, "644", sudo_bin, sudo_flags)?;
+
+    let mut conf = String::new();
+    for u in &urls {
+        conf.push_str(&format!("repository={}\n", u));
+    }
+    write_root_file(&conf, &repo_conf_path(name), "644", sudo_bin, sudo_flags)?;
+    tracing::info!("repositorios binarios '{}' registrados en {}", name, repo_conf_path(name));
     Ok(())
 }
 

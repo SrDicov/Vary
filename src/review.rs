@@ -1,3 +1,4 @@
+use crate::vur_client::TEMPLATE_PREFIXES;
 use anyhow::Result;
 use std::process::{Command, Stdio};
 use std::path::Path;
@@ -7,10 +8,12 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
 
     println!("Reviewing changes for {} in {}...", pkg_name, clone_dir.display());
     
-    // Intentar leer vía git show (funciona sin checkout)
-    let prefixes = ["srcpkgs", ""];
+    // Intentar leer vía git show (funciona sin checkout).
+    // Prefijos conocidos + "" (flat); el primero que acierte gana.
+    let mut prefixes: Vec<String> = TEMPLATE_PREFIXES.iter().map(|s| s.to_string()).collect();
+    prefixes.push(String::new());
     let mut content = String::new();
-    
+
     for prefix in &prefixes {
         let path = if prefix.is_empty() {
             format!("{}/template", pkg_name)
@@ -33,10 +36,11 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
     
     if content.is_empty() {
         // Fallback: leer desde disco si ya materializado
-        let candidates = [
-            clone_dir.join("srcpkgs").join(pkg_name).join("template"),
-            clone_dir.join(pkg_name).join("template"),
-        ];
+        let mut candidates: Vec<std::path::PathBuf> = TEMPLATE_PREFIXES
+            .iter()
+            .map(|p| clone_dir.join(p).join(pkg_name).join("template"))
+            .collect();
+        candidates.push(clone_dir.join(pkg_name).join("template"));
         if let Some(path) = candidates.iter().find(|p| p.exists()) {
             content = std::fs::read_to_string(path).unwrap_or_default();
         }

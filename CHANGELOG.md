@@ -2,6 +2,27 @@
 
 All notable changes to vary will be documented in this file.
 
+## 0.2.5 - 2026-09-05
+
+### Added
+
+- `vary --repo add` accepts `--branch <rama>` and `--index-url <url>`; the
+  remote default branch is auto-detected (`main`, `master`, …) via
+  `git ls-remote --symref` with fallback to `main`.
+- VUP-style binary index adapter (Phase 1, `src/vup_index.rs`): repos
+  publishing `index.json` install binaries for the current architecture
+  without templates; key decoded from `keys/*.plist` and verified like any
+  VUR key. New `index_url` field in repos.conf, `--curl` / `curl_bin` config.
+- `pkgs/` accepted as alias of `srcpkgs/` in VUR layouts
+  (voiders-community/repository): listing, index fallback, materialize,
+  project and review.
+
+### Fixed
+
+- `repo add` `.VURINFO` check inspected the (always empty) `--no-checkout`
+  worktree, warning even when the repo publishes an index; it now inspects
+  the git object store and recognizes the root `.VURINFO` array.
+
 ## 0.2.1 - 2026-08-29
 
 ### Fixed

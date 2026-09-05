@@ -16,6 +16,10 @@ pub struct RepoEntry {
     pub priority: Option<i64>,
     pub key_fingerprint: Option<String>,
     pub binary_repo_url: Option<String>,
+    /// URL opcional de un índice binario estilo VUP (`index.json`).
+    /// Si está presente, vary instala los binarios de ese repo sin clonar
+    /// plantillas (adaptador Fase 1, ver `vup_index`).
+    pub index_url: Option<String>,
     pub enabled: Option<bool>,
 }
 
@@ -34,6 +38,12 @@ impl RepoEntry {
 
     pub fn has_binary(&self) -> bool {
         self.binary_repo_url
+            .as_deref()
+            .is_some_and(|url| !url.trim().is_empty())
+    }
+
+    pub fn has_vup_index(&self) -> bool {
+        self.index_url
             .as_deref()
             .is_some_and(|url| !url.trim().is_empty())
     }
@@ -130,6 +140,7 @@ enabled = true
         assert!(entry.enabled_or(true));
         assert!(!entry.enabled_or(false));
         assert!(!entry.has_binary());
+        assert!(!entry.has_vup_index());
         let blank_binary = RepoEntry {
             binary_repo_url: Some("   ".into()),
             ..Default::default()

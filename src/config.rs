@@ -102,6 +102,7 @@ pub struct Config {
     pub sudo_bin: String,
     pub sudo_flags: Vec<String>,
     pub git_bin: String,    /// Override de arquitectura (--arch); si es None se consulta a xbps.
+    pub curl_bin: String,
     pub arch_override: Option<String>,
 
     // Rutas base
@@ -145,6 +146,8 @@ struct GeneralSection {
     sudo_bin: Option<String>,
     /// Flags extra para el wrapper de elevación.
     sudo_flags: Option<Vec<String>>,
+    /// Binario curl para descargar índices remotos (index.json estilo VUP).
+    curl_bin: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -190,6 +193,7 @@ impl Config {
             sudo_bin: String::new(),
             sudo_flags: Vec::new(),
             git_bin: "git".to_string(),
+            curl_bin: "curl".to_string(),
             arch_override: None,
             cache_dir,
             data_dir,
@@ -238,6 +242,9 @@ impl Config {
         }
         if let Some(f) = file.general.sudo_flags.clone() {
             self.sudo_flags = f;
+        }
+        if let Some(c) = file.general.curl_bin.as_deref() {
+            self.curl_bin = c.to_string();
         }
         if let Some(n) = file.build.max_concurrent_builds {
             self.max_concurrent_builds = n;

@@ -134,12 +134,23 @@ pub fn install(config: &mut Config) -> Result<i32> {
         }
     }
 
-    // 3. Load indexes
+    // 3. Arquitectura (antes de los índices: el adaptador VUP filtra por arch).
+    let arch = config.arch();
+    // Try xbps-query architecture if not overridden
+    let arch = if config.arch_override.is_none() {
+        xbps::query_architecture().unwrap_or(arch)
+    } else {
+        arch
+    };
+
+    // 4. Load indexes
     let mut cache = CacheIndex::load(config.cache_index_path())?;
     let mut vur_map: HashMap<String, (String, VurInfo)> = HashMap::new();
     let mut provides_map: HashMap<String, Vec<(String, VurInfo)>> = HashMap::new();
     let mut binary_check: HashMap<String, bool> = HashMap::new();
     let mut priority_map: HashMap<String, i64> = HashMap::new();
+    // URL binaria por paquete para repos con índice VUP ("repo:pkg" -> URL).
+    let mut vup_binary_urls: HashMap<String, String> = HashMap::new();
 
     for repo in &repos {
         let entry = repos_conf.vur.get(&repo.name).unwrap();
@@ -149,7 +160,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("failed to load index for '{}': {}", repo.name, e);
-                continue;
+                Vec::new()
             }
         };
         for info in infos {
@@ -168,17 +179,47 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 binary_check.insert(format!("{}:{}", repo.name, sub.pkgname), has_binary);
             }
         }
+
+        // 4b. Adaptador VUP Fase 1: índice remoto estilo index.json.
+        // Los repos VUP no traen .VURINFO (layout srcpkgs/<cat>/<pkg>), así que
+        // el load_index normal los omite; aquí se inyectan sus paquetes como
+        // entradas binarias para la arquitectura actual.
+        if entry.has_vup_index() {
+            if let Some(index_url) = entry.index_url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                let cache_path = config.cache_dir.join(format!(
+                    "vup-index-{}.json",
+                    crate::vup_index::sanitize_repo_name(&repo.name)
+                ));
+                match crate::vup_index::fetch_index(
+                    &config.curl_bin,
+                    index_url,
+                    &cache_path,
+                    config.ttl_cache_seconds,
+                ) {
+                    Ok(idx) => {
+                        for (pkgname, vpkg) in &idx.packages {
+                            let Some((info, repo_url)) =
+                                crate::vup_index::to_vur_info(pkgname, vpkg, &arch)
+                            else {
+                                continue;
+                            };
+                            vur_map
+                                .entry(pkgname.clone())
+                                .or_insert((repo.name.clone(), info));
+                            binary_check.insert(format!("{}:{}", repo.name, pkgname), true);
+                            vup_binary_urls
+                                .entry(format!("{}:{}", repo.name, pkgname))
+                                .or_insert(repo_url);
+                        }
+                    }
+                    Err(e) => tracing::warn!("índice VUP '{}' no disponible: {:#}", repo.name, e),
+                }
+            }
+        }
     }
     let _ = cache.save();
 
-    // 4. Build source
-    let arch = config.arch();
-    // Try xbps-query architecture if not overridden
-    let arch = if config.arch_override.is_none() {
-        xbps::query_architecture().unwrap_or(arch)
-    } else {
-        arch
-    };
+    // 5. Build source
 
     let binpkgs_root = md.hostdir_binpkgs_root().display().to_string();
     let source = VurSource {
@@ -202,7 +243,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         return Ok(0);
     }
 
-    // 5. Show plan
+    // 6. Show plan
     let c = &config.color;
     if !plan.installs.is_empty() {
         println!("\n{} Packages to install (binary):", c.bold.paint("::"));
@@ -239,7 +280,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         return Ok(1);
     }
 
-    // 6. Builds
+    // 7. Builds
     let mut built_names: Vec<String> = Vec::new();
     for item in &plan.builds {
         // Ya instalada EXACTAMENTE esa versión => omitir compilación
@@ -283,7 +324,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         }
     }
 
-    // 7. Installs
+    // 8. Installs
     let mut all_install_names: Vec<String> = Vec::new();
     let mut binary_repos_configured: HashSet<String> = HashSet::new();
 
@@ -294,7 +335,26 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 if !binary_repos_configured.contains(repo) {
                     if let Some(r) = repos.iter().find(|r| &r.name == repo) {
                         let entry = repos_conf.vur.get(repo).unwrap();
-                        if let Err(e) = crate::keys::setup_binary_repo(r, entry, &config.sudo_bin, &config.sudo_flags, config.no_confirm) {
+                        if entry.has_vup_index() {
+                            // Repo estilo VUP: una URL binaria por categoría;
+                            // registrar las necesarias para los paquetes del plan.
+                            let mut urls: Vec<String> = Vec::new();
+                            for it in &plan.installs {
+                                if let Action::Install(BinarySource::VulBinary { repo: rr }) = &it.action {
+                                    if rr == repo {
+                                        if let Some(u) = vup_binary_urls.get(&format!("{}:{}", repo, it.name)) {
+                                            if !urls.contains(u) {
+                                                urls.push(u.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            let key_pem = crate::vup_index::read_repo_plist_key(&r.path)?;
+                            if let Err(e) = crate::keys::setup_vup_binary_repo(repo, &urls, &key_pem, entry, &config.sudo_bin, &config.sudo_flags, config.no_confirm) {
+                                bail!("failed to setup VUP binary repo '{}': {}", repo, e);
+                            }
+                        } else if let Err(e) = crate::keys::setup_binary_repo(r, entry, &config.sudo_bin, &config.sudo_flags, config.no_confirm) {
                             bail!("failed to setup binary repo '{}': {}", repo, e);
                         }
                     }
@@ -327,7 +387,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         }
     }
 
-    // 8. Record in db
+    // 9. Record in db
     let mut db = InstalledDb::load(config.installed_db_path())?;
     for item in plan.installs.iter().chain(plan.builds.iter()) {
         // Only VUR packages

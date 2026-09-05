@@ -32,8 +32,10 @@ vary -Ss firefox
 vary -S firefox
 
 # Register a remote VUR repo (cloned into ~/.local/share/vary/vurs/ and
-# registered in /etc/xbps.d/20-vur-<name>.conf)
+# registered in /etc/xbps.d/20-vur-<name>.conf).
+# The default branch is auto-detected (main, master, ...); override with --branch.
 vary --repo add https://git.example.com/user/vur.git
+vary --repo add https://github.com/SrDicov/z-packages z-packages --branch master
 ```
 
 Other commands available in the MVP: `-Si` (detailed info), `-Sw` (download without installing), `-R` (remove), `--repo list|remove|rekey`, `--force-build` (build from source even if a binary exists) and `--prefer-binary` (prefer signed binaries over compiling).
@@ -65,7 +67,24 @@ VUR repos are declared in `~/.config/vary/repos.conf`:
 url = "https://git.example.com/user/vur.git"
 branch = "main"
 priority = 10
+# Optional: VUP-style remote binary index (index.json). When set, vary
+# installs that repo's binaries for your architecture without needing
+# .VURINFO or templates (Phase 1 adapter, binary only).
+# index_url = "https://vup-linux.github.io/vup/index.json"
 ```
+
+Repos that publish a VUP-style `index.json` (e.g. VUP-Linux/vup) can be used
+for binary installs:
+
+```sh
+vary --repo add https://github.com/VUP-Linux/vup vup \
+  --index-url https://vup-linux.github.io/vup/index.json
+vary -S vlang   # binary install from the matching release repo
+```
+
+Notes: needs `curl` (configurable via `--curl` / `[general] curl_bin`); the
+repo's `keys/*.plist` key is verified like any VUR key (`key_fingerprint`
+in repos.conf); source builds from such repos are not supported yet.
 
 ## Binary repository
 

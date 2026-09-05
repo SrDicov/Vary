@@ -25,6 +25,10 @@ log_level = "info"
 # Flags extra que se anteponen al wrapper (equivalente CLI: --sudoflags).
 #sudo_flags = []
 
+# Binario curl para descargar índices remotos estilo VUP (index.json).
+# Equivalente CLI: --curl <bin>
+#curl_bin = "curl"
+
 [build]
 # Placeholder (MVP): los builds son secuenciales; se usará con tokio::sync::Semaphore en fase 2
 max_concurrent_builds = 2

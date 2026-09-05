@@ -34,9 +34,10 @@ pub fn help() {
     println!("{}", "    --sudo <bin>            privilege escalation tool: sudo, doas or run0 (default: auto-detected; unused as root)");
     println!("{}", "    --sudoflags <flags>     extra flags for the elevation tool");
     println!("{}", "    --git <bin>             git binary to use");
+    println!("{}", "    --curl <bin>            curl binary for remote indexes (default: curl)");
     println!();
     println!("Repo management:");
-    println!("{}", "    vary --repo add <url> [name]      Add a VUR repository");
+    println!("{}", "    vary --repo add <url> [name] [--branch <rama>] [--index-url <url>]  Add a VUR repository");
     println!("{}", "    vary --repo list                  List configured VURs");
     println!("{}", "    vary --repo remove <name> [-p]    Remove a VUR (-p also purges the clone)");
     println!("{}", "    vary --repo rekey <name>          Re-register binary repo key");

@@ -22,10 +22,11 @@ Entrada: `src/main.rs` → `vary::run()` (`src/lib.rs:58`) → `Config::new()` �
 
 - `resolver.rs` — resolver DAG puro, sin I/O; dependencias inyectadas vía `trait PackageSource`. **Los paquetes del repo oficial son hojas** (no se recursa en sus deps); solo `Action::Build` expande hostmakedepends+makedepends+depends.
 - `metadata.rs` — esquema `.VURINFO` v1 + validación (parsea objeto único o array).
-- `vur_client.rs` — clona repos VUR, fusiona índice desde `srcpkgs/*/.VURINFO` + `.VURINFO` raíz + fallback parseando template; pkgname duplicado = error. Copia (no symlink) las plantillas a `void-packages/srcpkgs/`.
+- `vur_client.rs` — clona repos VUR, fusiona índice desde `srcpkgs/*/.VURINFO` + `.VURINFO` raíz + fallback parseando template; pkgname duplicado = error. Layouts aceptados: `srcpkgs/<pkg>`, alias `pkgs/<pkg>` (voiders) y flat (`TEMPLATE_PREFIXES`). Copia (no symlink) las plantillas a `void-packages/srcpkgs/`. `detect_default_branch()` lee la rama por defecto del remoto (`git ls-remote --symref`); `repo add` la usa salvo `--branch` explícito.
+- `vup_index.rs` — adaptador binario Fase 1 para repos estilo VUP (index.json): descarga con curl, convierte a `VurInfo` sintéticos solo para la arch actual, decodifica la llave de `keys/*.plist`. Sin compilación desde fuente (layout `srcpkgs/<cat>/<pkg>` no soportado), sin `-Si`, sin tracking en installed.json.
 - `bootstrap.rs`/`masterdir.rs` — idempotentes: clonar void-packages → `binary-bootstrap` → escribir `/etc/xbps.d/10-vary.conf`. El bootstrap corre en flujos de instalación (`-S <pkg>`), NO en `-Syu` plano; además `xbps-src` se niega a correr como root (política de Void), así que los flujos completos requieren usuario normal + wrapper de elevación.
 - `config.rs`/`command_line.rs` — flags compatibles con pacman + subcomandos `--repo`.
-- Todos los binarios externos pasan por config: `git` (`--git`), sudo (`--sudo`). Nunca invoques `std::process::Command` sobre ellos directamente.
+- Todos los binarios externos pasan por config: `git` (`--git`), `curl` (`--curl`), sudo (`--sudo`). Nunca invoques `std::process::Command` sobre ellos directamente.
 
 ## Protocolo VUR
 
@@ -36,7 +37,7 @@ Entrada: `src/main.rs` → `vary::run()` (`src/lib.rs:58`) → `Config::new()` �
 ## Config y rutas
 
 - `~/.config/vary/vary.conf` (ejemplo en `etc/vary.conf.example`); archivo corrupto advierte, no aborta.
-- `~/.config/vary/repos.conf` gestionado con `vary --repo add|list|remove|rekey`; gana el `priority` más bajo; `vary --repo add <url>` deriva el nombre del último segmento de la URL sin `.git`.
+- `~/.config/vary/repos.conf` gestionado con `vary --repo add|list|remove|rekey`; gana el `priority` más bajo; `vary --repo add <url>` deriva el nombre del último segmento de la URL sin `.git`, autodetecta la rama (`--branch` la fuerza) y acepta `--index-url` para repos estilo VUP.
 - Caché: `~/.cache/vary/` (checkout void-packages, caché de búsqueda con clave `name:sha`, installed.json); clones VUR en `~/.local/share/vary/vurs/`.
 
 ## Gotchas
