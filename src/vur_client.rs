@@ -996,7 +996,7 @@ mod tests {
         };
         repo.ensure_cloned()?;
 
-        assert_eq!(repo.list_packages(), vec!["hyfetch".to_string()]);
+        assert_eq!(repo.list_packages()?, vec!["hyfetch".to_string()]);
 
         let (_cache_dir, mut cache) = fresh_cache()?;
         let idx = repo.load_index(&mut cache, None)?;
