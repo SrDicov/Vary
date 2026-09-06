@@ -630,6 +630,7 @@ fn has_unclosed_quote(buf: &str) -> bool {
 fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     // Unir continuaciones con \ y manejar valores multilínea entre comillas
     let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut raw_subpackages: Vec<(String, std::collections::HashMap<String, String>)> = Vec::new();
     let mut lines = content.lines().peekable();
     let mut buf = String::new();
 
@@ -646,14 +647,68 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
                     debug_path, trimmed
                 );
             }
-        // Ignorar definiciones de funciones y bloques shell
-        if trimmed.starts_with("do_") || trimmed.starts_with("pre_") || trimmed.starts_with("post_") || trimmed.starts_with("}") || trimmed.starts_with("{") {
-            // Si es inicio de función, saltar hasta }
-            if trimmed.contains("()") {
-                for l in lines.by_ref() {
-                    if l.trim() == "}" { break; }
+        // Detectar definiciones de funciones shell
+        if trimmed.contains("()") {
+            let fn_name = trimmed.split("()").next().unwrap_or("").trim();
+            if let Some(sub_name) = fn_name.strip_suffix("_package") {
+                let sub_name = sub_name.trim();
+                if !sub_name.is_empty() && crate::metadata::is_valid_pkgname(sub_name) {
+                    let mut sub_vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+                    let mut brace_depth = trimmed.matches('{').count();
+                    let mut found_open = brace_depth > 0;
+
+                    for l in lines.by_ref() {
+                        let l_trimmed = l.trim();
+                        let open_count = l.matches('{').count();
+                        if open_count > 0 {
+                            found_open = true;
+                        }
+                        brace_depth += open_count;
+                        brace_depth = brace_depth.saturating_sub(l.matches('}').count());
+
+                        if brace_depth == 1 && !l_trimmed.is_empty() && !l_trimmed.starts_with('#') {
+                            if let Some(eq) = l_trimmed.find('=') {
+                                let k = l_trimmed[..eq].trim().trim_end_matches('+');
+                                if matches!(k, "depends" | "short_desc") {
+                                    let mut v = l_trimmed[eq + 1..].trim().to_string();
+                                    if (v.starts_with('"') && v.ends_with('"') && v.len() >= 2)
+                                        || (v.starts_with('\'') && v.ends_with('\'') && v.len() >= 2)
+                                    {
+                                        v = v[1..v.len() - 1].to_string();
+                                    }
+                                    v = v.split_whitespace().collect::<Vec<_>>().join(" ");
+                                    sub_vars.insert(k.to_string(), v);
+                                }
+                            }
+                        }
+
+                        if found_open && brace_depth == 0 {
+                            break;
+                        }
+                    }
+
+                    raw_subpackages.push((sub_name.to_string(), sub_vars));
+                    continue;
                 }
             }
+
+            // Otra función: saltar con brace matching
+            let mut brace_depth = trimmed.matches('{').count();
+            let mut found_open = brace_depth > 0;
+            for l in lines.by_ref() {
+                let open_count = l.matches('{').count();
+                if open_count > 0 {
+                    found_open = true;
+                }
+                brace_depth += open_count;
+                brace_depth = brace_depth.saturating_sub(l.matches('}').count());
+                if found_open && brace_depth == 0 {
+                    break;
+                }
+            }
+            continue;
+        }
+        if trimmed.starts_with('}') || trimmed.starts_with('{') {
             continue;
         }
         // Acumular líneas con continuación \ o comillas abiertas
@@ -744,13 +799,47 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         if c == "SKIP" || c.starts_with("sha256:") { c } else { format!("sha256:{}", c) }
     }).collect();
 
+    let mut subpackages = Vec::new();
+    for (sub_name, sub_vars) in raw_subpackages {
+        if sub_name == pkgname || subpackages.iter().any(|s: &crate::metadata::Subpackage| s.pkgname == sub_name) {
+            continue;
+        }
+        let sub_depends: Vec<String> = sub_vars
+            .get("depends")
+            .map(|s| {
+                let expanded = s
+                    .replace("${sourcepkg}", &pkgname)
+                    .replace("$sourcepkg", &pkgname)
+                    .replace("${pkgname}", &pkgname)
+                    .replace("$pkgname", &pkgname)
+                    .replace("${version}", &version)
+                    .replace("$version", &version)
+                    .replace("${revision}", &revision.to_string())
+                    .replace("$revision", &revision.to_string());
+                expanded
+                    .split_whitespace()
+                    .map(|d| d.to_string())
+                    .filter(|d| !d.trim().is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let sub_short_desc = sub_vars.get("short_desc").cloned().filter(|s| !s.is_empty());
+
+        subpackages.push(crate::metadata::Subpackage {
+            pkgname: sub_name,
+            depends: sub_depends,
+            short_desc: sub_short_desc,
+        });
+    }
+
     let info = VurInfo {
         format_version: 1,
         pkgname: pkgname.clone(),
         version,
         revision,
         archs,
-        subpackages: vec![],
+        subpackages,
         depends: split_list("depends"),
         hostmakedepends: split_list("hostmakedepends"),
         makedepends: split_list("makedepends"),
@@ -1161,5 +1250,48 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
         assert!(!is_safe_git_url("https://example.org/repo.git\n--upload-pack=evil"));
         assert!(!is_safe_git_url(""));
         assert!(!is_safe_git_url("   "));
+    }
+
+    #[test]
+    fn parse_template_extracts_subpackages_and_preserves_parent_vars() -> Result<()> {
+        let content = r#"
+# Template con subpaquetes
+pkgname=myproject
+version=2.5.0
+revision=3
+archs="x86_64 aarch64"
+short_desc="My awesome parent project"
+depends="glibc openssl"
+checksum="SKIP"
+
+do_build() {
+    cargo build --release
+}
+
+myproject-devel_package() {
+    short_desc="My awesome development files"
+    depends="${sourcepkg}>=${version}_${revision} headers"
+}
+
+myproject-doc_package() {
+    short_desc="My awesome documentation"
+}
+"#;
+        let info = parse_template_text(content, "test:subpkgs")?;
+        assert_eq!(info.pkgname, "myproject");
+        assert_eq!(info.version, "2.5.0");
+        assert_eq!(info.revision, 3);
+        assert_eq!(info.depends, vec!["glibc", "openssl"]);
+        assert_eq!(info.subpackages.len(), 2);
+
+        let devel = info.subpackages.iter().find(|s| s.pkgname == "myproject-devel").unwrap();
+        assert_eq!(devel.short_desc.as_deref(), Some("My awesome development files"));
+        assert_eq!(devel.depends, vec!["myproject>=2.5.0_3", "headers"]);
+
+        let doc = info.subpackages.iter().find(|s| s.pkgname == "myproject-doc").unwrap();
+        assert_eq!(doc.short_desc.as_deref(), Some("My awesome documentation"));
+        assert!(doc.depends.is_empty());
+
+        Ok(())
     }
 }

@@ -282,7 +282,7 @@
 - **Impacto:** En sistemas que utilizan `doas` o `run0` (o cuando vary corre como root), el post-install hook falla silenciosamente o intenta invocar un binario `sudo` inexistente, rompiendo la configuración de servicios.
 - **Fix propuesto:** Conectar `src/init.rs` con `crate::elevate::elevate(sudo_bin, sudo_flags, ...)`.
 - **Validación:** Test ejecutando hooks con wrapper no-sudo.
-- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit: pendiente de commit H-014)
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `3a36641`)
 
 ---
 
@@ -335,7 +335,7 @@
 - **Impacto:** Las funciones `<subpkg>_package()` no son detectadas como funciones de subpaquetes y sus asignaciones de variables sobreescriben las del paquete padre en el HashMap `vars`. Los subpaquetes requeridos por dependencias se vuelven completamente invisibles.
 - **Fix propuesto:** Extraer bloques `<subpkg>_package()` identificando el nombre del subpaquete y asignando sus variables a estructuras `VurSubpackage`.
 - **Validación:** Test parseando templates con subpaquetes como `foo-devel` o `foo-doc`.
-- **Estado:** PENDIENTE
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `6571158`)
 
 ---
 

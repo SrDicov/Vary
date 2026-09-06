@@ -267,7 +267,7 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 ### [H-014] Bypass del wrapper agnóstico de elevación y ejecución descontrolada con hardcode de Command::new("sudo")
 - **Severidad:** High
 - **Módulo:** `src/init.rs:5-40`, `src/install.rs:488`
-- **Commit:** Pendiente de commit `fix(H-014): use agnostic elevation in init service hook`
+- **Commit:** `3a36641` (`fix(H-014): use agnostic elevation in init service hook`)
 - **Descripción del problema:** En `src/init.rs`, `post_install_hook` invocaba directamente `Command::new("sudo")` para habilitar/iniciar servicios (dinitctl, ln), ignorando la configuración agnóstica de elevación (`sudo_bin`, `sudo_flags`, opendoas, run0 o ejecución como root directo), y utilizaba `.unwrap()` sobre rutas (`sv_dir`, `service_link`).
 - **Remediación:**
   1. Se actualizó la firma de `post_install_hook` para recibir `sudo_bin: &str, sudo_flags: &[String]` y se pasó desde `src/install.rs:488`.
@@ -279,6 +279,25 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `cargo test`
   - `cargo clippy --all-targets -- -D warnings`
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-017] Omisión total de subpaquetes y sobreescritura de variables padre en parser de templates
+- **Severidad:** High
+- **Módulo:** `src/vur_client.rs:650-710, 800-840, 1250-1290`
+- **Commit:** `6571158` (`fix(H-017): parse subpackages and isolate parent variables in template parser`)
+- **Descripción del problema:** En `parse_template_text`, el campo `subpackages` se inicializaba rígidamente como `vec![]`, omitiendo los subpaquetes generados por plantillas (`<subpkg>_package()`). Asimismo, si una función de subpaquete contenía asignaciones (`depends`, `short_desc`), existía riesgo de sobreescribir las variables globales del paquete padre en el mapa de variables o truncar el parseo.
+- **Remediación:**
+  1. Se implementó detección estricta de funciones `<subpkg>_package()` con seguimiento de anidamiento de llaves (`brace_depth`), aislando variables locales (`depends`, `short_desc`) y evitando sobreescritura de variables del paquete padre.
+  2. Las funciones de subpaquete se procesan expandiendo variables estándares de Void (`${sourcepkg}`, `${pkgname}`, `${version}`, `${revision}`).
+  3. Se construyen instancias de `Subpackage` y se asignan a `VurInfo::subpackages`, validando nombres válidos y evitando duplicados con el paquete padre.
+  4. Se implementó la prueba unitaria `parse_template_extracts_subpackages_and_preserves_parent_vars` en `vur_client::tests`.
+- **Validación:**
+  - `vur_client::tests::parse_template_extracts_subpackages_and_preserves_parent_vars`
+  - `cargo test vur_client` (11 tests pasando).
+  - `cargo clippy --all-targets -- -D warnings`
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
 
 
 
