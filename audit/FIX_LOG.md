@@ -186,6 +186,12 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Validación:**
   - `cargo clippy --all-targets -- -D warnings` (100% limpio, 0 advertencias, 0 errores).
   - `cargo test` (106 tests pasando).
+  - **Enmienda (2026-09-06):** el fix original nunca se validó en CI y quedó
+    incompleto ante el clippy de Actions 1.88 (`uninlined_format_args`,
+    112 errores en el baseline del 2026-09-06). Cierre real en CI:
+    `976d1af` (`fix(clippy): inline format args`, reescritura mecánica
+    verificada por muestreo) + `302a966` (último sitio en `metadata.rs`);
+    run verde con 119 passed / 4 ignored. Ver regla de cierre al inicio.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
 
 ---
@@ -307,7 +313,8 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 ### [H-017] Omisión total de subpaquetes y sobreescritura de variables padre en parser de templates
 - **Severidad:** High
 - **Módulo:** `src/vur_client.rs:650-710, 800-840, 1250-1290`
-- **Commit:** `6571158` (`fix(H-017): parse subpackages and isolate parent variables in template parser`)
+- **Commit:** `91e233c` (`fix(H-017): parse subpackages and isolate parent variables in template parser`)
+  - Nota (2026-09-06): esta entrada citaba `6571158`, hash que no corresponde al commit del fix. Reconciliado contra `git log`.
 - **Descripción del problema:** En `parse_template_text`, el campo `subpackages` se inicializaba rígidamente como `vec![]`, omitiendo los subpaquetes generados por plantillas (`<subpkg>_package()`). Asimismo, si una función de subpaquete contenía asignaciones (`depends`, `short_desc`), existía riesgo de sobreescribir las variables globales del paquete padre en el mapa de variables o truncar el parseo.
 - **Remediación:**
   1. Se implementó detección estricta de funciones `<subpkg>_package()` con seguimiento de anidamiento de llaves (`brace_depth`), aislando variables locales (`depends`, `short_desc`) y evitando sobreescritura de variables del paquete padre.

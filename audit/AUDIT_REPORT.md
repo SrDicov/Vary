@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 7 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-022]) | 9 |
+| 🟠 **High** | 16 | 8 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-017], [H-022]) | 8 |
 | 🟡 **Medium** | 15 | 0 | 15 |
-| 🟢 **Low / Info** | 8 | 0 | 8 |
-| **TOTAL** | **47** | **15** | **32** |
+| 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
+| **TOTAL** | **47** | **17** | **30** |
 
 ---
 
@@ -335,7 +335,7 @@
 - **Impacto:** Las funciones `<subpkg>_package()` no son detectadas como funciones de subpaquetes y sus asignaciones de variables sobreescriben las del paquete padre en el HashMap `vars`. Los subpaquetes requeridos por dependencias se vuelven completamente invisibles.
 - **Fix propuesto:** Extraer bloques `<subpkg>_package()` identificando el nombre del subpaquete y asignando sus variables a estructuras `VurSubpackage`.
 - **Validación:** Test parseando templates con subpaquetes como `foo-devel` o `foo-doc`.
-- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `6571158`)
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `91e233c`)
 
 ---
 
@@ -410,7 +410,7 @@
 - **Impacto:** Código no idiomático, malas prácticas de Rust, castings redundantes y bugs latentes de paridad.
 - **Fix propuesto:** Remediación integral de las 15 categorías de lints de clippy sin usar `#[allow]` cosméticos.
 - **Validación:** `cargo clippy --all-targets -- -D warnings` 100% limpio.
-- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `8612906`)
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `8612906`; cierre real en CI ver FIX_LOG: `976d1af` + `302a966`)
 
 ---
 
