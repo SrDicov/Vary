@@ -366,3 +366,18 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `signal::tests::bloqueo_de_senales_se_restaura_con_drop` (la máscara no fuga).
   - Run CI verde en el commit del fix. El caso SIGINT-durante-spawn queda para el smoke en Void real (FASE 5, humano).
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-019] Falta de mensaje explicativo al denegar por EOF en no-TTY
+- **Severidad:** High
+- **Módulo:** `src/util.rs:46-80`
+- **Commit:** `fix(H-019)` (`git log --oneline --grep="H-019"`)
+- **Descripción del problema:** Tras H-001, stdin EOF denegaba bien pero `install` abortaba con código 1 en silencio, sin indicar `--noconfirm`.
+- **Remediación:**
+  1. `confirm_from_reader` devuelve `Result<Option<bool>>` (`None` = EOF/error I/O), distinguiendo denegación explícita de falta de entrada.
+  2. `confirm()` emite a stderr `EOF_DENIAL_HINT` ("...usa --noconfirm.") antes de denegar. Firma intacta: `init.rs`, `install.rs`, `keys.rs` sin cambios.
+- **Validación:**
+  - Tests actualizados a `Option` + `eof_hint_points_to_noconfirm` (el texto fija `--noconfirm`).
+  - Emisión real con stdin `/dev/null` queda para el smoke en Void real (FASE 5, humano; va a VALIDATION.md).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

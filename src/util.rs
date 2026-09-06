@@ -43,18 +43,24 @@ pub fn ask(config: &Config, question: &str, default: bool) -> bool {
     ask_from_reader(&mut stdin().lock(), default)
 }
 
-pub fn confirm_from_reader<R: BufRead>(reader: &mut R) -> Result<bool> {
+/// Hint visible cuando la confirmación se deniega por EOF (H-019): sin esto
+/// las corridas en CI/pipes abortaban con código 1 sin explicar por qué.
+pub(crate) const EOF_DENIAL_HINT: &str = "error: stdin llegó a EOF sin confirmación. En entornos no interactivos (CI/pipes), usa --noconfirm.";
+
+pub fn confirm_from_reader<R: BufRead>(reader: &mut R) -> Result<Option<bool>> {
     let mut line = String::new();
     let n = match reader.read_line(&mut line) {
         Ok(n) => n,
-        Err(_) => return Ok(false),
+        Err(_) => return Ok(None),
     };
     if n == 0 {
         // EOF en stdin (pipe cerrado, /dev/null, no-TTY): denegación estricta
-        return Ok(false);
+        return Ok(None);
     }
     let t = line.trim().to_lowercase();
-    Ok(t.is_empty() || t == "y" || t == "yes" || t == "s" || t == "si")
+    Ok(Some(
+        t.is_empty() || t == "y" || t == "yes" || t == "s" || t == "si",
+    ))
 }
 
 /// Confirmación y/n compartida por install/keys. `no_confirm` => true.
@@ -64,7 +70,14 @@ pub fn confirm(prompt: &str, no_confirm: bool) -> Result<bool> {
     }
     print!("{prompt} [Y/n] ");
     let _ = stdout().lock().flush();
-    confirm_from_reader(&mut stdin().lock())
+    match confirm_from_reader(&mut stdin().lock())? {
+        Some(answer) => Ok(answer),
+        // EOF: denegar (H-001) PERO explicando cómo proceder (H-019).
+        None => {
+            eprintln!("{EOF_DENIAL_HINT}");
+            Ok(false)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -75,27 +88,35 @@ mod tests {
     #[test]
     fn confirm_eof_results_in_denial() {
         let mut eof = Cursor::new(b"");
-        assert!(!confirm_from_reader(&mut eof).unwrap());
+        assert_eq!(confirm_from_reader(&mut eof).unwrap(), None);
     }
 
     #[test]
     fn confirm_newline_accepts_default() {
         let mut newline = Cursor::new(b"\n");
-        assert!(confirm_from_reader(&mut newline).unwrap());
+        assert_eq!(confirm_from_reader(&mut newline).unwrap(), Some(true));
     }
 
     #[test]
     fn confirm_explicit_denial() {
         let mut no = Cursor::new(b"n\n");
-        assert!(!confirm_from_reader(&mut no).unwrap());
+        assert_eq!(confirm_from_reader(&mut no).unwrap(), Some(false));
     }
 
     #[test]
     fn confirm_explicit_approval() {
         let mut yes = Cursor::new(b"yes\n");
-        assert!(confirm_from_reader(&mut yes).unwrap());
+        assert_eq!(confirm_from_reader(&mut yes).unwrap(), Some(true));
         let mut si = Cursor::new(b"si\n");
-        assert!(confirm_from_reader(&mut si).unwrap());
+        assert_eq!(confirm_from_reader(&mut si).unwrap(), Some(true));
+    }
+
+    #[test]
+    fn eof_hint_points_to_noconfirm() {
+        assert!(
+            EOF_DENIAL_HINT.contains("--noconfirm"),
+            "el hint debe decir cómo proceder en CI/pipes"
+        );
     }
 
     #[test]
