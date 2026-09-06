@@ -245,12 +245,56 @@ pub fn search_official(pattern: &str) -> Result<Vec<PkgInfo>> {
         .collect())
 }
 
-/// Lista los paquetes instalados manualmente: `xbps-query -m`.
+/// Nombres de paquetes oficiales en UNA sola consulta masiva (E2 fast-path).
+///
+/// `xbps-query -Rs ""` contra **solo** los repos oficiales del sistema
+/// (`--ignore-conf-repos` + URLs de [`official_repo_urls`], igual que
+/// [`search_official`]): así el set nunca contiene paquetes del binrepo local
+/// de vary y un positivo es confiable sin confirmación.
+///
+/// Política: el set es un **acelerador puro, no una decisión**. Si un nombre
+/// NO está en el set, el llamador debe confirmar con el query escalar
+/// (cubre virtuales, rarezas de formato y cualquier falso negativo) antes de
+/// decidir `Build`. El set es una snapshot del inicio del sync: se invalida
+/// al terminar (se dropea con la sesión) y no refleja deps instaladas
+/// durante la transacción.
+///
+/// Sin URLs oficiales detectadas o si el bulk falla => `None` (el llamador
+/// degrada al path escalar de siempre).
+pub fn bulk_official_names() -> Option<std::collections::HashSet<String>> {
+    let urls = official_repo_urls();
+    if urls.is_empty() {
+        return None;
+    }
+    let mut owned: Vec<String> = vec!["--ignore-conf-repos".to_string()];
+    for u in &urls {
+        owned.push("--repository".to_string());
+        owned.push(u.clone());
+    }
+    owned.push("-Rs".to_string());
+    owned.push(String::new());
+    let args: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+    let out = run_capture(XBPS_QUERY, &args).ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(names_from_search_output(&stdout_text(&out)))
+}
+
+/// Nombres (`rsplit_once('-')` vía [`parse_search_line`]: repo y
+/// `versión_rev` fuera) de una salida `-Rs`. Pura y testeable sin xbps.
+pub fn names_from_search_output(text: &str) -> std::collections::HashSet<String> {
+    text.lines()
+        .filter_map(parse_search_line)
+        .map(|h| h.name)
+        .collect()
+}
 ///
 /// Cada línea se parte por espacios en blanco: si hay >=2 columnas se
 /// devuelve la segunda (formato tipo `ii name-ver ...`); si solo hay una, la
 /// línea entera recortada. Líneas vacías se ignoran; rc != 0 se tolera igual
 /// que en [`search_remote`] (sin hits => `Ok(vec![])`).
+/// Lista los paquetes instalados manualmente: `xbps-query -m`.
 pub fn query_manual() -> Result<Vec<String>> {
     let out = run_capture(XBPS_QUERY, &["-m"])?;
     Ok(manual_names(&stdout_text(&out)))
@@ -338,8 +382,13 @@ fn status_code(cmd: &mut Command) -> Result<i32> {
 /// Ejecuta `./xbps-src <args>` con `current_dir(masterdir)` heredando stdio
 /// (progreso en vivo); devuelve el código de salida.
 ///
+/// El hijo corre en su **propio grupo de proceso** (`setpgid` en `pre_exec`)
+/// para que el hilo observador de señales pueda matarlo con `kill(-pid)` sin
+/// tocar a vary; su pid se registra durante la espera. Los builds cortos e
+/// interactivos (`install`/`remove_recursive`) quedan en el grupo de vary.
+///
 /// Error claro si `masterdir/xbps-src` no existe.
-pub fn xbps_src(masterdir: &Path, args: &[&str]) -> Result<i32> {
+pub fn xbps_src(masterdir: &Path, args: &[&str], makejobs: Option<usize>) -> Result<i32> {
     let script = masterdir.join("xbps-src");
     if !script.is_file() {
         bail!(
@@ -349,7 +398,28 @@ pub fn xbps_src(masterdir: &Path, args: &[&str]) -> Result<i32> {
     }
     let mut cmd = Command::new("./xbps-src");
     cmd.current_dir(masterdir).args(args);
-    status_code(&mut cmd)
+    if let Some(j) = makejobs {
+        cmd.env("XBPS_MAKEJOBS", j.to_string());
+    } else if std::env::var("XBPS_MAKEJOBS").is_err() {
+        let n = std::thread::available_parallelism().map(|p| p.get()).unwrap_or(1);
+        cmd.env("XBPS_MAKEJOBS", n.to_string());
+    }
+    // Grupo propio: el observador mata el grupo completo (nietos make/ninja
+    // incluidos) ante SIGINT/SIGTERM.
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        cmd.pre_exec(|| {
+            nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
+                .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
+        });
+    }
+    let mut child = cmd.spawn().map_err(|e| spawn_error("./xbps-src", e))?;
+    let pid = child.id();
+    crate::signal::register_child(pid);
+    let status = child.wait().map_err(|e| spawn_error("./xbps-src", e));
+    crate::signal::unregister_child(pid);
+    Ok(status?.code().unwrap_or(-1))
 }
 
 #[cfg(test)]
@@ -421,6 +491,28 @@ mod tests {
         for line in ["", "   \t ", "[-]", "[-]   "] {
             assert!(parse_search_line(line).is_none(), "linea {line:?}");
         }
+    }
+
+    #[test]
+    fn bulk_names_stripea_repo_y_version() {
+        // Papercut E2: el prefijo [repo] y `-versión_rev` no deben contaminar.
+        let out = "[-] firefox-146.0_1  Firefox web browser\n\
+                   [*] [multilib] lib32-alsa-lib-1.2.14_1  ALSA\n\
+                   [-] foo-bar-1.2.3_1  guiones en nombre\n\
+                   \n\
+                   [-]   \n";
+        let set = names_from_search_output(out);
+        assert!(set.contains("firefox"));
+        assert!(set.contains("lib32-alsa-lib"));
+        assert!(set.contains("foo-bar"));
+        assert_eq!(set.len(), 3);
+    }
+
+    #[test]
+    fn bulk_sin_xbps_devuelve_none_sin_panico() {
+        // Fuera de Void (CI ubuntu) no hay xbps ni repos: degrada a None.
+        // En Void real puede devolver Some; ambos son correctos aquí.
+        let _ = bulk_official_names();
     }
 
     // ---------- parse_installed_props (query_installed) ----------

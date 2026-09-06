@@ -221,9 +221,25 @@ pub fn install(config: &mut Config) -> Result<i32> {
 
     // 5. Build source
 
+    // E2 fast-path: snapshot de oficiales al inicio del sync en UNA sola
+    // consulta masiva. Se invalida al terminar (se dropea con esta función)
+    // y no refleja deps instaladas durante la transacción. Miss => la
+    // confirmación escalar de abajo preserva la corrección (virtuales,
+    // falsos negativos de formato); el bulk solo acelera, nunca decide.
+    let bulk: Option<std::sync::Arc<HashSet<String>>> =
+        crate::xbps::bulk_official_names().map(std::sync::Arc::new);
+    match &bulk {
+        Some(s) => tracing::debug!("bulk oficial: {} paquetes", s.len()),
+        None => tracing::debug!("bulk oficial no disponible; path escalar"),
+    }
     let binpkgs_root = md.hostdir_binpkgs_root().display().to_string();
     let source = VurSource {
-        official_exists_fn: Box::new(move |n| official_exists_remote(n, &binpkgs_root)),
+        official_exists_fn: Box::new(move |n| {
+            if bulk.as_ref().is_some_and(|s| s.contains(n)) {
+                return true;
+            }
+            official_exists_remote(n, &binpkgs_root)
+        }),
         vur_map,
         provides_map,
         binary_check,
@@ -261,7 +277,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         for item in &plan.builds {
             println!("  {}/{}", item.name, item.info.pkgver());
         }
-        println!("\n{}", c.warning.paint("Builds are sequential in MVP (xbps-src handles -j internally)"));
+        println!("\n{}", c.warning.paint(&format!("Builds son secuenciales (paralelismo vía XBPS_MAKEJOBS={})", config.makejobs)));
     }
     println!();
 
@@ -280,7 +296,78 @@ pub fn install(config: &mut Config) -> Result<i32> {
         return Ok(1);
     }
 
-    // 7. Builds
+    // 7. Pre-fetch en paralelo para todas las fuentes del DAG antes de compilar
+    let to_build_items: Vec<_> = plan
+        .builds
+        .iter()
+        .filter(|item| {
+            if !config.force_rebuild && !config.force_build {
+                if let Ok(Some(cur)) = crate::xbps::query_installed(&item.name) {
+                    if cur.pkgver == item.info.pkgver() {
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .collect();
+
+    if !to_build_items.is_empty() {
+        let mut distinct_parents: Vec<String> = Vec::new();
+        let mut pkg_to_repo: HashMap<String, String> = HashMap::new();
+        for item in &to_build_items {
+            let parent = item.info.pkgname.clone();
+            if !distinct_parents.contains(&parent) {
+                if let Ok(repo_name) = vur_map_lookup_repo(&parent, &repos, &mut cache)
+                    .or_else(|_| vur_map_lookup_repo(&item.name, &repos, &mut cache))
+                {
+                    pkg_to_repo.insert(parent.clone(), repo_name);
+                    distinct_parents.push(parent);
+                }
+            }
+        }
+
+        if !distinct_parents.is_empty() {
+            println!(
+                "{} Pre-descargando fuentes en paralelo ({} paquetes)...",
+                c.action.paint("::"),
+                distinct_parents.len()
+            );
+
+            let workers = config.makejobs.clamp(1, 8);
+            let queue = std::sync::Mutex::new(distinct_parents.into_iter());
+            std::thread::scope(|s| {
+                for _ in 0..workers {
+                    s.spawn(|| {
+                        loop {
+                            let next_pkg = {
+                                let mut q = match queue.lock() {
+                                    Ok(guard) => guard,
+                                    Err(poisoned) => poisoned.into_inner(),
+                                };
+                                q.next()
+                            };
+                            let Some(pkg) = next_pkg else { break };
+                            if crate::signal::is_shutting_down() {
+                                break;
+                            }
+                            if let Some(repo_name) = pkg_to_repo.get(&pkg) {
+                                if let Some(repo) = repos.iter().find(|r| &r.name == repo_name) {
+                                    let _ = repo.materialize_pkg(&pkg);
+                                    let _ = repo.project_pkg(&md.srcpkgs_dir(), &pkg, false);
+                                    tracing::debug!("pre-fetching fuentes para {}", pkg);
+                                    let _ = md.fetch_pkg(&pkg);
+                                    let _ = repo.unproject_pkg(&md.srcpkgs_dir(), &pkg);
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    // Builds secuenciales
     let mut built_names: Vec<String> = Vec::new();
     for item in &plan.builds {
         // Ya instalada EXACTAMENTE esa versión => omitir compilación
@@ -311,7 +398,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         });
         repo.materialize_pkg(&parent_pkg)?;
         repo.project_pkg(&md.srcpkgs_dir(), &parent_pkg, explicit)?;
-        let res = md.build_pkg(&parent_pkg);
+        let res = md.build_pkg(&parent_pkg, config.makejobs);
         // Always unproject (proyectamos parent_pkg)
         let _ = repo.unproject_pkg(&md.srcpkgs_dir(), &parent_pkg);
         res.with_context(|| format!("building {}", parent_pkg))?;
@@ -328,28 +415,35 @@ pub fn install(config: &mut Config) -> Result<i32> {
     let mut all_install_names: Vec<String> = Vec::new();
     let mut binary_repos_configured: HashSet<String> = HashSet::new();
 
+    // URLs binarias VUP por repo (una por categoría), precalculadas UNA vez
+    // fuera del loop (antes se reconstruían por cada repo configurado).
+    let mut vup_urls_by_repo: HashMap<String, Vec<String>> = HashMap::new();
+    for it in &plan.installs {
+        if let Action::Install(BinarySource::VulBinary { repo: rr }) = &it.action {
+            if let Some(u) = vup_binary_urls.get(&format!("{}:{}", rr, it.name)) {
+                let urls = vup_urls_by_repo.entry(rr.clone()).or_default();
+                if !urls.contains(u) {
+                    urls.push(u.clone());
+                }
+            }
+        }
+    }
+
     for item in &plan.installs {
         match &item.action {
             Action::Install(BinarySource::Official) => all_install_names.push(item.name.clone()),
             Action::Install(BinarySource::VulBinary { repo }) => {
                 if !binary_repos_configured.contains(repo) {
                     if let Some(r) = repos.iter().find(|r| &r.name == repo) {
-                        let entry = repos_conf.vur.get(repo).unwrap();
+                        let entry = repos_conf
+                            .vur
+                            .get(repo)
+                            .ok_or_else(|| anyhow::anyhow!("repositorio '{}' no encontrado en repos.conf", repo))?;
                         if entry.has_vup_index() {
                             // Repo estilo VUP: una URL binaria por categoría;
                             // registrar las necesarias para los paquetes del plan.
-                            let mut urls: Vec<String> = Vec::new();
-                            for it in &plan.installs {
-                                if let Action::Install(BinarySource::VulBinary { repo: rr }) = &it.action {
-                                    if rr == repo {
-                                        if let Some(u) = vup_binary_urls.get(&format!("{}:{}", repo, it.name)) {
-                                            if !urls.contains(u) {
-                                                urls.push(u.clone());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            let urls: Vec<String> =
+                                vup_urls_by_repo.get(repo).cloned().unwrap_or_default();
                             let key_pem = crate::vup_index::read_repo_plist_key(&r.path)?;
                             if let Err(e) = crate::keys::setup_vup_binary_repo(repo, &urls, &key_pem, entry, &config.sudo_bin, &config.sudo_flags, config.no_confirm) {
                                 bail!("failed to setup VUP binary repo '{}': {}", repo, e);

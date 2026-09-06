@@ -1,7 +1,8 @@
 //! Administración del masterdir de void-packages.
 //!
 //! Void ya compila en el sandbox nativo de `xbps-src`; este módulo solo
-//! administra la ruta base y delega el ciclo de vida de la compilación.
+//! administra la ruta base y delega el ciclo de vida de la compilación
+//! de forma secuencial y determinista (Opción A).
 use crate::xbps::xbps_src;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -29,7 +30,7 @@ impl Masterdir {
     /// base dentro del namespace del masterdir. Idempotente.
     pub fn binary_bootstrap(&self) -> Result<()> {
         tracing::info!("ejecutando ./xbps-src binary-bootstrap (puede tardar)...");
-        let code = xbps_src(&self.path, &["binary-bootstrap"])
+        let code = xbps_src(&self.path, &["binary-bootstrap"], None)
             .context("falló ./xbps-src binary-bootstrap")?;
         if code != 0 {
             anyhow::bail!("./xbps-src binary-bootstrap terminó con código {}", code);
@@ -46,78 +47,16 @@ impl Masterdir {
         self.path.join("hostdir").join("binpkgs")
     }
 
-    /// Compila un paquete: `./xbps-src pkg <pkg>` dentro del masterdir usando OverlayFS si es posible.
-    pub fn build_pkg(&self, pkg: &str) -> Result<()> {
-        let lower = &self.path;
-        let upper = std::env::temp_dir().join(format!("vary-upper-{}", pkg));
-        let work = std::env::temp_dir().join(format!("vary-work-{}", pkg));
-        let merged = std::env::temp_dir().join(format!("vary-merged-{}", pkg));
-        
-        let mut isolated = false;
-        let mut used_sudo = false;
-        if std::fs::create_dir_all(&upper).is_ok() && std::fs::create_dir_all(&work).is_ok() && std::fs::create_dir_all(&merged).is_ok() {
-            let mount_cmd = std::process::Command::new("sudo")
-                .args([
-                    "mount", "-t", "overlay", "overlay",
-                    "-o", &format!("lowerdir={},upperdir={},workdir={}", lower.display(), upper.display(), work.display()),
-                    &merged.display().to_string(),
-                ])
-                .status();
-            
-            isolated = match mount_cmd {
-                Ok(s) if s.success() => {
-                    used_sudo = true;
-                    true
-                }
-                _ => {
-                    let fuse_cmd = std::process::Command::new("fuse-overlayfs")
-                        .args([
-                            "-o", &format!("lowerdir={},upperdir={},workdir={}", lower.display(), upper.display(), work.display()),
-                            &merged.display().to_string(),
-                        ])
-                        .status();
-                    matches!(fuse_cmd, Ok(s) if s.success())
-                }
-            };
+    /// Compila un paquete: `./xbps-src pkg <pkg>` dentro del masterdir de
+    /// forma secuencial y determinista, pasando `makejobs` a `XBPS_MAKEJOBS`.
+    pub fn build_pkg(&self, pkg: &str, makejobs: usize) -> Result<()> {
+        if crate::signal::is_shutting_down() {
+            anyhow::bail!("interrumpido por señal antes de compilar {}", pkg);
         }
 
-        let target_dir = if isolated { &merged } else { lower };
-
-        tracing::info!("compilando {} con xbps-src (aislado: {})...", pkg, isolated);
-        let code = xbps_src(target_dir, &["pkg", pkg])
+        tracing::info!("compilando {} con xbps-src (makejobs: {})...", pkg, makejobs);
+        let code = xbps_src(&self.path, &["pkg", pkg], Some(makejobs))
             .with_context(|| format!("falló ./xbps-src pkg {}", pkg))?;
-            
-        if isolated {
-            let merged_binpkgs = merged.join("hostdir").join("binpkgs");
-            let target_binpkgs = lower.join("hostdir").join("binpkgs");
-            if merged_binpkgs.exists() {
-                std::fs::create_dir_all(&target_binpkgs).ok();
-                // Copiar el contenido para evitar binpkgs/binpkgs
-                let copy_cmd = if used_sudo {
-                    std::process::Command::new("sudo")
-                        .args(["cp", "-aT", &merged_binpkgs.display().to_string(), &target_binpkgs.display().to_string()])
-                        .status()
-                } else {
-                    std::process::Command::new("cp")
-                        .args(["-aT", &merged_binpkgs.display().to_string(), &target_binpkgs.display().to_string()])
-                        .status()
-                };
-                if let Err(e) = copy_cmd {
-                    tracing::warn!("falló al copiar binpkgs: {}", e);
-                }
-            }
-            
-            if used_sudo {
-                let _ = std::process::Command::new("sudo").args(["umount", &merged.display().to_string()]).status();
-                let _ = std::process::Command::new("sudo").args(["rm", "-rf", &upper.display().to_string(), &work.display().to_string(), &merged.display().to_string()]).status();
-            } else {
-                let unmount = std::process::Command::new("fusermount3").args(["-u", &merged.display().to_string()]).status();
-                if !matches!(unmount, Ok(s) if s.success()) {
-                    let _ = std::process::Command::new("umount").args([&merged.display().to_string()]).status();
-                }
-                let _ = std::process::Command::new("rm").args(["-rf", &upper.display().to_string(), &work.display().to_string(), &merged.display().to_string()]).status();
-            }
-        }
 
         if code != 0 {
             anyhow::bail!("xbps-src pkg {} terminó con código {}", pkg, code);
@@ -127,7 +66,7 @@ impl Masterdir {
 
     /// Solo descarga fuentes: `./xbps-src fetch <pkg>`.
     pub fn fetch_pkg(&self, pkg: &str) -> Result<()> {
-        let code = xbps_src(&self.path, &["fetch", pkg])
+        let code = xbps_src(&self.path, &["fetch", pkg], None)
             .with_context(|| format!("falló ./xbps-src fetch {}", pkg))?;
         if code != 0 {
             anyhow::bail!("xbps-src fetch {} terminó con código {}", pkg, code);
@@ -178,5 +117,14 @@ mod tests {
             md.hostdir_binpkgs_root(),
             PathBuf::from("/tmp/vp/hostdir/binpkgs")
         );
+    }
+
+    #[test]
+    fn build_pkg_falla_si_no_existe_xbps_src() {
+        let dir = tempfile::tempdir().unwrap();
+        let md = Masterdir::new(dir.path());
+        let res = md.build_pkg("dummy-pkg", 2);
+        assert!(res.is_err());
+        assert!(format!("{:#}", res.unwrap_err()).contains("no encontrado"));
     }
 }

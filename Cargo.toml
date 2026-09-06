@@ -45,4 +45,4 @@ lto = true
 mimalloc = { version = "0.1", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.29", features = ["user"] }
+nix = { version = "0.29", features = ["user", "signal", "process", "fs"] }

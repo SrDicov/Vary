@@ -113,6 +113,7 @@ pub struct Config {
     // Valores de vary.conf
     pub log_level: String,
     pub max_concurrent_builds: u32,
+    pub makejobs: usize,
     pub force_rebuild: bool,
     pub ttl_cache_seconds: u64,
 
@@ -153,6 +154,7 @@ struct GeneralSection {
 #[derive(Debug, Deserialize, Default)]
 struct BuildSection {
     max_concurrent_builds: Option<u32>,
+    makejobs: Option<usize>,
     force_rebuild: Option<bool>,
 }
 
@@ -177,6 +179,10 @@ impl Config {
         let data_dir = home.join(".local").join("share").join("vary");
         let config_dir = home.join(".config").join("vary");
 
+        let makejobs = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+
         let mut config = Config {
             op: Op::Default,
             help: false,
@@ -199,8 +205,9 @@ impl Config {
             data_dir,
             config_dir,
             log_level: "info".to_string(),
-            // Placeholder documentado: builds secuenciales en MVP.
-            max_concurrent_builds: 2,
+            // Builds secuenciales en Opción A; paralelismo intra-paquete vía makejobs (XBPS_MAKEJOBS).
+            max_concurrent_builds: 1,
+            makejobs,
             force_rebuild: false,
             ttl_cache_seconds: 3600,
             force_build: false,
@@ -248,6 +255,11 @@ impl Config {
         }
         if let Some(n) = file.build.max_concurrent_builds {
             self.max_concurrent_builds = n;
+        }
+        if let Some(j) = file.build.makejobs {
+            if j > 0 {
+                self.makejobs = j;
+            }
         }
         if let Some(f) = file.build.force_rebuild {
             self.force_rebuild = f;

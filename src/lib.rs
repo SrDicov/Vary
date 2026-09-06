@@ -7,6 +7,7 @@ mod db;
 mod elevate;
 mod help;
 mod keys;
+mod lock;
 mod logging;
 mod masterdir;
 mod metadata;
@@ -14,6 +15,7 @@ mod remove;
 mod repo;
 mod reposconf;
 mod resolver;
+mod signal;
 mod util;
 mod vup_index;
 mod vur_client;
@@ -73,6 +75,20 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
 
     let mut config = match Config::new() {
         Ok(config) => config,
+        Err(err) => {
+            print_error(Style::new(), err);
+            return 1;
+        }
+    };
+
+    // Observador SIGINT/SIGTERM (hilo + registro global; el handler solo
+    // marca un flag). Idempotente.
+    crate::signal::init();
+
+    // Una sola instancia: protege /etc/xbps.d, la db heed y los mounts.
+    // El guardián vive hasta el final de run() y libera el flock al salir.
+    let _instance_lock = match crate::lock::acquire(&config.cache_dir) {
+        Ok(lock) => lock,
         Err(err) => {
             print_error(Style::new(), err);
             return 1;
