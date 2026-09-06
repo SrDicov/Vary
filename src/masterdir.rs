@@ -12,12 +12,16 @@ pub const VOID_PACKAGES_URL: &str = "https://github.com/void-linux/void-packages
 pub struct Masterdir {
     /// Ruta al checkout local de void-packages (~/.cache/vary/void-packages).
     pub path: PathBuf,
+    /// Archivo donde `xbps-src` vuelca su salida con spinner en terminal
+    /// (H-020). `None` = heredar stdio como antes.
+    pub log_file: Option<PathBuf>,
 }
 
 impl Masterdir {
     pub fn new(void_packages_dir: impl Into<PathBuf>) -> Self {
         Self {
             path: void_packages_dir.into(),
+            log_file: None,
         }
     }
 
@@ -30,8 +34,13 @@ impl Masterdir {
     /// base dentro del namespace del masterdir. Idempotente.
     pub fn binary_bootstrap(&self) -> Result<()> {
         tracing::info!("ejecutando ./xbps-src binary-bootstrap (puede tardar)...");
-        let code = xbps_src(&self.path, &["binary-bootstrap"], None)
-            .context("falló ./xbps-src binary-bootstrap")?;
+        let code = xbps_src(
+            &self.path,
+            &["binary-bootstrap"],
+            None,
+            self.log_file.as_deref(),
+        )
+        .context("falló ./xbps-src binary-bootstrap")?;
         if code != 0 {
             anyhow::bail!("./xbps-src binary-bootstrap terminó con código {code}");
         }
@@ -55,8 +64,13 @@ impl Masterdir {
         }
 
         tracing::info!("compilando {pkg} con xbps-src (makejobs: {makejobs})...");
-        let code = xbps_src(&self.path, &["pkg", pkg], Some(makejobs))
-            .with_context(|| format!("falló ./xbps-src pkg {pkg}"))?;
+        let code = xbps_src(
+            &self.path,
+            &["pkg", pkg],
+            Some(makejobs),
+            self.log_file.as_deref(),
+        )
+        .with_context(|| format!("falló ./xbps-src pkg {pkg}"))?;
 
         if code != 0 {
             anyhow::bail!("xbps-src pkg {pkg} terminó con código {code}");
@@ -66,7 +80,7 @@ impl Masterdir {
 
     /// Solo descarga fuentes: `./xbps-src fetch <pkg>`.
     pub fn fetch_pkg(&self, pkg: &str) -> Result<()> {
-        let code = xbps_src(&self.path, &["fetch", pkg], None)
+        let code = xbps_src(&self.path, &["fetch", pkg], None, self.log_file.as_deref())
             .with_context(|| format!("falló ./xbps-src fetch {pkg}"))?;
         if code != 0 {
             anyhow::bail!("xbps-src fetch {pkg} terminó con código {code}");

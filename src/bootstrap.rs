@@ -64,7 +64,11 @@ pub fn initialize_environment(
 
     clone_void_packages(void_packages_dir, git_bin)?;
 
-    let md = Masterdir::new(void_packages_dir);
+    let mut md = Masterdir::new(void_packages_dir);
+    // Salida de xbps-src a archivo + spinner (H-020): <cache>/logs/xbps-src.log.
+    md.log_file = void_packages_dir
+        .parent()
+        .map(|cache| cache.join("logs").join("xbps-src.log"));
     if !md.bootstrapped() {
         md.binary_bootstrap()?;
     }

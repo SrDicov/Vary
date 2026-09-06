@@ -391,3 +391,19 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Remediación:** `cargo add indicatif@0.17 diffy@0.4` (resolución + lock; `indicatif` se usa ya en H-020, `diffy` queda disponible para A3/Fase 6).
 - **Validación:** Run CI verde (build compila las nuevas deps) en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-020] Ausencia de canalización de logs y spinners: xbps-src inundaba la consola
+- **Severidad:** High
+- **Módulo:** `src/xbps.rs`, `src/masterdir.rs`, `src/bootstrap.rs`
+- **Commit:** `fix(H-020)` (`git log --oneline --grep="H-020"`)
+- **Descripción del problema:** `xbps-src` heredaba stdio crudo: miles de líneas de compilador en la terminal y nada en `vary.log`.
+- **Remediación:**
+  1. `xbps_src()` acepta `log_file: Option<&Path>`. Con `Some`, stdout/stderr van por pipes a hilos de bombeo (`pump_stream_to_log`) que escriben append al archivo, con separador `=== xbps-src <args> ===` por invocación.
+  2. La terminal muestra solo un spinner `indicatif` en stderr con la ruta del log; fuera de TTY el spinner se oculta explícitamente (`IsTerminal`, sin escape codes en CI/pipes).
+  3. `Masterdir.log_file` (nuevo campo, `None` por defecto) se fija en `initialize_environment` a `<cache>/logs/xbps-src.log`; el código de salida y el tracking anti-huérfanos (H-016) no cambian.
+- **Validación:**
+  - `xbps::tests::pump_vuelca_lineas_al_log` (el bombeo vuelca íntegro al archivo).
+  - Verificación visual del spinner + contenido del log con build real queda para el smoke en Void real (FASE 5, humano).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

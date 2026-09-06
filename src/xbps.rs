@@ -13,7 +13,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 
 const XBPS_QUERY: &str = "xbps-query";
 
@@ -416,8 +416,18 @@ fn status_code(cmd: &mut Command) -> Result<i32> {
 /// el observador nunca salga sin conocer al hijo (H-016). Los builds cortos e
 /// interactivos (`install`/`remove_recursive`) quedan en el grupo de vary.
 ///
+/// Con `log_file = Some(path)` (H-020) la salida deja de inundar la consola:
+/// stdout/stderr se canalizan a ese archivo (append) y la terminal muestra
+/// solo un spinner `indicatif` (oculto automáticamente fuera de TTY). Con
+/// `None` se hereda stdio como antes.
+///
 /// Error claro si `masterdir/xbps-src` no existe.
-pub fn xbps_src(masterdir: &Path, args: &[&str], makejobs: Option<usize>) -> Result<i32> {
+pub fn xbps_src(
+    masterdir: &Path,
+    args: &[&str],
+    makejobs: Option<usize>,
+    log_file: Option<&Path>,
+) -> Result<i32> {
     let script = masterdir.join("xbps-src");
     if !script.is_file() {
         bail!(
@@ -445,27 +455,123 @@ pub fn xbps_src(masterdir: &Path, args: &[&str], makejobs: Option<usize>) -> Res
                 .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
         });
     }
-    // Bloquear SIGINT/SIGTERM durante spawn+registro (H-016): con la máscara
-    // puesta el handler no corre, así que el observador no puede salir sin
-    // conocer a este hijo. Soltar ANTES del wait() largo o Ctrl+C no llegaría.
+    match log_file {
+        Some(path) => run_logged(cmd, args, path),
+        None => {
+            let mut child = spawn_tracked(cmd, "./xbps-src")?;
+            let pid = child.id();
+            let status = child.wait().map_err(|e| spawn_error("./xbps-src", e));
+            crate::signal::unregister_child(pid);
+            Ok(status?.code().unwrap_or(-1))
+        }
+    }
+}
+
+/// Spawn con grupo propio + registro anti-huérfanos (H-016). Si la señal llegó
+/// antes del registro, mata el grupo él mismo y devuelve error en vez de
+/// dejar un hijo desacoplado.
+fn spawn_tracked(mut cmd: Command, prog: &str) -> Result<std::process::Child> {
+    // Bloquear SIGINT/SIGTERM durante spawn+registro: con la máscara puesta el
+    // handler no corre, así que el observador no puede salir sin conocer a
+    // este hijo. Soltar ANTES de esperas largas.
     let sig_guard = crate::signal::block_term_signals();
-    let mut child = cmd.spawn().map_err(|e| spawn_error("./xbps-src", e))?;
+    let mut child = cmd.spawn().map_err(|e| spawn_error(prog, e))?;
     let pid = child.id();
     crate::signal::register_child(pid);
     let shutting_down = crate::signal::is_shutting_down();
     drop(sig_guard);
     if shutting_down {
-        // La señal llegó antes del registro (o durante el spawn bloqueado):
-        // el observador podría no conocer a este hijo; matarlo ya mismo por
-        // grupo en vez de esperar al poll (H-016).
         crate::signal::kill_child_group(pid);
         crate::signal::unregister_child(pid);
         let _ = child.wait();
-        anyhow::bail!("interrumpido por señal antes de esperar a xbps-src");
+        anyhow::bail!("interrumpido por señal antes de esperar a {prog}");
     }
+    Ok(child)
+}
+
+/// Ejecuta `cmd` con stdout/stderr canalizados a `log_path` (append) y un
+/// spinner en la terminal (H-020).
+fn run_logged(mut cmd: Command, args: &[&str], log_path: &Path) -> Result<i32> {
+    use std::io::{BufRead, BufReader, Write};
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creando dir de logs {}", parent.display()))?;
+    }
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .with_context(|| format!("abriendo log {}", log_path.display()))?;
+    tracing::info!("salida de xbps-src → {}", log_path.display());
+    writeln_sep(&file, &format!("=== xbps-src {} ===", args.join(" ")))?;
+
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = spawn_tracked(cmd, "./xbps-src")?;
+    let pid = child.id();
+
+    let mut pumps = Vec::new();
+    for stream in [child.stdout.take(), child.stderr.take()] {
+        let mut file = file
+            .try_clone()
+            .with_context(|| format!("clonando handle de {}", log_path.display()))?;
+        let pump = std::thread::spawn(move || {
+            if let Some(s) = stream {
+                pump_stream_to_log(BufReader::new(s), &mut file);
+            }
+        });
+        pumps.push(pump);
+    }
+
+    let spinner = user_spinner(&format!(
+        "xbps-src {}… (log: {})",
+        args.join(" "),
+        log_path.display()
+    ));
     let status = child.wait().map_err(|e| spawn_error("./xbps-src", e));
     crate::signal::unregister_child(pid);
-    Ok(status?.code().unwrap_or(-1))
+    for pump in pumps {
+        let _ = pump.join();
+    }
+    let code = status?.code().unwrap_or(-1);
+    if code == 0 {
+        spinner.finish_and_clear();
+        tracing::info!("xbps-src terminó OK (log: {})", log_path.display());
+    } else {
+        spinner.abandon_with_message(format!(
+            "xbps-src falló con código {code} (ver {})",
+            log_path.display()
+        ));
+    }
+    Ok(code)
+}
+
+/// Vuelca líneas de `reader` a `file` (una por línea). Hilo de bombeo de H-020.
+fn pump_stream_to_log<R: std::io::Read>(reader: std::io::BufReader<R>, file: &mut std::fs::File) {
+    use std::io::{BufRead, Write};
+    for line in reader.lines().map_while(Result::ok) {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+fn writeln_sep(mut file: &std::fs::File, line: &str) -> Result<()> {
+    use std::io::Write;
+    writeln!(file, "{line}").with_context(|| "escribiendo separador en log de build")
+}
+
+/// Spinner en stderr, oculto fuera de TTY (H-020: en CI/pipes no hay escape
+/// codes ni cursor fantasma).
+fn user_spinner(msg: &str) -> indicatif::ProgressBar {
+    use std::io::IsTerminal;
+    let spinner = indicatif::ProgressBar::new_spinner();
+    if std::io::stderr().is_terminal() {
+        spinner.set_draw_target(indicatif::ProgressDrawTarget::stderr());
+        spinner.enable_steady_tick(std::time::Duration::from_millis(120));
+    } else {
+        spinner.set_draw_target(indicatif::ProgressDrawTarget::hidden());
+    }
+    spinner.set_message(msg.to_owned());
+    spinner
 }
 
 #[cfg(test)]
@@ -703,5 +809,27 @@ mod tests {
     fn integracion_query_architecture_real() {
         let arch = query_architecture().unwrap();
         assert!(!arch.is_empty());
+    }
+
+    #[test]
+    fn pump_vuelca_lineas_al_log() {
+        use std::io::Cursor;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("build.log");
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .expect("open");
+        pump_stream_to_log(
+            std::io::BufReader::new(Cursor::new(b"hola\nmundo\n".to_vec())),
+            &mut file,
+        );
+        drop(file);
+        let content = std::fs::read_to_string(&path).expect("read");
+        assert!(
+            content.contains("hola") && content.contains("mundo"),
+            "el log debe contener la salida canalizada: {content}"
+        );
     }
 }

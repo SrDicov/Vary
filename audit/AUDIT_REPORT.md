@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 11 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-022]) | 5 |
-| 🟡 **Medium** | 15 | 0 | 15 |
+| 🟠 **High** | 16 | 12 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-022]) | 4 |
+| 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **20** | **27** |
+| **TOTAL** | **47** | **22** | **25** |
 
 ---
 
@@ -385,7 +385,8 @@
 - **Impacto:** Miles de líneas de salida de compiladores ensucian la terminal del usuario, y la salida no se registra en `vary.log`.
 - **Fix propuesto:** Agregar `indicatif`, canalizar stdout/stderr de `xbps_src` hacia `vary.log` mediante hilos/mpsc, y mostrar spinner elegante en la terminal.
 - **Validación:** Compilación de prueba verificando terminal limpia con spinner y log completo en disco.
-- **Estado:** PENDIENTE
+- **Resolución:** `log_file` opcional en `xbps_src`/`Masterdir` (`<cache>/logs/xbps-src.log`); hilos de bombeo a archivo + spinner `indicatif` oculto fuera de TTY. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-020)`)
 
 ---
 
