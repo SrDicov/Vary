@@ -7,7 +7,7 @@ use crate::xbps;
 use anyhow::Result;
 
 pub fn refresh_repos(config: &Config) -> Result<i32> {
-    let repos_conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
+    let repos_conf = ReposConf::load(config.repos_conf_path())?;
     let mut any_failed = false;
     for (name, entry) in repos_conf.sorted_by_priority() {
         if !entry.enabled_or(true) {
@@ -50,7 +50,7 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     // Phase 3: detect VUR upgrades via installed.json
     let mut db = InstalledDb::load(config.installed_db_path())?;
     let mut cache = CacheIndex::load(config.cache_index_path())?;
-    let repos_conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
+    let repos_conf = ReposConf::load(config.repos_conf_path())?;
 
     // Build map of current VUR pkgver
     let mut current_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();

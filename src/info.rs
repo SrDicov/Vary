@@ -9,7 +9,7 @@ pub fn info(config: &Config) -> Result<i32> {
         anyhow::bail!("no targets specified for -Si");
     }
 
-    let repos_conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
+    let repos_conf = ReposConf::load(config.repos_conf_path())?;
     let mut cache = CacheIndex::load(config.cache_index_path())?;
     let ttl = Some(config.ttl_cache_seconds);
 

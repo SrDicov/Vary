@@ -117,7 +117,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
     )?;
 
     // 2. Load repos
-    let repos_conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
+    let repos_conf = ReposConf::load(config.repos_conf_path())?;
     let sorted = repos_conf.sorted_by_priority();
     let mut repos: Vec<VurRepo> = Vec::new();
     for (name, entry) in sorted {
@@ -530,7 +530,7 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
         &config.git_bin,
     )?;
 
-    let repos_conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
+    let repos_conf = ReposConf::load(config.repos_conf_path())?;
     let mut repos: Vec<VurRepo> = Vec::new();
     for (name, entry) in repos_conf.sorted_by_priority() {
         let path = config.vurs_dir().join(&name);

@@ -36,6 +36,9 @@ fn repo_add(
 
     crate::keys::validate_repo_name(&name)?;
 
+    // Validar repos.conf antes de cualquier operación remota o de disco
+    let mut conf = ReposConf::load(config.repos_conf_path())?;
+
     // Rama: flag explícita > autodetección del remoto > "main".
     // (z-packages y otros repos clásicos viven en `master`.)
     let branch = match branch_opt.map(str::trim).filter(|s| !s.is_empty()) {
@@ -97,7 +100,6 @@ fn repo_add(
     }
 
     // Save to repos.conf
-    let mut conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
     conf.vur.insert(name.clone(), entry);
     conf.save(config.repos_conf_path())?;
     println!("VUR '{}' registered.", name);
@@ -138,7 +140,7 @@ fn repo_has_vurinfo(repo: &VurRepo) -> bool {
 }
 
 fn repo_list(config: &Config) -> Result<i32> {
-    let conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
+    let conf = ReposConf::load(config.repos_conf_path())?;
     if conf.vur.is_empty() {
         println!("No VURs configured. Add one with: vary --repo add <url>");
         return Ok(0);
@@ -155,7 +157,7 @@ fn repo_list(config: &Config) -> Result<i32> {
 
 fn repo_remove(config: &Config, name: &str, purge: bool) -> Result<i32> {
     crate::keys::validate_repo_name(name)?;
-    let mut conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
+    let mut conf = ReposConf::load(config.repos_conf_path())?;
     let in_conf = conf.vur.contains_key(name);
     let clone_path = config.vurs_dir().join(name);
 
@@ -193,7 +195,7 @@ fn repo_remove(config: &Config, name: &str, purge: bool) -> Result<i32> {
 
 fn repo_rekey(config: &Config, name: &str) -> Result<i32> {
     crate::keys::validate_repo_name(name)?;
-    let conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
+    let conf = ReposConf::load(config.repos_conf_path())?;
     let entry = conf.vur.get(name).ok_or_else(|| anyhow::anyhow!("VUR '{}' not found", name))?;
 
     teardown_binary_repo(name, &config.sudo_bin, &config.sudo_flags)?;
@@ -203,4 +205,71 @@ fn repo_rekey(config: &Config, name: &str) -> Result<i32> {
         println!("Tip: run `vary -S <pkg>` from this VUR to re-trigger key verification.");
     }
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn repo_add_fails_and_preserves_corrupt_repos_conf() {
+        let tmp = tempdir().unwrap();
+        let mut config = Config::default();
+        config.config_dir = tmp.path().to_path_buf();
+        config.data_dir = tmp.path().join("data");
+
+        let conf_path = config.repos_conf_path();
+        let bad_content = "[vur.broken\nurl = \nnot valid toml :::";
+        std::fs::write(&conf_path, bad_content).unwrap();
+
+        let res = repo_add(
+            &config,
+            "https://example.com/test.git",
+            Some("test"),
+            Some("main"),
+            None,
+        );
+        assert!(res.is_err(), "repo_add debe fallar si repos.conf está corrupto");
+
+        let content_after = std::fs::read_to_string(&conf_path).unwrap();
+        assert_eq!(
+            content_after, bad_content,
+            "El archivo corrupto debe preservarse intacto sin sobreescribirse"
+        );
+    }
+
+    #[test]
+    fn repo_remove_fails_on_corrupt_repos_conf() {
+        let tmp = tempdir().unwrap();
+        let mut config = Config::default();
+        config.config_dir = tmp.path().to_path_buf();
+
+        let conf_path = config.repos_conf_path();
+        let bad_content = "[vur.broken\nurl = \nnot valid toml :::";
+        std::fs::write(&conf_path, bad_content).unwrap();
+
+        let res = repo_remove(&config, "test", false);
+        assert!(res.is_err(), "repo_remove debe fallar si repos.conf está corrupto");
+
+        let content_after = std::fs::read_to_string(&conf_path).unwrap();
+        assert_eq!(
+            content_after, bad_content,
+            "El archivo corrupto debe preservarse intacto"
+        );
+    }
+
+    #[test]
+    fn repo_list_fails_on_corrupt_repos_conf() {
+        let tmp = tempdir().unwrap();
+        let mut config = Config::default();
+        config.config_dir = tmp.path().to_path_buf();
+
+        let conf_path = config.repos_conf_path();
+        let bad_content = "[vur.broken\nurl = \nnot valid toml :::";
+        std::fs::write(&conf_path, bad_content).unwrap();
+
+        let res = repo_list(&config);
+        assert!(res.is_err(), "repo_list debe fallar si repos.conf está corrupto");
+    }
 }
