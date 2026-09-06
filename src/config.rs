@@ -401,8 +401,10 @@ mod tests {
     fn load_vary_conf_aplica_overrides_y_tolera_corrupto() {
         // H-044: precedencia archivo→defaults y corrupto-sin-aborto.
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut c = Config::default();
-        c.config_dir = dir.path().to_path_buf();
+        let mut c = Config {
+            config_dir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
         c.load_vary_conf().expect("sin conf: Ok con defaults");
         assert_eq!(c.ttl_cache_seconds, 3600);
         std::fs::write(
