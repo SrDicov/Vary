@@ -538,6 +538,23 @@ mod tests {
         assert_eq!(plan.builds[0].info.pkgname, "foo");
     }
 
+    #[test]
+    fn info_pkgname_es_siempre_el_nombre_operativo() {
+        // H-046: install.rs opera con info.pkgname (name puede ser virtual).
+        // Oficiales: sintético con pkgname == name.
+        let src = MockSource {
+            official: ["git"].into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(&targets(&["git"]), &src, &ResolveOptions::default()).unwrap();
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(plan.installs[0].name, "git");
+        assert_eq!(
+            plan.installs[0].info.pkgname, "git",
+            "en oficiales el operativo coincide con lo pedido"
+        );
+    }
+
     /// Test 6: ciclo a<->b -> Err con mensaje conteniendo "->".
     #[test]
     fn ciclo_reporta_error_con_flechas() {

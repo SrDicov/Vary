@@ -28,11 +28,6 @@ pub fn running_as_root() -> bool {
     }
 }
 
-/// Busca un ejecutable por nombre en $PATH (verifica permiso de ejecución).
-fn in_path(bin: &str) -> bool {
-    find_in_path(bin).is_some()
-}
-
 /// Primera coincidencia absoluta y ejecutable de `bin` en $PATH.
 fn find_in_path(bin: &str) -> Option<String> {
     use std::os::unix::fs::PermissionsExt;
@@ -217,7 +212,7 @@ mod tests {
 
     #[test]
     fn in_path_resuelve_binarios_reales_y_fantasma() {
-        assert!(in_path("sh"));
-        assert!(!in_path("vary-no-existe-xyz"));
+        assert!(find_in_path("sh").is_some());
+        assert!(find_in_path("vary-no-existe-xyz").is_none());
     }
 }
