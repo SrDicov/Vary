@@ -3,12 +3,49 @@ name: CI
 on:
   push:
     branches: [vary-mvp, master]
+    tags: ['v*']
+    paths-ignore:
+      - 'audit/**'
+      - 'docs/**'
+      - 'roadmap/**'
+      - '*.md'
   pull_request:
+    paths-ignore:
+      - 'audit/**'
+      - 'docs/**'
+      - 'roadmap/**'
+      - '*.md'
+  workflow_dispatch:
+
+# Una sola corrida activa: un push nuevo cancela la anterior (los gates
+# siempre evalúan el HEAD más reciente; ahorra minutos de runner).
+concurrency:
+  group: vary-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --jobs $(nproc) -- -D warnings
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -16,4 +53,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --jobs $(nproc)
+
+  # El build release (lto=true, codegen-units=1) es el job más caro: solo
+  # bajo demanda (dispatch manual) o en tags v*. Los pushes normales usan
+  # los tres gates de arriba (fmt, clippy, test).
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --jobs $(nproc)

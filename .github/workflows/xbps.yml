@@ -4,6 +4,11 @@ on:
   push:
     branches: [vary-mvp]
     tags: ['v*']
+    paths-ignore:
+      - 'audit/**'
+      - 'docs/**'
+      - 'roadmap/**'
+      - '*.md'
   workflow_dispatch:
     inputs:
       publish_release:
