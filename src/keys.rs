@@ -141,10 +141,13 @@ pub fn setup_binary_repo(
         bail!("registro de repositorio binario cancelado por el usuario");
     }
 
-    // (4) Copiar llave a /etc/xbps.d/keys/
+    // (4) Verificar contra llave preexistente en disco (protección TOFU contra rotación no verificada)
+    let dest_key = key_dest_path(&repo.name)?;
+    verify_key_tofu(std::path::Path::new(&dest_key), &fp, &repo.name)?;
+
+    // Copiar llave a /etc/xbps.d/keys/
     let pem = std::fs::read_to_string(&key_path)
         .with_context(|| format!("leyendo {}", key_path.display()))?;
-    let dest_key = key_dest_path(&repo.name)?;
     write_root_file(&pem, &dest_key, "644", sudo_bin, sudo_flags)?;
 
     // (5) Registrar el repositorio binario
@@ -222,8 +225,11 @@ pub fn setup_vup_binary_repo(
         bail!("registro de repositorios binarios cancelado por el usuario");
     }
 
-    // (2) Copiar llave a /etc/xbps.d/keys/
+    // (2) Verificar contra llave preexistente en disco (protección TOFU contra rotación no verificada)
     let dest_key = key_dest_path(name)?;
+    verify_key_tofu(std::path::Path::new(&dest_key), &fp, name)?;
+
+    // Copiar llave a /etc/xbps.d/keys/
     write_root_file(key_pem, &dest_key, "644", sudo_bin, sudo_flags)?;
 
     // (3) Registrar el conf con todas las URLs
@@ -234,6 +240,33 @@ pub fn setup_vup_binary_repo(
     let conf_path = repo_conf_path(name)?;
     write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
     tracing::info!("repositorios binarios '{}' registrados en {}", name, conf_path);
+    Ok(())
+}
+
+fn verify_key_tofu(dest_path: &std::path::Path, fp: &str, name: &str) -> Result<()> {
+    if dest_path.exists() {
+        if let Ok(existing_pem) = std::fs::read_to_string(dest_path) {
+            if let Ok(existing_der) = crate::vur_client::decode_pem_body(&existing_pem) {
+                let existing_digest = Sha256::digest(&existing_der);
+                let existing_fp = existing_digest
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<Vec<_>>()
+                    .join(":");
+                if existing_fp.to_lowercase() != fp.to_lowercase() {
+                    bail!(
+                        "ALERTA DE SEGURIDAD CRÍTICA (Posible rotación no confiable o suplantación):\n\
+                         La llave pública del repo '{}' ha cambiado respecto a la instalada en el sistema.\n  \
+                         Instalada previamente: {}\n  \
+                         Recibida remotamente:  {}\n\
+                         Operación BLOQUEADA (fallo cerrado).\n\
+                         Si la rotación es legítima y verificada, ejecuta: vary --repo rekey {}",
+                        name, existing_fp, fp, name
+                    );
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -289,5 +322,39 @@ mod tests {
     #[test]
     fn confirm_respeta_no_confirm() {
         assert!(confirm("¿?", true).unwrap());
+    }
+
+    #[test]
+    fn verify_key_tofu_bloquea_rotacion_no_confiable() {
+        let dir = tempfile::tempdir().unwrap();
+        let key_file = dir.path().join("test.pem");
+
+        let pem_a = "-----BEGIN PUBLIC KEY-----\naGVsbG8=\n-----END PUBLIC KEY-----\n";
+        std::fs::write(&key_file, pem_a).unwrap();
+
+        let der_a = crate::vur_client::decode_pem_body(pem_a).unwrap();
+        let fp_a = Sha256::digest(&der_a)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(":");
+
+        let pem_b = "-----BEGIN PUBLIC KEY-----\nd29ybGQ=\n-----END PUBLIC KEY-----\n";
+        let der_b = crate::vur_client::decode_pem_body(pem_b).unwrap();
+        let fp_b = Sha256::digest(&der_b)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(":");
+
+        let non_existent = dir.path().join("nonexistent.pem");
+        assert!(verify_key_tofu(&non_existent, &fp_a, "repo-test").is_ok());
+        assert!(verify_key_tofu(&key_file, &fp_a, "repo-test").is_ok());
+
+        let err = verify_key_tofu(&key_file, &fp_b, "repo-test").unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("ALERTA DE SEGURIDAD CRÍTICA"));
+        assert!(err_msg.contains("BLOQUEADA (fallo cerrado)"));
+        assert!(err_msg.contains("vary --repo rekey repo-test"));
     }
 }
