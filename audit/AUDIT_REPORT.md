@@ -15,8 +15,8 @@
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
 | 🟡 **Medium** | 15 | 15 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-031], [H-032], [H-033], [H-034], [H-035], [H-036], [H-037], [H-038], [H-039]) | 0 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
-| 🟢 **Low / Info** | 8 | 5 ([H-041], [H-042], [H-043], [H-044], [H-047]) | 3 |
-| **TOTAL** | **47** | **43** | **4** |
+| 🟢 **Low / Info** | 8 | 8 ([H-040], [H-041], [H-042], [H-043], [H-044], [H-045], [H-046], [H-047]) | 0 |
+| **TOTAL** | **47** | **46** | **1** |
 
 ---
 
@@ -644,12 +644,14 @@
 #### [H-045] Severidad: Low
 - **Módulo:** `src/masterdir.rs:73, 225`, `src/signal.rs:62, 65`
 - **Título:** Acoplamiento rígido a binarios auxiliares (`cp`, `fuse-overlayfs`, `umount`)
-- **Estado:** PENDIENTE
+- **Resolución:** `[tools] install_bin` propagado + campos en MountCleanup + `$PAGER`. Residual (`rm`, `xbps-*`) documentado. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-045, H-046)`)
 
 #### [H-046] Severidad: Low
 - **Módulo:** `src/install.rs:334, 422`
 - **Título:** Paquetes resueltos por `provides` utilizan nombre virtual en el plan de construcción
-- **Estado:** PENDIENTE
+- **Resolución:** Rutas operativas con `info.pkgname`; display anota lo pedido. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-045, H-046)`)
 
 #### [H-047] Severidad: Info
 - **Módulo:** `docs/CONTRATO.md` (reubicado desde `/guia` en la raíz)

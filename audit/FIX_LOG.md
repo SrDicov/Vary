@@ -675,3 +675,31 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Tests ajustados (`/bin/sh` en vez de `/usr/bin/doas`, que quizá no existe) + nuevos (`wrapper_inexistente_falla_en_resolve_no_en_exec`, `wrapper_relativo_se_resuelve_a_absoluto`).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-045] Acoplamiento rígido a binarios auxiliares
+- **Severidad:** Low
+- **Módulo:** `src/config.rs`, `src/keys.rs`, `src/bootstrap.rs`, `src/install.rs`, `src/signal.rs`, `src/review.rs`, `etc/vary.conf.example`
+- **Commit:** `fix(H-045, H-046)` (`git log --oneline --grep="H-045"`)
+- **Descripción del problema:** `install`, `umount`/`fusermount3` y el pager `bat`/`less` hardcodeados. (La evidencia sobre `masterdir.rs` ya no existe: delega en `xbps-src`.)
+- **Remediación:**
+  1. `[tools] install_bin` en `vary.conf` (`Config.tools_install_bin`, default `install`), propagado por `write_root_file` (keys + bootstrap), `setup_binary_repo`, `setup_vup_binary_repo` e `initialize_environment` hasta `install.rs`.
+  2. `MountCleanup` lleva `umount_bin`/`fusermount_bin` (constructor con defaults; el cableado a `[tools]` queda para P1-3 cuando vuelvan los overlays — código hoy durmiente).
+  3. Pager: `$PAGER` manda (`pager_cmd()` parte binario+flags), `bat` por defecto, `less -R` como último recurso.
+  4. Residual documentado: `rm` en `teardown_binary_repo` y `xbps-*` siguen fijos (AGENTS.md ya los marca como deuda aceptada).
+- **Validación:**
+  - `review::tests::pager_cmd_respeta_pager_y_defecto_bat`.
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-046] Paquetes resueltos por `provides` usan nombre virtual en el plan
+- **Severidad:** Low
+- **Módulo:** `src/install.rs`, `src/resolver.rs`
+- **Commit:** `fix(H-045, H-046)` (`git log --oneline --grep="H-046"`)
+- **Descripción del problema:** Pedir `libfoo.so.1` (virtual de `foo`) propagaba el virtual a review (omitida en silencio), `query_installed` (rebuild forzado), `xbps-install` (fallo fatal) y la DB (tracking perdido).
+- **Remediación:** `install.rs` opera con `info.pkgname` (real) en display/review/idempotencia/builds/instalación/VUP/DB; `item.name` queda para display ("pedido como X") y match de targets explícitos. Los oficiales ya traían `pkgname == name`, así que el cambio es uniforme y seguro.
+- **Validación:**
+  - `resolver::tests::info_pkgname_es_siempre_el_nombre_operativo` (el test entró con `e84f898`; invariante oficiales) + `resuelve_via_provides` preexistente.
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

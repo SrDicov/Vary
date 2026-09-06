@@ -30,6 +30,10 @@ log_level = "info"
 # Equivalente CLI: --curl <bin>
 #curl_bin = "curl"
 
+[tools]
+# Binario `install` (coreutils) usado para escribir en /etc con elevación.
+#install_bin = "install"
+
 [build]
 # Placeholder (MVP): los builds son secuenciales; se usará con tokio::sync::Semaphore en fase 2
 max_concurrent_builds = 2

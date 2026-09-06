@@ -59,6 +59,7 @@ pub(crate) fn write_root_file(
     mode: &str,
     sudo_bin: &str,
     sudo_flags: &[String],
+    install_bin: &str,
 ) -> Result<()> {
     use std::io::Write;
     let mut tmp_file = tempfile::Builder::new()
@@ -70,7 +71,7 @@ pub(crate) fn write_root_file(
         .context("escribiendo contenido en archivo temporal")?;
     tmp_file.flush().context("sincronizando archivo temporal")?;
 
-    let status = crate::elevate::elevate(sudo_bin, sudo_flags, "install")?
+    let status = crate::elevate::elevate(sudo_bin, sudo_flags, install_bin)?
         .args(["-m", mode])
         .arg(tmp_file.path())
         .arg(dest)
@@ -106,6 +107,7 @@ pub fn setup_binary_repo(
     entry: &RepoEntry,
     sudo_bin: &str,
     sudo_flags: &[String],
+    install_bin: &str,
     no_confirm: bool,
 ) -> Result<()> {
     // (1) ¿tiene binary_repo_url?
@@ -170,12 +172,12 @@ pub fn setup_binary_repo(
     // Copiar llave a /etc/xbps.d/keys/
     let pem = std::fs::read_to_string(&key_path)
         .with_context(|| format!("leyendo {}", key_path.display()))?;
-    write_root_file(&pem, &dest_key, "644", sudo_bin, sudo_flags)?;
+    write_root_file(&pem, &dest_key, "644", sudo_bin, sudo_flags, install_bin)?;
 
     // (5) Registrar el repositorio binario
     let conf = format!("repository={binary_url}\n");
     let conf_path = repo_conf_path(&repo.name)?;
-    write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
+    write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags, install_bin)?;
     tracing::info!(
         "repositorio binario '{}' registrado en {}",
         repo.name,
@@ -198,6 +200,7 @@ pub fn setup_vup_binary_repo(
     entry: &RepoEntry,
     sudo_bin: &str,
     sudo_flags: &[String],
+    install_bin: &str,
     no_confirm: bool,
 ) -> Result<()> {
     let mut urls: Vec<&str> = Vec::new();
@@ -257,7 +260,7 @@ pub fn setup_vup_binary_repo(
     verify_key_tofu(std::path::Path::new(&dest_key), &fp, name)?;
 
     // Copiar llave a /etc/xbps.d/keys/
-    write_root_file(key_pem, &dest_key, "644", sudo_bin, sudo_flags)?;
+    write_root_file(key_pem, &dest_key, "644", sudo_bin, sudo_flags, install_bin)?;
 
     // (3) Registrar el conf con todas las URLs
     let mut conf = String::new();
@@ -265,7 +268,7 @@ pub fn setup_vup_binary_repo(
         conf.push_str(&format!("repository={url}\n"));
     }
     let conf_path = repo_conf_path(name)?;
-    write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
+    write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags, install_bin)?;
     tracing::info!("repositorios binarios '{name}' registrados en {conf_path}");
     Ok(())
 }
@@ -408,7 +411,7 @@ mod tests {
         let dest_str = dest.to_str().unwrap();
         let content = "repository=https://example.com/repo\n";
 
-        write_root_file(content, dest_str, "644", "env", &[]).unwrap();
+        write_root_file(content, dest_str, "644", "env", &[], "install").unwrap();
 
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), content);
     }

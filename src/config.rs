@@ -104,6 +104,8 @@ pub struct Config {
     /// true tras el primer --sudoflags en CLI (H-036: CLI reemplaza vary.conf
     /// la primera vez; repetir el flag acumula sobre lo ya dado en CLI).
     pub sudo_flags_from_cli: bool,
+    /// Binario `install` (coreutils) para escribir en /etc (H-045).
+    pub tools_install_bin: String,
     pub git_bin: String,
     /// Override de arquitectura (--arch); si es None se consulta a xbps.
     pub curl_bin: String,
@@ -140,6 +142,8 @@ struct VaryConfFile {
     build: BuildSection,
     #[serde(default)]
     search: SearchSection,
+    #[serde(default)]
+    tools: ToolsSection,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -165,6 +169,12 @@ struct BuildSection {
 #[derive(Debug, Deserialize, Default)]
 struct SearchSection {
     ttl_cache_seconds: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ToolsSection {
+    /// Binario `install` para escribir en /etc (H-045).
+    install_bin: Option<String>,
 }
 
 fn expand_home(p: &str) -> PathBuf {
@@ -217,6 +227,7 @@ impl Config {
             sudo_bin: String::new(),
             sudo_flags: Vec::new(),
             sudo_flags_from_cli: false,
+            tools_install_bin: "install".to_string(),
             git_bin: "git".to_string(),
             curl_bin: "curl".to_string(),
             arch_override: None,
@@ -299,6 +310,9 @@ impl Config {
         }
         if let Some(t) = file.search.ttl_cache_seconds {
             self.ttl_cache_seconds = t;
+        }
+        if let Some(b) = file.tools.install_bin.as_deref() {
+            self.tools_install_bin = b.to_string();
         }
         Ok(())
     }
@@ -395,6 +409,7 @@ mod tests {
         assert!(!c.no_confirm);
         assert!(c.sudo_flags.is_empty());
         assert!(c.git_bin == "git");
+        assert!(c.tools_install_bin == "install");
     }
 
     #[test]

@@ -28,8 +28,9 @@ fn write_root_file(
     dest: &str,
     sudo_bin: &str,
     sudo_flags: &[String],
+    install_bin: &str,
 ) -> Result<()> {
-    let status = crate::elevate::elevate(sudo_bin, sudo_flags, "install")?
+    let status = crate::elevate::elevate(sudo_bin, sudo_flags, install_bin)?
         .args(["-m", "644"])
         .arg(tmp_path)
         .arg(dest)
@@ -52,6 +53,7 @@ pub fn initialize_environment(
     void_packages_dir: &Path,
     sudo_bin: &str,
     sudo_flags: &[String],
+    install_bin: &str,
     git_bin: &str,
 ) -> Result<Masterdir> {
     // Verificar que git está instalado (vary usa git CLI, no git2)
@@ -80,7 +82,7 @@ pub fn initialize_environment(
             let tmp = void_packages_dir.join(".vary-10-conf.tmp");
             std::fs::write(&tmp, &contents)
                 .with_context(|| format!("escribiendo {}", tmp.display()))?;
-            write_root_file(&tmp, XBPSD_VARY_CONF, sudo_bin, sudo_flags)?;
+            write_root_file(&tmp, XBPSD_VARY_CONF, sudo_bin, sudo_flags, install_bin)?;
             let _ = std::fs::remove_file(&tmp);
             tracing::info!("registrado repositorio local en {XBPSD_VARY_CONF}");
         }

@@ -120,6 +120,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         &config.void_packages_dir(),
         &config.sudo_bin,
         &config.sudo_flags,
+        &config.tools_install_bin,
         &config.git_bin,
     )?;
 
@@ -290,19 +291,38 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 Action::Install(BinarySource::VulBinary { repo }) => repo.as_str(),
                 _ => "?",
             };
-            println!(
-                "  {}/{}-{} [{}]",
-                src,
-                item.name,
-                item.info.version,
-                item.info.pkgver()
-            );
+            // H-046: `name` es lo pedido (puede ser virtual de `provides`);
+            // lo operativo es siempre `info.pkgname`.
+            let real = &item.info.pkgname;
+            if real == &item.name {
+                println!(
+                    "  {src}/{real}-{} [{}]",
+                    item.info.version,
+                    item.info.pkgver()
+                );
+            } else {
+                println!(
+                    "  {src}/{real}-{} [{}] (pedido como {})",
+                    item.info.version,
+                    item.info.pkgver(),
+                    item.name
+                );
+            }
         }
     }
     if !plan.builds.is_empty() {
         println!("\n{} Packages to build (source):", c.bold.paint("::"));
         for item in &plan.builds {
-            println!("  {}/{}", item.name, item.info.pkgver());
+            let real = &item.info.pkgname;
+            if real == &item.name {
+                println!("  {real}/{}", item.info.pkgver());
+            } else {
+                println!(
+                    "  {real}/{} (pedido como {})",
+                    item.info.pkgver(),
+                    item.name
+                );
+            }
         }
         println!(
             "\n{}",
@@ -316,10 +336,14 @@ pub fn install(config: &mut Config) -> Result<i32> {
 
     if !config.no_confirm {
         for item in &plan.builds {
-            if let Ok(repo_name) = vur_map_lookup_repo(&item.name, &repos, &mut cache) {
+            // H-046: revisar por nombre real (lo pedido puede ser virtual).
+            let real = &item.info.pkgname;
+            if let Ok(repo_name) = vur_map_lookup_repo(real, &repos, &mut cache)
+                .or_else(|_| vur_map_lookup_repo(&item.name, &repos, &mut cache))
+            {
                 if let Some(repo) = repos.iter().find(|r| r.name == repo_name) {
-                    let _ = repo.materialize_pkg(&item.name);
-                    let _ = crate::review::prompt_review(&item.name, &repo.path, &config.git_bin);
+                    let _ = repo.materialize_pkg(real);
+                    let _ = crate::review::prompt_review(real, &repo.path, &config.git_bin);
                 }
             }
         }
@@ -335,7 +359,8 @@ pub fn install(config: &mut Config) -> Result<i32> {
         .iter()
         .filter(|item| {
             if !config.force_rebuild && !config.force_build {
-                if let Ok(Some(cur)) = crate::xbps::query_installed(&item.name) {
+                // H-046: xbps conoce el nombre real, no el virtual pedido.
+                if let Ok(Some(cur)) = crate::xbps::query_installed(&item.info.pkgname) {
                     if cur.pkgver == item.info.pkgver() {
                         return false;
                     }
@@ -404,12 +429,12 @@ pub fn install(config: &mut Config) -> Result<i32> {
         // Ya instalada EXACTAMENTE esa versión => omitir compilación
         // (--force-build / force_rebuild la fuerzan).
         if !config.force_rebuild && !config.force_build {
-            match crate::xbps::query_installed(&item.name) {
+            match crate::xbps::query_installed(&item.info.pkgname) {
                 Ok(Some(cur)) if cur.pkgver == item.info.pkgver() => {
                     println!(
                         "{} {} ya instalado ({}) ; omitiendo build",
                         c.action.paint("::"),
-                        c.bold.paint(&item.name),
+                        c.bold.paint(&item.info.pkgname),
                         cur.pkgver
                     );
                     continue;
@@ -423,7 +448,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         let repo = repos
             .iter()
             .find(|r| r.name == repo_name)
-            .ok_or_else(|| anyhow::anyhow!("repo not found for {}", item.name))?;
+            .ok_or_else(|| anyhow::anyhow!("repo not found for {}", item.info.pkgname))?;
         // force=true solo para targets explícitos del usuario (o subpaquetes de esos targets)
         let explicit = targets.iter().any(|t| {
             t == &parent_pkg
@@ -436,7 +461,9 @@ pub fn install(config: &mut Config) -> Result<i32> {
         // Always unproject (proyectamos parent_pkg)
         let _ = repo.unproject_pkg(&md.srcpkgs_dir(), &parent_pkg);
         res.with_context(|| format!("building {parent_pkg}"))?;
-        built_names.push(item.name.clone());
+        // H-046: registrar el nombre REAL (lo pedido puede ser un virtual de
+        // `provides` que xbps-install no aceptaría).
+        built_names.push(parent_pkg.clone());
         // También registrar subpaquetes como construidos si el target era el padre
         for sub in &item.info.subpackages {
             if !built_names.contains(&sub.pkgname) {
@@ -454,7 +481,8 @@ pub fn install(config: &mut Config) -> Result<i32> {
     let mut vup_urls_by_repo: HashMap<String, Vec<String>> = HashMap::new();
     for it in &plan.installs {
         if let Action::Install(BinarySource::VulBinary { repo: rr }) = &it.action {
-            if let Some(u) = vup_binary_urls.get(&format!("{}:{}", rr, it.name)) {
+            // H-046: las claves son pkgname reales (ver construcción arriba).
+            if let Some(u) = vup_binary_urls.get(&format!("{}:{}", rr, it.info.pkgname)) {
                 let urls = vup_urls_by_repo.entry(rr.clone()).or_default();
                 if !urls.contains(u) {
                     urls.push(u.clone());
@@ -464,8 +492,10 @@ pub fn install(config: &mut Config) -> Result<i32> {
     }
 
     for item in &plan.installs {
+        // H-046: instalar por nombre real (oficiales: info.pkgname == name).
+        let real = item.info.pkgname.clone();
         match &item.action {
-            Action::Install(BinarySource::Official) => all_install_names.push(item.name.clone()),
+            Action::Install(BinarySource::Official) => all_install_names.push(real),
             Action::Install(BinarySource::VulBinary { repo }) => {
                 if !binary_repos_configured.contains(repo) {
                     if let Some(r) = repos.iter().find(|r| &r.name == repo) {
@@ -485,6 +515,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                                 entry,
                                 &config.sudo_bin,
                                 &config.sudo_flags,
+                                &config.tools_install_bin,
                                 config.no_confirm,
                             ) {
                                 bail!("failed to setup VUP binary repo '{repo}': {e}");
@@ -494,6 +525,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             entry,
                             &config.sudo_bin,
                             &config.sudo_flags,
+                            &config.tools_install_bin,
                             config.no_confirm,
                         ) {
                             bail!("failed to setup binary repo '{repo}': {e}");
@@ -501,7 +533,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                     }
                     binary_repos_configured.insert(repo.clone());
                 }
-                all_install_names.push(item.name.clone());
+                all_install_names.push(real);
             }
             _ => {}
         }
@@ -544,17 +576,18 @@ pub fn install(config: &mut Config) -> Result<i32> {
     // 9. Record in db
     let mut db = InstalledDb::load(config.installed_db_path())?;
     for item in plan.installs.iter().chain(plan.builds.iter()) {
-        // Only VUR packages
-        let is_vur = vur_map_lookup_repo(&item.name, &repos, &mut cache).is_ok();
+        // Only VUR packages (por nombre real: lo pedido puede ser virtual).
+        let real = &item.info.pkgname;
+        let is_vur = vur_map_lookup_repo(real, &repos, &mut cache).is_ok();
         if is_vur {
-            let repo_name = vur_map_lookup_repo(&item.name, &repos, &mut cache)
+            let repo_name = vur_map_lookup_repo(real, &repos, &mut cache)
                 .unwrap_or_else(|_| "unknown".to_string());
             let itype = match &item.action {
                 Action::Install(BinarySource::VulBinary { .. }) => InstallType::Binary,
                 Action::Build => InstallType::Source,
                 _ => InstallType::Source,
             };
-            db.upsert(&item.name, &item.info.pkgver(), &repo_name, itype.clone());
+            db.upsert(real, &item.info.pkgver(), &repo_name, itype.clone());
             for sub in &item.info.subpackages {
                 db.upsert(&sub.pkgname, &item.info.pkgver(), &repo_name, itype.clone());
             }
@@ -593,6 +626,7 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
         &config.void_packages_dir(),
         &config.sudo_bin,
         &config.sudo_flags,
+        &config.tools_install_bin,
         &config.git_bin,
     )?;
 

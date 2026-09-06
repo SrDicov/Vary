@@ -3,6 +3,27 @@ use anyhow::Result;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+/// (binario, args) del paginador (H-045): `$PAGER` (p. ej. `less -R`, `most`)
+/// gana; si no, `bat` con resaltado bash. `less -R` queda como último recurso
+/// en el llamador si el spawn falla.
+pub(crate) fn pager_cmd() -> (String, Vec<String>) {
+    if let Some(pager) = std::env::var_os("PAGER") {
+        let pager = pager.to_string_lossy();
+        let mut parts = pager.split_whitespace();
+        if let Some(bin) = parts.next() {
+            return (bin.to_string(), parts.map(|s| s.to_string()).collect());
+        }
+    }
+    (
+        "bat".to_string(),
+        vec![
+            "--paging=always".to_string(),
+            "--language=bash".to_string(),
+            "--style=plain".to_string(),
+        ],
+    )
+}
+
 pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<()> {
     use std::io::Write;
 
@@ -62,9 +83,10 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
         return Ok(());
     }
 
-    // Try bat first, fallback to less
-    let mut pager = Command::new("bat")
-        .args(["--paging=always", "--language=bash", "--style=plain"])
+    // Paginador: $PAGER manda (convención unix, H-045); si no, bat y luego less.
+    let (pager_bin, pager_args) = pager_cmd();
+    let mut pager = Command::new(&pager_bin)
+        .args(&pager_args)
         .stdin(Stdio::piped())
         .spawn()
         .or_else(|_| {
@@ -108,5 +130,20 @@ mod tests {
     fn prompt_review_sin_template_es_ok_silencioso() {
         let dir = tempfile::tempdir().expect("tempdir");
         assert!(prompt_review("inexistente", dir.path(), "git").is_ok());
+    }
+
+    #[test]
+    fn pager_cmd_respeta_pager_y_defecto_bat() {
+        // H-045: $PAGER con flags se parte; vacío/ausente => bat.
+        let prev = std::env::var_os("PAGER");
+        std::env::set_var("PAGER", "less -R");
+        assert_eq!(pager_cmd(), ("less".to_string(), vec!["-R".to_string()]));
+        std::env::remove_var("PAGER");
+        let (bin, args) = pager_cmd();
+        assert_eq!(bin, "bat");
+        assert!(args.contains(&"--paging=always".to_string()));
+        if let Some(v) = prev {
+            std::env::set_var("PAGER", v);
+        }
     }
 }

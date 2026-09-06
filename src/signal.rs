@@ -36,6 +36,28 @@ pub struct MountCleanup {
     pub sudo_flags: Vec<String>,
     /// true = overlay de kernel montado con sudo; false = fuse-overlayfs.
     pub used_sudo: bool,
+    /// Binarios desmontadores configurables (H-045); defaults al construir.
+    pub umount_bin: String,
+    pub fusermount_bin: String,
+}
+
+impl MountCleanup {
+    /// Constructor con binarios por defecto (`umount`, `fusermount3`).
+    pub fn new(
+        merged: PathBuf,
+        sudo_bin: String,
+        sudo_flags: Vec<String>,
+        used_sudo: bool,
+    ) -> Self {
+        Self {
+            merged,
+            sudo_bin,
+            sudo_flags,
+            used_sudo,
+            umount_bin: "umount".to_string(),
+            fusermount_bin: "fusermount3".to_string(),
+        }
+    }
 }
 
 impl MountCleanup {
@@ -50,7 +72,7 @@ impl MountCleanup {
             if elevated_status(
                 &self.sudo_bin,
                 &self.sudo_flags,
-                "umount",
+                &self.umount_bin,
                 &[self.merged.as_path()],
             ) {
                 return;
@@ -62,7 +84,7 @@ impl MountCleanup {
             if elevated_status(
                 &self.sudo_bin,
                 &self.sudo_flags,
-                "umount",
+                &self.umount_bin,
                 &[Path::new("-l"), self.merged.as_path()],
             ) {
                 return;
@@ -72,13 +94,19 @@ impl MountCleanup {
         }
         // fuse-overlayfs: primero el helper FUSE (mata el daemon), luego
         // umount plano, detach perezoso al final.
-        if plain_status("fusermount3", &["-u", &self.merged.display().to_string()]) {
+        if plain_status(
+            &self.fusermount_bin,
+            &["-u", &self.merged.display().to_string()],
+        ) {
             return;
         }
-        if plain_status("umount", &[&self.merged.display().to_string()]) {
+        if plain_status(&self.umount_bin, &[&self.merged.display().to_string()]) {
             return;
         }
-        if plain_status("umount", &["-l", &self.merged.display().to_string()]) {
+        if plain_status(
+            &self.umount_bin,
+            &["-l", &self.merged.display().to_string()],
+        ) {
             return;
         }
         tracing::warn!("no se pudo desmontar {}", self.merged.display());
@@ -294,24 +322,19 @@ mod tests {
     #[test]
     fn cleanup_en_ruta_inexistente_no_panickea() {
         // umount de algo no montado falla; debe tragarse el error, no panic.
-        MountCleanup {
-            merged: PathBuf::from("/nonexistent-vary-xyz-123"),
-            sudo_bin: "false".to_string(),
-            sudo_flags: vec![],
-            used_sudo: false,
-        }
+        MountCleanup::new(
+            PathBuf::from("/nonexistent-vary-xyz-123"),
+            "false".to_string(),
+            vec![],
+            false,
+        )
         .run();
     }
 
     #[test]
     fn registro_y_deregistro_de_mount() {
         let p = PathBuf::from("/tmp/vary-test-reg");
-        register_mount(MountCleanup {
-            merged: p.clone(),
-            sudo_bin: String::new(),
-            sudo_flags: vec![],
-            used_sudo: false,
-        });
+        register_mount(MountCleanup::new(p.clone(), String::new(), vec![], false));
         assert!(REGISTRY.lock().unwrap().iter().any(|c| c.merged == p));
         unregister_mount(&p);
         assert!(!REGISTRY.lock().unwrap().iter().any(|c| c.merged == p));
