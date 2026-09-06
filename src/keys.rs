@@ -68,18 +68,25 @@ pub(crate) fn write_root_file(
     sudo_bin: &str,
     sudo_flags: &[String],
 ) -> Result<()> {
-    let tmp = std::env::temp_dir().join(format!(
-        "vary-{}.tmp",
-        std::process::id()
-    ));
-    std::fs::write(&tmp, contents).context("escribiendo archivo temporal")?;
+    use std::io::Write;
+    let mut tmp_file = tempfile::Builder::new()
+        .prefix("vary-")
+        .tempfile()
+        .context("creando archivo temporal seguro")?;
+    tmp_file
+        .write_all(contents.as_bytes())
+        .context("escribiendo contenido en archivo temporal")?;
+    tmp_file
+        .flush()
+        .context("sincronizando archivo temporal")?;
+
     let status = crate::elevate::elevate(sudo_bin, sudo_flags, "install")?
         .args(["-m", mode])
-        .arg(&tmp)
+        .arg(tmp_file.path())
         .arg(dest)
         .status()
         .context("elevando privilegios para escribir archivo del sistema")?;
-    let _ = std::fs::remove_file(&tmp);
+
     if !status.success() {
         bail!("no se pudo escribir {} (código {:?})", dest, status.code());
     }
@@ -389,6 +396,18 @@ mod tests {
         assert!(validate_repository_url("ext::sh").is_err());
         assert!(validate_repository_url("").is_err());
         assert!(validate_repository_url("   ").is_err());
+    }
+
+    #[test]
+    fn write_root_file_creates_file_safely() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest.conf");
+        let dest_str = dest.to_str().unwrap();
+        let content = "repository=https://example.com/repo\n";
+
+        write_root_file(content, dest_str, "644", "env", &[]).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), content);
     }
 }
 

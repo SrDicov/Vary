@@ -232,7 +232,7 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 ### [H-012] Inyección de argumentos y ejecución arbitraria mediante transportes peligrosos en git clone y git ls-remote
 - **Severidad:** High
 - **Módulo:** `src/vur_client.rs:60-120, 1145-1165`, `src/repo.rs:37`, `src/masterdir.rs:90`
-- **Commit:** Pendiente de commit `fix(H-012): sanitize git transport protocols and prevent URL argument injection`
+- **Commit:** `08c4442` (`fix(H-012): sanitize git transport protocols and prevent URL argument injection`)
 - **Descripción del problema:** Invocaciones a comandos Git remotos (`git clone` y `git ls-remote`) pasaban URLs sin verificar que comiencen con flags (ej. `--upload-pack=evil`), sin separar opciones con `--`, y sin deshabilitar protocolos de transporte inseguros (como `ext::`). Esto permitía ejecución de comandos arbitrarios ante URLs manipuladas.
 - **Remediación:**
   1. Se implementó `is_safe_git_url(url: &str) -> bool` en `src/vur_client.rs`, exigiendo esquemas admitidos (`https://`, `http://`, `git://`, `ssh://`, `git@`, `file://`), prohibiendo prefijos con guion (`-`), saltos de línea y caracteres de control.
@@ -244,6 +244,24 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `cargo test vur_client`
   - `cargo clippy --all-targets -- -D warnings`
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-013] Condición de carrera (TOCTOU) y archivo temporal predecible /tmp/vary-<PID>.tmp en write_root_file
+- **Severidad:** High
+- **Módulo:** `src/keys.rs:64-88, 400-415`
+- **Commit:** Pendiente de commit `fix(H-013): use secure NamedTempFile for root file writes`
+- **Descripción del problema:** `write_root_file` utilizaba una ruta estática predecible `/tmp/vary-<PID>.tmp` con permisos mundiales. En entornos multiusuario o compartidos, un atacante local podía crear enlaces simbólicos o explotar condiciones de carrera (TOCTOU) antes de la invocación de `install` con privilegios elevados para sobrescribir archivos del sistema.
+- **Remediación:**
+  1. Se sustituyó la ruta predecible por `tempfile::Builder::new().prefix("vary-").tempfile()`, generando un archivo temporal con nombre criptográficamente aleatorio, flags `O_EXCL` y permisos restringidos `0600`.
+  2. Se escribe y descarga (`flush`) el contenido directamente en el archivo temporal antes de invocar el comando de instalación elevado.
+  3. Se agregó la prueba unitaria `write_root_file_creates_file_safely` en `keys::tests`.
+- **Validación:**
+  - `keys::tests::write_root_file_creates_file_safely`
+  - `cargo test keys`
+  - `cargo clippy --all-targets -- -D warnings`
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
 
 
 

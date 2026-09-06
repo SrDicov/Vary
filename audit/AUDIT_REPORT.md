@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 5 ([H-009], [H-010], [H-011], [H-012], [H-022]) | 11 |
+| 🟠 **High** | 16 | 6 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-022]) | 10 |
 | 🟡 **Medium** | 15 | 0 | 15 |
 | 🟢 **Low / Info** | 8 | 0 | 8 |
-| **TOTAL** | **47** | **13** | **34** |
+| **TOTAL** | **47** | **14** | **33** |
 
 ---
 
@@ -250,7 +250,7 @@
 - **Impacto:** Si `self.entry.url` comienza con `-` (ej. `--upload-pack=evil`), Git ejecuta el binario local especificado. Además, transportes maliciosos en submódulos o URLs tipo `ext::` pueden ejecutar comandos arbitrarios de shell.
 - **Fix propuesto:** Validar esquema de URL (`https://`, `git://`, `ssh://`), pasar `-c protocol.ext.allow=never -c protocol.file.allow=user`, y colocar `--` antes de `&self.entry.url`.
 - **Validación:** Test pasando URLs con flags a `git_clone` y verificando rechazo seguro.
-- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit: pendiente de commit H-012)
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `08c4442`)
 
 ---
 
@@ -266,7 +266,7 @@
 - **Impacto:** Emplea una ruta estática predecible en `/tmp` con permisos mundiales (la vulnerabilidad clásica de `vura`). Un atacante local puede crear un enlace simbólico previo a un archivo sensible de root antes de que `vary` invoque el comando elevado `mv`, sobrescribiendo archivos del sistema.
 - **Fix propuesto:** Usar `tempfile::NamedTempFile` en un directorio privado con permisos `0700` dentro de `$XDG_CACHE_HOME/vary` o `tempfile::Builder` en `/tmp` con nombre aleatorio criptográfico y `O_EXCL`.
 - **Validación:** Test verificando creación con permisos `0600` sin nombres predecibles en `/tmp`.
-- **Estado:** PENDIENTE
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit: pendiente de commit H-013)
 
 ---
 
