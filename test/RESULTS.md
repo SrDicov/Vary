@@ -22,6 +22,25 @@ Backup base: `test/backup/2026-09-06/` + `/root/xbps.d.pre-audit` + `/tmp/vary-{
 
 ## T2 — Matriz CLI (candidata 0.3.0 salvo indicación)
 
+| comando | contexto | resultado | tiempo | notas |
+|---|---|---|---|---|
+| `vary -S pkg-que-no-existe-xyz` | resolución | exit=1 + "no encontrado en repos oficiales ni VURs" | ~3s | OK (nota: con pipe a `tail` el `$?` es del pipe — medir sin pipes) |
+| `vary -S 'foo/bar'` | validación H-010 | exit=1 + "nombre de paquete inválido ... ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$" | — | OK |
+| `vary -Ss cowsay` / `-Ss zzznadaexiste` | búsqueda | exit=0 con resultados / exit=1 "No packages found" | — | OK |
+| `vary -Si xbps` / `-Si librewolf` / `-Si hytale-installer` | info | exit=0, ficha correcta | — | los 3 resolvieron vía `official` (hay repos binarios que los llevan); falta caso `-Si` VUR-puro → T3 |
+| `vary --color always\|never -Ss cowsay` | color | always: escapes; never: sin color PERO queda negrita `^[[1m` en el nombre | — | **T-001 (low)**: `--color never` no elimina el bold de `ss_name` |
+| `vary -v` / `-vv -Ss cowsay` | verbosidad H-028 | SIN EFECTO: salida idéntica sin `-v`; `RUST_LOG=debug` sí muestra DEBUG (2 líneas) y el log-archivo tiene 447 DEBUG | — | **T-002 (medium)**: `-v`/`-vv` no bajan el filtro de consola (precedente H-032: flag documentado que no hace nada); parser OK (`verbose: 1/2` en dump); `apply_runtime_config` no surte efecto en vivo; workaround `RUST_LOG` |
+| `vary -q -Ss cowsay` | quiet | solo nombres, exit=0 | — | OK |
+| `vary --arch INVALIDARCH -Ss cowsay` | arch | exit=2 + lista de archs soportadas | — | OK (2=mal uso) |
+| `vary -S cowsay </dev/null` | EOF H-001/H-019 | exit=1 + "stdin llegó a EOF sin confirmación ... usa --noconfirm" | — | PASS en vivo (contraste 0.2.5: aprobaba) |
+| `vary --noconfirm -S nano </dev/null` | idempotencia | exit=0 aunque xbps dice "already installed" | — | **T-003 (medium)**: ERROR de xbps + exit 0 = éxito mentiroso (mismo patrón que `-Syu` abortado → 0 en baseline). O se detecta instalado antes (0 limpio) o se propaga el error (!=0) |
+| `vary --noconfirm -S cowsay --sudo /nonexistent-bin-xyz` | elevación inexistente | exit=1 + "wrapper de elevación no ejecutable", SIN mutación (cowsay ausente) | — | OK: error claro, no panic (sale 1, no 127 — aceptado: es error de config en resolve, no NotFound en spawn) |
+| `vary --sudoflags` (sin valor) | H-023 | exit=2 + "expects a value" | — | OK |
+| `vary -Sy --git /bin/false` | git falso | exit=1, sin panic; WARN por repo con migración legacy abortada | ~40s | OK-tolerante; clones reales INTACTOS (git log + -Ss verificados). La migración full→partial se intenta en refresh (correcto diferirla del add) |
+| doble instancia (fifo en confirm `vary -S cowsay`) | H-027 en vivo | `-Ss`=0 (2.9s, sin bloqueo), `-V`=0 (0.04s), 2º `-S`=1 en 0.04s: "otra instancia ... (pid 8809) ... no borres el archivo"; 1º=1 tras `n` | — | PASS total |
+| `--help` vs README.md | docs | sin divergencias: todo flag README existe en help; `--asdeps/--asexplicit` documentados como rechazados | — | OK (README no enumera todo; help es canónico) |
+| PENDIENTE-T3 | `--force-build`/`--prefer-binary`/`--no-prefer-binary` (3 caminos mismo pkg), `--sudo doas` real, `-Si` VUR-puro, error-rojo (sin cobertura en vivo: red local OK todo T2) | — | — | — |
+
 | paso | comando | resultado | notas |
 |---|---|---|---|
 | 0 | backups + `vary -V` + `git status` | OK | `vary 0.2.5`; árbol limpio @ `0de05c1`; HALLAZGO-previo: `~/.cache/vary/installed.json` es DIRECTORIO LMDB (`data.mdb`+`lock.mdb`, mtime 07:40) — el binario instalado es pre-H-005; la migración a JSON la disparará la candidata 0.3.0 (ver paso 6 / T1) |
