@@ -107,20 +107,15 @@ impl VurInfo {
                 }
                 if sum.is_empty() || !sum.starts_with("sha256:") {
                     bail!(
-                        "checksum[{}] inválido: '{}' debe empezar por 'sha256:' o ser 'SKIP' \
-                         (las cadenas vacías tampoco son válidas)",
-                        i,
-                        sum
+                        "checksum[{i}] inválido: '{sum}' debe empezar por 'sha256:' o ser 'SKIP' \
+                         (las cadenas vacías tampoco son válidas)"
                     );
                 }
             }
         }
         for (i, sub) in self.subpackages.iter().enumerate() {
             if sub.pkgname.trim().is_empty() {
-                bail!(
-                    "subpackages[{}].pkgname vacío: el nombre del subpaquete es obligatorio",
-                    i
-                );
+                bail!("subpackages[{i}].pkgname vacío: el nombre del subpaquete es obligatorio");
             }
             if !is_valid_pkgname(&sub.pkgname) {
                 bail!(
@@ -139,11 +134,7 @@ impl VurInfo {
             }
             for (j, dep) in sub.depends.iter().enumerate() {
                 if dep.trim().is_empty() {
-                    bail!(
-                        "subpackages[{}].depends[{}] inválida: la dependencia está vacía o solo contiene espacios",
-                        i,
-                        j
-                    );
+                    bail!("subpackages[{i}].depends[{j}] inválida: la dependencia está vacía o solo contiene espacios");
                 }
             }
         }
@@ -173,7 +164,7 @@ impl VurInfo {
 /// Deserializa un único `VurInfo`, lo valida y lo normaliza.
 pub fn parse(json: &str) -> Result<VurInfo> {
     let mut info: VurInfo =
-        serde_json::from_str(json).map_err(|e| anyhow!("JSON malformado: {}", e))?;
+        serde_json::from_str(json).map_err(|e| anyhow!("JSON malformado: {e}"))?;
     info.validate()?;
     info.normalize();
     Ok(info)
@@ -185,7 +176,7 @@ pub fn parse(json: &str) -> Result<VurInfo> {
 /// Los errores indican el índice y el `pkgname` de la entrada problemática.
 pub fn parse_many(json: &str) -> Result<Vec<VurInfo>> {
     let value: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| anyhow!("JSON malformado: {}", e))?;
+        serde_json::from_str(json).map_err(|e| anyhow!("JSON malformado: {e}"))?;
     let items: Vec<serde_json::Value> = match value {
         serde_json::Value::Array(items) => items,
         obj @ serde_json::Value::Object(_) => vec![obj],
@@ -199,9 +190,9 @@ pub fn parse_many(json: &str) -> Result<Vec<VurInfo>> {
             .unwrap_or("<sin pkgname>")
             .to_owned();
         let mut info: VurInfo = serde_json::from_value(item)
-            .map_err(|e| anyhow!("entrada[{}] (pkgname '{}'): {}", idx, label, e))?;
+            .map_err(|e| anyhow!("entrada[{idx}] (pkgname '{label}'): {e}"))?;
         info.validate()
-            .map_err(|e| anyhow!("entrada[{}] (pkgname '{}'): {}", idx, label, e))?;
+            .map_err(|e| anyhow!("entrada[{idx}] (pkgname '{label}'): {e}"))?;
         info.normalize();
         out.push(info);
     }
@@ -469,7 +460,7 @@ mod tests {
     fn parse_many_accepts_array_of_two() {
         let a = base_json("foo", "1.0", 1, r#"["x86_64"]"#);
         let b = base_json("baz", "2.0", 3, r#"["aarch64"]"#);
-        let json = format!("[{},{}]", a, b);
+        let json = format!("[{a},{b}]");
         let out = parse_many(&json).expect("debe parsear");
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].pkgname, "foo");
@@ -489,7 +480,7 @@ mod tests {
     fn parse_many_reports_index_and_pkgname_on_invalid_entry() {
         let good = base_json("ok", "1.0", 1, r#"["x86_64"]"#);
         let bad = base_json("bad", "1.0", 0, r#"["x86_64"]"#);
-        let json = format!("[{},{}]", good, bad);
+        let json = format!("[{good},{bad}]");
         let err = parse_many(&json).unwrap_err();
         let msg = err.to_string();
         assert!(

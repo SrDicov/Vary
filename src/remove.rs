@@ -10,14 +10,11 @@ pub fn remove(config: &Config) -> Result<i32> {
     let targets = config.targets.clone();
     for target in &targets {
         if !crate::metadata::is_valid_pkgname(target) {
-            anyhow::bail!(
-                "nombre de paquete inválido: '{}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)",
-                target
-            );
+            anyhow::bail!("nombre de paquete inválido: '{target}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)");
         }
     }
 
-    tracing::info!("removing packages: {:?}", targets);
+    tracing::info!("removing packages: {targets:?}");
 
     let mut extra: Vec<String> = Vec::new();
     if config.no_confirm {
@@ -39,7 +36,7 @@ pub fn remove(config: &Config) -> Result<i32> {
         }
         if changed {
             if let Err(e) = db.save() {
-                tracing::warn!("failed to update installed db: {}", e);
+                tracing::warn!("failed to update installed db: {e}");
             }
         }
     }

@@ -74,8 +74,8 @@ enum Arg<'a> {
 impl<'a> fmt::Display for Arg<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Arg::Short(c) => write!(f, "-{}", c),
-            Arg::Long(l) => write!(f, "--{}", l),
+            Arg::Short(c) => write!(f, "-{c}"),
+            Arg::Long(l) => write!(f, "--{l}"),
         }
     }
 }
@@ -160,7 +160,7 @@ pub fn parse_args<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<()> 
                             _ => bail!("--index-url requires a value"),
                         }
                     } else if t.starts_with('-') {
-                        bail!(format!("unknown option {} for --repo add", t));
+                        bail!(format!("unknown option {t} for --repo add"));
                     } else if name.is_none() {
                         name = Some(t.to_string());
                     } else {
@@ -189,7 +189,7 @@ pub fn parse_args<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<()> 
                             if name.is_none() && !t.starts_with('-') {
                                 name = Some(t.to_string());
                             } else if t.starts_with('-') && t != "-" {
-                                bail!(format!("unknown option {} for --repo remove", t));
+                                bail!(format!("unknown option {t} for --repo remove"));
                             }
                         }
                     }
@@ -207,7 +207,7 @@ pub fn parse_args<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<()> 
                 set_repo_cmd(RepoCmd::Rekey(raw[2].clone()));
                 return Ok(());
             }
-            other => bail!(format!("unknown --repo subcommand: {}", other)),
+            other => bail!(format!("unknown --repo subcommand: {other}")),
         }
     }
 
@@ -290,7 +290,7 @@ impl Config {
     ) -> Result<()> {
         match takes_value(arg) {
             TakesValue::Required if value.is_none() => {
-                bail!(format!("option {} expects a value", arg))
+                bail!(format!("option {arg} expects a value"))
             }
             _ => (),
         }
@@ -329,7 +329,7 @@ impl Config {
             Arg::Long("color") => {
                 let v = value.unwrap_or("auto");
                 if v != "always" && v != "never" && v != "auto" {
-                    bail!("invalid --color value '{}' (expected always|never|auto)", v);
+                    bail!("invalid --color value '{v}' (expected always|never|auto)");
                 }
                 self.color = crate::config::Colors::from(v);
             }
@@ -437,18 +437,18 @@ impl Config {
                     "force-build" | "prefer-binary" | "no-prefer-binary" | "interactive"
                     | "sudo" | "sudoflags" | "git" | "curl" | "arch" | "help" | "version"
                     | "noconfirm" | "confirm" | "color" | "verbose" | "quiet" => {}
-                    _ => bail!(format!("unknown option --{}", a)),
+                    _ => bail!(format!("unknown option --{a}")),
                 }
             }
             Arg::Short(a) if !arg.is_pacman_arg() && !arg.is_pacman_global() => match a {
                 'h' | 'V' | 'v' | 'q' | 'S' | 'R' | 's' | 'i' | 'y' | 'u' | 'w' => {}
-                _ => bail!(format!("unknown option -{}", a)),
+                _ => bail!(format!("unknown option -{a}")),
             },
             _ => {}
         }
 
         match takes_value(arg) {
-            TakesValue::No if forced => bail!(format!("option {} does not allow a value", arg)),
+            TakesValue::No if forced => bail!(format!("option {arg} does not allow a value")),
             _ => (),
         }
 
@@ -502,7 +502,7 @@ mod tests {
                 assert_eq!(branch.as_deref(), Some("master"));
                 assert_eq!(index_url.as_deref(), Some("https://example.com/index.json"));
             }
-            other => panic!("inesperado: {:?}", other),
+            other => panic!("inesperado: {other:?}"),
         }
     }
 
@@ -525,7 +525,7 @@ mod tests {
                 assert_eq!(branch.as_deref(), Some("master"));
                 assert!(index_url.is_none());
             }
-            other => panic!("inesperado: {:?}", other),
+            other => panic!("inesperado: {other:?}"),
         }
     }
 
@@ -541,7 +541,7 @@ mod tests {
                 assert_eq!(url, "https://example.com/vur.git");
                 assert!(name.is_none() && branch.is_none() && index_url.is_none());
             }
-            other => panic!("inesperado: {:?}", other),
+            other => panic!("inesperado: {other:?}"),
         }
     }
 
@@ -574,12 +574,12 @@ mod tests {
     fn print_flag_is_disabled_with_informative_error() {
         let mut config = Config::default();
         let err1 = parse_args(&mut config, &["-Sp", "foo"]).unwrap_err();
-        assert!(format!("{:#}", err1).contains("Roadmap P0-4"));
+        assert!(format!("{err1:#}").contains("Roadmap P0-4"));
 
         let err2 = parse_args(&mut config, &["-S", "--print", "foo"]).unwrap_err();
-        assert!(format!("{:#}", err2).contains("Roadmap P0-4"));
+        assert!(format!("{err2:#}").contains("Roadmap P0-4"));
 
         let err3 = parse_args(&mut config, &["--print-format", "%n"]).unwrap_err();
-        assert!(format!("{:#}", err3).contains("Roadmap P0-4"));
+        assert!(format!("{err3:#}").contains("Roadmap P0-4"));
     }
 }

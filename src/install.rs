@@ -111,10 +111,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
     }
     for target in &targets {
         if !crate::metadata::is_valid_pkgname(target) {
-            bail!(
-                "nombre de paquete inválido: '{}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)",
-                target
-            );
+            bail!("nombre de paquete inválido: '{target}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)");
         }
     }
 
@@ -140,7 +137,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         };
         match repo.ensure_cloned() {
             Ok(_) => repos.push(repo),
-            Err(e) => tracing::warn!("failed to ensure VUR '{}': {}", name, e),
+            Err(e) => tracing::warn!("failed to ensure VUR '{name}': {e}"),
         }
     }
 
@@ -388,7 +385,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             if let Some(repo) = repos.iter().find(|r| &r.name == repo_name) {
                                 let _ = repo.materialize_pkg(&pkg);
                                 let _ = repo.project_pkg(&md.srcpkgs_dir(), &pkg, false);
-                                tracing::debug!("pre-fetching fuentes para {}", pkg);
+                                tracing::debug!("pre-fetching fuentes para {pkg}");
                                 let _ = md.fetch_pkg(&pkg);
                                 let _ = repo.unproject_pkg(&md.srcpkgs_dir(), &pkg);
                             }
@@ -436,7 +433,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         let res = md.build_pkg(&parent_pkg, config.makejobs);
         // Always unproject (proyectamos parent_pkg)
         let _ = repo.unproject_pkg(&md.srcpkgs_dir(), &parent_pkg);
-        res.with_context(|| format!("building {}", parent_pkg))?;
+        res.with_context(|| format!("building {parent_pkg}"))?;
         built_names.push(item.name.clone());
         // También registrar subpaquetes como construidos si el target era el padre
         for sub in &item.info.subpackages {
@@ -471,7 +468,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 if !binary_repos_configured.contains(repo) {
                     if let Some(r) = repos.iter().find(|r| &r.name == repo) {
                         let entry = repos_conf.vur.get(repo).ok_or_else(|| {
-                            anyhow::anyhow!("repositorio '{}' no encontrado en repos.conf", repo)
+                            anyhow::anyhow!("repositorio '{repo}' no encontrado en repos.conf")
                         })?;
                         if entry.has_vup_index() {
                             // Repo estilo VUP: una URL binaria por categoría;
@@ -488,7 +485,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                                 &config.sudo_flags,
                                 config.no_confirm,
                             ) {
-                                bail!("failed to setup VUP binary repo '{}': {}", repo, e);
+                                bail!("failed to setup VUP binary repo '{repo}': {e}");
                             }
                         } else if let Err(e) = crate::keys::setup_binary_repo(
                             r,
@@ -497,7 +494,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             &config.sudo_flags,
                             config.no_confirm,
                         ) {
-                            bail!("failed to setup binary repo '{}': {}", repo, e);
+                            bail!("failed to setup binary repo '{repo}': {e}");
                         }
                     }
                     binary_repos_configured.insert(repo.clone());
@@ -577,7 +574,7 @@ fn vur_map_lookup_repo(name: &str, repos: &[VurRepo], cache: &mut CacheIndex) ->
             }
         }
     }
-    bail!("no VUR repo found for {}", name)
+    bail!("no VUR repo found for {name}")
 }
 
 pub fn download_only(config: &mut Config) -> Result<i32> {
@@ -587,10 +584,7 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
     }
     for target in &targets {
         if !crate::metadata::is_valid_pkgname(target) {
-            bail!(
-                "nombre de paquete inválido: '{}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)",
-                target
-            );
+            bail!("nombre de paquete inválido: '{target}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)");
         }
     }
     let md = bootstrap::initialize_environment(
@@ -631,14 +625,14 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
                     repo.project_pkg(&md.srcpkgs_dir(), &parent, false)?;
                     md.fetch_pkg(&parent)?;
                     repo.unproject_pkg(&md.srcpkgs_dir(), &parent)?;
-                    println!("Fetched {} (parent {})", target, parent);
+                    println!("Fetched {target} (parent {parent})");
                     found = true;
                     break 'repos;
                 }
             }
         }
         if !found {
-            println!("{} not found in VURs (or is official)", target);
+            println!("{target} not found in VURs (or is official)");
         }
     }
     Ok(0)

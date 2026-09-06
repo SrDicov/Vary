@@ -71,7 +71,7 @@ impl CacheIndex {
     }
 
     pub fn invalidate_repo(&mut self, repo_name: &str) {
-        let prefix = format!("{}:", repo_name);
+        let prefix = format!("{repo_name}:");
         self.entries.retain(|key, _| !key.starts_with(&prefix));
     }
 

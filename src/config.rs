@@ -21,7 +21,7 @@ impl fmt::Display for Op {
             Op::Sync => "sync",
             Op::Remove => "remove",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

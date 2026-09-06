@@ -18,10 +18,7 @@ pub fn info(config: &Config) -> Result<i32> {
 
     for target in &config.targets {
         if !crate::metadata::is_valid_pkgname(target) {
-            anyhow::bail!(
-                "nombre de paquete inválido: '{}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)",
-                target
-            );
+            anyhow::bail!("nombre de paquete inválido: '{target}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)");
         }
     }
 
@@ -42,7 +39,7 @@ pub fn info(config: &Config) -> Result<i32> {
             if out.status.success() && !out.stdout.is_empty() {
                 let s = String::from_utf8_lossy(&out.stdout);
                 println!("Repository      : official");
-                println!("Package         : {}", target);
+                println!("Package         : {target}");
                 println!("Info            : {}", s.trim());
                 println!();
                 found = true;
@@ -73,14 +70,14 @@ pub fn info(config: &Config) -> Result<i32> {
                     println!("Repository      : vur:{}", repo.name);
                     println!("Package         : {}", info.pkgname);
                     if info.subpackages.iter().any(|s| &s.pkgname == target) {
-                        println!("Subpackage      : {}", target);
+                        println!("Subpackage      : {target}");
                     }
                     println!("Version         : {}", info.version);
                     println!("Revision        : {}", info.revision);
                     println!("Pkgver          : {}", info.pkgver());
                     println!("Archs           : {}", info.archs.join(", "));
                     if let Some(bs) = &info.build_style {
-                        println!("Build style     : {}", bs);
+                        println!("Build style     : {bs}");
                     }
                     if !info.depends.is_empty() {
                         println!("Depends         : {}", info.depends.join(" "));
@@ -98,7 +95,7 @@ pub fn info(config: &Config) -> Result<i32> {
                         println!("Replaces        : {}", info.replaces.join(" "));
                     }
                     if let Some(m) = &info.maintainer {
-                        println!("Maintainer      : {}", m);
+                        println!("Maintainer      : {m}");
                     }
                     if !info.subpackages.is_empty() {
                         println!(
@@ -127,7 +124,7 @@ pub fn info(config: &Config) -> Result<i32> {
         }
 
         if !found {
-            eprintln!("package '{}' not found in official repos nor VURs", target);
+            eprintln!("package '{target}' not found in official repos nor VURs");
             exit_code = 1;
         }
     }

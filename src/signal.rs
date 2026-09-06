@@ -97,7 +97,7 @@ fn elevated_status(sudo_bin: &str, sudo_flags: &[String], program: &str, args: &
     let mut cmd = match crate::elevate::elevate(sudo_bin, sudo_flags, program) {
         Ok(c) => c,
         Err(e) => {
-            tracing::warn!("sin vía de elevación para desmontar: {:#}", e);
+            tracing::warn!("sin vía de elevación para desmontar: {e:#}");
             return false;
         }
     };
@@ -159,7 +159,7 @@ fn install_handlers() {
             SigSet::empty(),
         );
         if let Err(e) = unsafe { sigaction(sig, &action) } {
-            tracing::warn!("no se pudo instalar handler para {:?}: {}", sig, e);
+            tracing::warn!("no se pudo instalar handler para {sig:?}: {e}");
         }
     }
 }

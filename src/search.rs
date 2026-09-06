@@ -74,7 +74,7 @@ pub fn search(config: &Config) -> Result<i32> {
                 });
             }
         }
-        Err(e) => tracing::warn!("xbps search failed: {}", e),
+        Err(e) => tracing::warn!("xbps search failed: {e}"),
     }
 
     // VUR search (federated, sequential for MVP simplicity)
@@ -141,7 +141,7 @@ pub fn search(config: &Config) -> Result<i32> {
                         pkgver: info.pkgver(),
                         desc,
                         rank: Rank::VulBinary,
-                        repo: format!("vur:{}", name),
+                        repo: format!("vur:{name}"),
                     };
                     rows.entry(pkgname.clone())
                         .and_modify(|existing| {
@@ -187,9 +187,9 @@ pub fn search(config: &Config) -> Result<i32> {
                     Rank::Source
                 };
                 let repo_label = if rank == Rank::VulBinary {
-                    format!("vur:{}", name)
+                    format!("vur:{name}")
                 } else {
-                    format!("vur-source:{}", name)
+                    format!("vur-source:{name}")
                 };
                 let row = Row {
                     name: pkgname.clone(),
@@ -219,7 +219,7 @@ pub fn search(config: &Config) -> Result<i32> {
     if rows.is_empty() {
         // Persistir igualmente lo aprendido para próximas búsquedas
         let _ = cache.save();
-        println!("No packages found for '{}'", pattern);
+        println!("No packages found for '{pattern}'");
         return Ok(1);
     }
 

@@ -27,35 +27,26 @@ pub fn validate_repo_name(name: &str) -> Result<()> {
     }
     let first = name.chars().next().unwrap();
     if !first.is_ascii_alphanumeric() {
-        bail!(
-            "el nombre del repositorio '{}' debe comenzar con un carácter alfanumérico",
-            name
-        );
+        bail!("el nombre del repositorio '{name}' debe comenzar con un carácter alfanumérico");
     }
     if !name
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
     {
-        bail!(
-            "el nombre del repositorio '{}' contiene caracteres inválidos (solo a-z, 0-9, ., _, -)",
-            name
-        );
+        bail!("el nombre del repositorio '{name}' contiene caracteres inválidos (solo a-z, 0-9, ., _, -)");
     }
     if name.contains("..") || name.contains('/') || name.contains('\\') {
-        bail!(
-            "intento de path traversal detectado en el nombre del repositorio '{}'",
-            name
-        );
+        bail!("intento de path traversal detectado en el nombre del repositorio '{name}'");
     }
     if name.starts_with("00-") || name == "keys" {
-        bail!("nombre de repositorio reservado o no permitido: '{}'", name);
+        bail!("nombre de repositorio reservado o no permitido: '{name}'");
     }
     Ok(())
 }
 
 pub fn repo_conf_path(name: &str) -> Result<String> {
     validate_repo_name(name)?;
-    Ok(format!("/etc/xbps.d/20-vur-{}.conf", name))
+    Ok(format!("/etc/xbps.d/20-vur-{name}.conf"))
 }
 
 pub fn key_dest_path(name: &str) -> Result<String> {
@@ -102,10 +93,7 @@ pub fn validate_repository_url(url: &str) -> Result<()> {
         bail!("URL de repositorio vacía");
     }
     if !(u.starts_with("https://") || u.starts_with("http://") || u.starts_with("file://")) {
-        bail!(
-            "URL de repositorio inválida ('{}'): esquema no soportado (debe ser https://, http:// o file://)",
-            u
-        );
+        bail!("URL de repositorio inválida ('{u}'): esquema no soportado (debe ser https://, http:// o file://)");
     }
     Ok(())
 }
@@ -167,8 +155,8 @@ pub fn setup_binary_repo(
         );
     }
     println!("VUR '{}': llave pública {}", repo.name, key_path.display());
-    println!("  SHA256: {}", fp);
-    println!("  binary repo: {}", binary_url);
+    println!("  SHA256: {fp}");
+    println!("  binary repo: {binary_url}");
     if !confirm(
         "¿Confiás en esta llave y deseas registrar este repositorio binario?",
         no_confirm,
@@ -186,7 +174,7 @@ pub fn setup_binary_repo(
     write_root_file(&pem, &dest_key, "644", sudo_bin, sudo_flags)?;
 
     // (5) Registrar el repositorio binario
-    let conf = format!("repository={}\n", binary_url);
+    let conf = format!("repository={binary_url}\n");
     let conf_path = repo_conf_path(&repo.name)?;
     write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
     tracing::info!(
@@ -222,10 +210,7 @@ pub fn setup_vup_binary_repo(
         }
     }
     if urls.is_empty() {
-        bail!(
-            "el repo VUP '{}' no aporta ninguna URL binaria para esta arquitectura",
-            name
-        );
+        bail!("el repo VUP '{name}' no aporta ninguna URL binaria para esta arquitectura");
     }
 
     // (1) Fingerprint de la llave recibida
@@ -246,24 +231,20 @@ pub fn setup_vup_binary_repo(
         let expected_norm = expected.to_lowercase();
         let fp_norm = fp.to_lowercase();
         if expected_norm != fp_norm {
-            bail!(
-                "fingerprint de llave del repo VUP '{}' NO coincide:\n  esperado (repos.conf): {}\n  recibido:              {}\n\
-                 Si el mantenedor rotó la llave legítimamente, ejecuta: vary --repo rekey {}",
-                name, expected, fp, name
-            );
+            bail!("fingerprint de llave del repo VUP '{name}' NO coincide:\n  esperado (repos.conf): {expected}\n  recibido:              {fp}\n\
+                 Si el mantenedor rotó la llave legítimamente, ejecuta: vary --repo rekey {name}");
         }
     } else {
         tracing::warn!(
-            "el repo VUP '{}' no declara key_fingerprint en repos.conf; verifica visualmente",
-            name
+            "el repo VUP '{name}' no declara key_fingerprint en repos.conf; verifica visualmente"
         );
     }
 
-    println!("Repo VUP '{}': llave pública del índice", name);
-    println!("  SHA256: {}", fp);
+    println!("Repo VUP '{name}': llave pública del índice");
+    println!("  SHA256: {fp}");
     println!("  binary repos ({} urls):", urls.len());
     for u in &urls {
-        println!("    {}", u);
+        println!("    {u}");
     }
     if !confirm(
         "¿Confiás en esta llave y deseas registrar estos repositorios binarios?",
@@ -282,15 +263,11 @@ pub fn setup_vup_binary_repo(
     // (3) Registrar el conf con todas las URLs
     let mut conf = String::new();
     for url in urls {
-        conf.push_str(&format!("repository={}\n", url));
+        conf.push_str(&format!("repository={url}\n"));
     }
     let conf_path = repo_conf_path(name)?;
     write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
-    tracing::info!(
-        "repositorios binarios '{}' registrados en {}",
-        name,
-        conf_path
-    );
+    tracing::info!("repositorios binarios '{name}' registrados en {conf_path}");
     Ok(())
 }
 
@@ -305,15 +282,12 @@ fn verify_key_tofu(dest_path: &std::path::Path, fp: &str, name: &str) -> Result<
                     .collect::<Vec<_>>()
                     .join(":");
                 if existing_fp.to_lowercase() != fp.to_lowercase() {
-                    bail!(
-                        "ALERTA DE SEGURIDAD CRÍTICA (Posible rotación no confiable o suplantación):\n\
-                         La llave pública del repo '{}' ha cambiado respecto a la instalada en el sistema.\n  \
-                         Instalada previamente: {}\n  \
-                         Recibida remotamente:  {}\n\
+                    bail!("ALERTA DE SEGURIDAD CRÍTICA (Posible rotación no confiable o suplantación):\n\
+                         La llave pública del repo '{name}' ha cambiado respecto a la instalada en el sistema.\n  \
+                         Instalada previamente: {existing_fp}\n  \
+                         Recibida remotamente:  {fp}\n\
                          Operación BLOQUEADA (fallo cerrado).\n\
-                         Si la rotación es legítima y verificada, ejecuta: vary --repo rekey {}",
-                        name, existing_fp, fp, name
-                    );
+                         Si la rotación es legítima y verificada, ejecuta: vary --repo rekey {name}");
                 }
             }
         }
@@ -335,11 +309,11 @@ pub fn teardown_binary_repo(name: &str, sudo_bin: &str, sudo_flags: &[String]) -
                     .status()
                     .context("elevando privilegios para eliminar archivo del sistema")?;
                 if !status.success() {
-                    bail!("no se pudo eliminar {}", dest);
+                    bail!("no se pudo eliminar {dest}");
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e).with_context(|| format!("inspeccionando {}", dest)),
+            Err(e) => return Err(e).with_context(|| format!("inspeccionando {dest}")),
         }
     }
     Ok(())

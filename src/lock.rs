@@ -46,7 +46,7 @@ pub fn acquire(cache_dir: &Path) -> Result<InstanceLock> {
                 if pid.is_empty() {
                     String::new()
                 } else {
-                    format!(" (pid {})", pid)
+                    format!(" (pid {pid})")
                 },
                 path.display()
             );
@@ -66,7 +66,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let _first = acquire(dir.path()).expect("primer lock");
         let err = acquire(dir.path()).expect_err("segundo lock debe fallar");
-        let msg = format!("{:#}", err);
+        let msg = format!("{err:#}");
         assert!(msg.contains("otra instancia"), "mensaje accionable: {msg}");
         assert!(
             msg.contains(&std::process::id().to_string()),

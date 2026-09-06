@@ -44,14 +44,14 @@ fn print_error(color: Style, err: Error) {
 
     if backtrace_enabled {
         let backtrace = err.backtrace();
-        eprint!("{}", backtrace);
+        eprint!("{backtrace}");
     }
 
     let mut iter = err.chain().peekable();
 
     eprint!("{} ", color.paint("error:"));
     while let Some(link) = iter.next() {
-        eprint!("{}", link);
+        eprint!("{link}");
         if iter.peek().is_some() {
             eprint!(": ");
         }
@@ -121,7 +121,7 @@ fn run2<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<i32> {
         return Ok(0);
     }
 
-    tracing::debug!("config: {:?}", config);
+    tracing::debug!("config: {config:?}");
 
     handle_cmd(config)
 }

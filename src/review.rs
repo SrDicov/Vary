@@ -20,15 +20,15 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
 
     for prefix in &prefixes {
         let path = if prefix.is_empty() {
-            format!("{}/template", pkg_name)
+            format!("{pkg_name}/template")
         } else {
-            format!("{}/{}/template", prefix, pkg_name)
+            format!("{prefix}/{pkg_name}/template")
         };
 
         let output = Command::new(git_bin)
             .arg("-C")
             .arg(clone_dir)
-            .args(["show", &format!("HEAD:{}", path)])
+            .args(["show", &format!("HEAD:{path}")])
             .output();
 
         if let Ok(out) = output {

@@ -46,7 +46,7 @@ fn repo_add(
     crate::keys::validate_repo_name(&name)?;
 
     if !crate::vur_client::is_safe_git_url(url) {
-        bail!("URL de repositorio git insegura o inválida: '{}'", url);
+        bail!("URL de repositorio git insegura o inválida: '{url}'");
     }
 
     // Validar repos.conf antes de cualquier operación remota o de disco
@@ -58,14 +58,13 @@ fn repo_add(
         Some(b) => b.to_string(),
         None => match VurRepo::detect_default_branch(&config.git_bin, url) {
             Some(b) => {
-                println!("Detected default branch '{}' for {}", b, url);
+                println!("Detected default branch '{b}' for {url}");
                 b
             }
             None => {
                 tracing::warn!(
-                    "no se pudo detectar la rama por defecto de {}; usando 'main' \
-                     (si el clon falla, repite con --branch <rama>)",
-                    url
+                    "no se pudo detectar la rama por defecto de {url}; usando 'main' \
+                     (si el clon falla, repite con --branch <rama>)"
                 );
                 "main".to_string()
             }
@@ -114,22 +113,19 @@ fn repo_add(
     // Vale tanto el .VURINFO raíz (array, p. ej. z-packages) como los
     // <prefijo>/*/.VURINFO por plantilla (srcpkgs/ o su alias pkgs/).
     if !repo_has_vurinfo(&repo) {
-        tracing::warn!(
-            "VUR '{}' has no .VURINFO (neither root nor per-template)",
-            name
-        );
+        tracing::warn!("VUR '{name}' has no .VURINFO (neither root nor per-template)");
     }
 
     // Save to repos.conf
     conf.vur.insert(name.clone(), entry);
     conf.save(config.repos_conf_path())?;
-    println!("VUR '{}' registered.", name);
+    println!("VUR '{name}' registered.");
 
     // Show key if present
     if let Some(key) = repo.discover_public_key() {
         println!("Found public key: {}", key.display());
         if let Ok(fp) = VurRepo::fingerprint_sha256(&key) {
-            println!("  SHA256 fingerprint: {}", fp);
+            println!("  SHA256 fingerprint: {fp}");
             println!("  To use binary packages from this VUR, add binary_repo_url and key_fingerprint to repos.conf");
         }
     }
@@ -192,7 +188,7 @@ fn repo_remove(config: &Config, name: &str, purge: bool) -> Result<i32> {
     // Permitir purgar un clon huérfano (repo ya dado de baja sin -p): si no
     // está en repos.conf pero su clon existe, se puede eliminar con -p.
     if !in_conf && !clone_path.exists() {
-        bail!("VUR '{}' not found in repos.conf", name);
+        bail!("VUR '{name}' not found in repos.conf");
     }
 
     if in_conf {
@@ -201,7 +197,7 @@ fn repo_remove(config: &Config, name: &str, purge: bool) -> Result<i32> {
 
         conf.vur.remove(name);
         conf.save(config.repos_conf_path())?;
-        println!("VUR '{}' removed from repos.conf", name);
+        println!("VUR '{name}' removed from repos.conf");
     }
 
     if clone_path.exists() {
@@ -227,10 +223,10 @@ fn repo_rekey(config: &Config, name: &str) -> Result<i32> {
     let entry = conf
         .vur
         .get(name)
-        .ok_or_else(|| anyhow::anyhow!("VUR '{}' not found", name))?;
+        .ok_or_else(|| anyhow::anyhow!("VUR '{name}' not found"))?;
 
     teardown_binary_repo(name, &config.sudo_bin, &config.sudo_flags)?;
-    println!("Binary repo artifacts for '{}' removed. They will be re-registered on next binary install.", name);
+    println!("Binary repo artifacts for '{name}' removed. They will be re-registered on next binary install.");
 
     if entry.has_binary() {
         println!("Tip: run `vary -S <pkg>` from this VUR to re-trigger key verification.");

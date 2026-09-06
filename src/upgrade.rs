@@ -21,14 +21,14 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
             git_bin: config.git_bin.clone(),
         };
         if let Err(e) = repo.ensure_cloned() {
-            tracing::warn!("failed to clone VUR '{}': {}", name, e);
+            tracing::warn!("failed to clone VUR '{name}': {e}");
             any_failed = true;
             continue;
         }
         match repo.pull() {
             Ok(sha) => println!("VUR '{}' refreshed ({})", name, &sha[..8]),
             Err(e) => {
-                tracing::warn!("failed to pull VUR '{}': {}", name, e);
+                tracing::warn!("failed to pull VUR '{name}': {e}");
                 any_failed = true;
             }
         }

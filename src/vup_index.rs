@@ -110,10 +110,7 @@ pub fn fetch_index(
         .arg(url)
         .status()
         .with_context(|| {
-            format!(
-                "no se pudo ejecutar '{}': ¿está instalado? (flag --curl / [general] curl_bin)",
-                curl_bin
-            )
+            format!("no se pudo ejecutar '{curl_bin}': ¿está instalado? (flag --curl / [general] curl_bin)")
         })?;
 
     if status.success() {
@@ -134,23 +131,23 @@ pub fn fetch_index(
             }
             None => {
                 let _ = std::fs::remove_file(&tmp_path);
-                tracing::warn!("el índice remoto {} no parsea como index.json", url);
+                tracing::warn!("el índice remoto {url} no parsea como index.json");
             }
         }
     } else {
-        tracing::warn!("no se pudo descargar el índice {}", url);
+        tracing::warn!("no se pudo descargar el índice {url}");
     }
 
     // Fallback a caché vieja.
     if cache_path.is_file() {
         if let Ok(bytes) = std::fs::read(cache_path) {
             if let Ok(idx) = parse_index_bytes(&bytes) {
-                tracing::warn!("usando caché vieja de {}", url);
+                tracing::warn!("usando caché vieja de {url}");
                 return Ok(idx);
             }
         }
     }
-    anyhow::bail!("índice {} no disponible (sin red ni caché válida)", url)
+    anyhow::bail!("índice {url} no disponible (sin red ni caché válida)")
 }
 
 /// Divide `versión_revisión` (formato XBPS) en sus partes.
@@ -250,7 +247,7 @@ pub fn decode_plist_public_key_pem(plist_text: &str) -> Result<String> {
         trimmed.contains("BEGIN PUBLIC KEY"),
         "la llave del plist no es una public key PEM"
     );
-    Ok(format!("{}\n", trimmed))
+    Ok(format!("{trimmed}\n"))
 }
 
 /// Lee `keys/*.plist` del clon y devuelve el PEM decodificado.

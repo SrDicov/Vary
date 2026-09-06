@@ -33,7 +33,7 @@ impl Masterdir {
         let code = xbps_src(&self.path, &["binary-bootstrap"], None)
             .context("falló ./xbps-src binary-bootstrap")?;
         if code != 0 {
-            anyhow::bail!("./xbps-src binary-bootstrap terminó con código {}", code);
+            anyhow::bail!("./xbps-src binary-bootstrap terminó con código {code}");
         }
         Ok(())
     }
@@ -51,19 +51,15 @@ impl Masterdir {
     /// forma secuencial y determinista, pasando `makejobs` a `XBPS_MAKEJOBS`.
     pub fn build_pkg(&self, pkg: &str, makejobs: usize) -> Result<()> {
         if crate::signal::is_shutting_down() {
-            anyhow::bail!("interrumpido por señal antes de compilar {}", pkg);
+            anyhow::bail!("interrumpido por señal antes de compilar {pkg}");
         }
 
-        tracing::info!(
-            "compilando {} con xbps-src (makejobs: {})...",
-            pkg,
-            makejobs
-        );
+        tracing::info!("compilando {pkg} con xbps-src (makejobs: {makejobs})...");
         let code = xbps_src(&self.path, &["pkg", pkg], Some(makejobs))
-            .with_context(|| format!("falló ./xbps-src pkg {}", pkg))?;
+            .with_context(|| format!("falló ./xbps-src pkg {pkg}"))?;
 
         if code != 0 {
-            anyhow::bail!("xbps-src pkg {} terminó con código {}", pkg, code);
+            anyhow::bail!("xbps-src pkg {pkg} terminó con código {code}");
         }
         Ok(())
     }
@@ -71,9 +67,9 @@ impl Masterdir {
     /// Solo descarga fuentes: `./xbps-src fetch <pkg>`.
     pub fn fetch_pkg(&self, pkg: &str) -> Result<()> {
         let code = xbps_src(&self.path, &["fetch", pkg], None)
-            .with_context(|| format!("falló ./xbps-src fetch {}", pkg))?;
+            .with_context(|| format!("falló ./xbps-src fetch {pkg}"))?;
         if code != 0 {
-            anyhow::bail!("xbps-src fetch {} terminó con código {}", pkg, code);
+            anyhow::bail!("xbps-src fetch {pkg} terminó con código {code}");
         }
         Ok(())
     }
@@ -102,7 +98,7 @@ pub fn clone_void_packages(target: &Path, git_bin: &str) -> Result<()> {
             &target.display().to_string(),
         ])
         .status()
-        .context(format!("`{}` no encontrado: ¿está instalado?", git_bin))?;
+        .context(format!("`{git_bin}` no encontrado: ¿está instalado?"))?;
     if !out.success() {
         anyhow::bail!(
             "git clone de void-packages falló con código {:?}",

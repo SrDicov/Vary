@@ -237,16 +237,14 @@ enabled = true
         std::fs::write(&path, "this is invalid toml = [").unwrap();
 
         let err = ReposConf::load(&path).unwrap_err();
-        let err_msg = format!("{:#}", err);
+        let err_msg = format!("{err:#}");
         assert!(
             err_msg.contains("TOML inválido"),
-            "Error message must contain 'TOML inválido': {}",
-            err_msg
+            "Error message must contain 'TOML inválido': {err_msg}"
         );
         assert!(
             err_msg.contains("corrupt.conf"),
-            "Error message must contain file path: {}",
-            err_msg
+            "Error message must contain file path: {err_msg}"
         );
     }
 }

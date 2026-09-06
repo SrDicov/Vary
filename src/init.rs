@@ -17,7 +17,7 @@ pub fn post_install_hook(
         // Dinit detected
         if no_confirm
             || crate::util::confirm(
-                &format!("Enable and start dinit service for {}?", pkg_name),
+                &format!("Enable and start dinit service for {pkg_name}?"),
                 no_confirm,
             )?
         {
@@ -31,10 +31,7 @@ pub fn post_install_hook(
     } else if Path::new("/run/runit").exists() {
         // Runit detected
         if no_confirm
-            || crate::util::confirm(
-                &format!("Enable runit service for {}?", pkg_name),
-                no_confirm,
-            )?
+            || crate::util::confirm(&format!("Enable runit service for {pkg_name}?"), no_confirm)?
         {
             let service_link = Path::new("/var/service").join(pkg_name);
             if !service_link.exists() {

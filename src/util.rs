@@ -62,7 +62,7 @@ pub fn confirm(prompt: &str, no_confirm: bool) -> Result<bool> {
     if no_confirm {
         return Ok(true);
     }
-    print!("{} [Y/n] ", prompt);
+    print!("{prompt} [Y/n] ");
     let _ = stdout().lock().flush();
     confirm_from_reader(&mut stdin().lock())
 }

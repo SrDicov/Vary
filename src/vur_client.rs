@@ -298,11 +298,11 @@ impl VurRepo {
         let output = Command::new(&self.git_bin)
             .arg("-C")
             .arg(&self.path)
-            .args(["show", &format!("HEAD:{}", tree_path)])
+            .args(["show", &format!("HEAD:{tree_path}")])
             .output()
-            .with_context(|| format!("no se pudo ejecutar git show HEAD:{}", tree_path))?;
+            .with_context(|| format!("no se pudo ejecutar git show HEAD:{tree_path}"))?;
         if !output.status.success() {
-            bail!("archivo no encontrado en el repo: {}", tree_path);
+            bail!("archivo no encontrado en el repo: {tree_path}");
         }
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
@@ -314,7 +314,7 @@ impl VurRepo {
         let sparse_path = if prefix.is_empty() {
             pkg_name.to_string()
         } else {
-            format!("{}/{}", prefix, pkg_name)
+            format!("{prefix}/{pkg_name}")
         };
 
         // Inicializar sparse-checkout si no está configurado
@@ -332,7 +332,7 @@ impl VurRepo {
             .arg(&self.path)
             .args(["sparse-checkout", "add", &sparse_path])
             .output()
-            .with_context(|| format!("no se pudo agregar {} al sparse-checkout", sparse_path))?;
+            .with_context(|| format!("no se pudo agregar {sparse_path} al sparse-checkout"))?;
 
         if !add_out.status.success() {
             tracing::warn!(
@@ -392,9 +392,9 @@ impl VurRepo {
         // Intentar leer .VURINFO de cada paquete vía git show (sin checkout)
         for pkg in &pkg_names {
             let vurinfo_path = if prefix.is_empty() {
-                format!("{}/.VURINFO", pkg)
+                format!("{pkg}/.VURINFO")
             } else {
-                format!("{}/{}/.VURINFO", prefix, pkg)
+                format!("{prefix}/{pkg}/.VURINFO")
             };
             if let Ok(text) = self.git_show_file(&vurinfo_path) {
                 files_seen += 1;
@@ -424,9 +424,9 @@ impl VurRepo {
         if packages.is_empty() && files_seen == 0 {
             for pkg in &pkg_names {
                 let tmpl_path = if prefix.is_empty() {
-                    format!("{}/template", pkg)
+                    format!("{pkg}/template")
                 } else {
-                    format!("{}/{}/template", prefix, pkg)
+                    format!("{prefix}/{pkg}/template")
                 };
                 if let Ok(text) = self.git_show_file(&tmpl_path) {
                     files_seen += 1;
@@ -513,7 +513,7 @@ impl VurRepo {
                 }
                 found
             })
-            .ok_or_else(|| anyhow::anyhow!("template no encontrado para {}", pkgname))?;
+            .ok_or_else(|| anyhow::anyhow!("template no encontrado para {pkgname}"))?;
 
         // Para COMPILAR se necesita la plantilla real; un dir solo-índice
         // (.VURINFO sin template) no es construible.
@@ -538,7 +538,7 @@ impl VurRepo {
                 } else if force {
                     // Target explícito del usuario: el VUR manda sobre el
                     // template oficial no-publicado presente en el árbol.
-                    tracing::warn!("reemplazando template oficial local de '{}' por la versión VUR (target explícito)", pkgname);
+                    tracing::warn!("reemplazando template oficial local de '{pkgname}' por la versión VUR (target explícito)");
                     std::fs::remove_dir_all(&dest)
                         .with_context(|| format!("no se pudo reemplazar {}", dest.display()))?;
                 } else {
@@ -580,7 +580,7 @@ impl VurRepo {
                     || master_srcpkgs.join("../.git").exists())
             {
                 let _ = Command::new(&self.git_bin)
-                    .args(["checkout", "--", &format!("srcpkgs/{}", pkgname)])
+                    .args(["checkout", "--", &format!("srcpkgs/{pkgname}")])
                     .current_dir(master_srcpkgs.parent().unwrap_or(Path::new(".")))
                     .output();
             }
@@ -720,10 +720,7 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
                 || trimmed.contains("XBPS_MACHINE")
                 || trimmed.contains("XBPS_ARCH"))
         {
-            tracing::warn!(
-                    "{}: constructo condicional por arquitectura detectado ('{}'); la extracción estática puede ser incompleta",
-                    debug_path, trimmed
-                );
+            tracing::warn!("{debug_path}: constructo condicional por arquitectura detectado ('{trimmed}'); la extracción estática puede ser incompleta");
         }
         // Detectar definiciones de funciones shell
         if trimmed.contains("()") {
@@ -884,7 +881,7 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         .get("pkgname")
         .cloned()
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("template sin pkgname: {}", debug_path))?;
+        .ok_or_else(|| anyhow::anyhow!("template sin pkgname: {debug_path}"))?;
     let version = vars
         .get("version")
         .cloned()
@@ -921,7 +918,7 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             if c == "SKIP" || c.starts_with("sha256:") {
                 c
             } else {
-                format!("sha256:{}", c)
+                format!("sha256:{c}")
             }
         })
         .collect();

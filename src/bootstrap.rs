@@ -78,7 +78,7 @@ pub fn initialize_environment(
                 .with_context(|| format!("escribiendo {}", tmp.display()))?;
             write_root_file(&tmp, XBPSD_VARY_CONF, sudo_bin, sudo_flags)?;
             let _ = std::fs::remove_file(&tmp);
-            tracing::info!("registrado repositorio local en {}", XBPSD_VARY_CONF);
+            tracing::info!("registrado repositorio local en {XBPSD_VARY_CONF}");
         }
     }
 

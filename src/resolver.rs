@@ -216,7 +216,7 @@ impl<'a> Ctx<'a> {
             let mut cycle = self.stack[pos..].join(" -> ");
             cycle.push_str(" -> ");
             cycle.push_str(name);
-            bail!("ciclo de dependencias detectado: {}", cycle);
+            bail!("ciclo de dependencias detectado: {cycle}");
         }
         // Punto 4: ya resuelto por otro camino (diamante): reutilizar nodo.
         if let Some(&idx) = self.index.get(name) {
@@ -257,7 +257,7 @@ impl<'a> Ctx<'a> {
                     self.arch
                 );
             }
-            bail!("paquete no encontrado en repos oficiales ni VURs: {}", name);
+            bail!("paquete no encontrado en repos oficiales ni VURs: {name}");
         };
 
         // Punto 2: binario firmado disponible -> instalar; si no -> construir.
