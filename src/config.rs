@@ -174,18 +174,22 @@ fn expand_home(p: &str) -> PathBuf {
 }
 
 /// Resuelve los directorios base de vary (H-021): respeta
-/// `XDG_CACHE_HOME` / `XDG_DATA_HOME` / `XDG_CONFIG_HOME` vía el crate `dirs`
-/// y solo recurre a `$HOME/.cache` etc. si la variable no está definida.
+/// `XDG_CACHE_HOME` / `XDG_DATA_HOME` / `XDG_CONFIG_HOME` (valor vacío = no
+/// definida, igual que el crate `dirs` en Linux) y solo recurre a
+/// `$HOME/.cache` etc. si la variable falta. Lectura directa de entorno a
+/// propósito: `dirs::cache_dir()` resolvería el HOME real del proceso y la
+/// rama de fallback no sería testeable sin mutar `HOME` global.
+fn xdg_or_home(var: &str, home_fallback: &Path) -> PathBuf {
+    std::env::var_os(var)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_fallback.to_path_buf())
+}
+
 fn default_dirs(home: &Path) -> (PathBuf, PathBuf, PathBuf) {
-    let cache = dirs::cache_dir()
-        .unwrap_or_else(|| home.join(".cache"))
-        .join("vary");
-    let data = dirs::data_dir()
-        .unwrap_or_else(|| home.join(".local").join("share"))
-        .join("vary");
-    let config = dirs::config_dir()
-        .unwrap_or_else(|| home.join(".config"))
-        .join("vary");
+    let cache = xdg_or_home("XDG_CACHE_HOME", &home.join(".cache")).join("vary");
+    let data = xdg_or_home("XDG_DATA_HOME", &home.join(".local").join("share")).join("vary");
+    let config = xdg_or_home("XDG_CONFIG_HOME", &home.join(".config")).join("vary");
     (cache, data, config)
 }
 
