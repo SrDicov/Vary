@@ -30,7 +30,13 @@ pub fn info(config: &Config) -> Result<i32> {
 
         // Try official (xbps-query -R)
         let official = std::process::Command::new("xbps-query")
-            .args(["-R", "-p", "pkgver,short_desc,homepage,maintainer,depends", "--", target])
+            .args([
+                "-R",
+                "-p",
+                "pkgver,short_desc,homepage,maintainer,depends",
+                "--",
+                target,
+            ])
             .output();
         if let Ok(out) = official {
             if out.status.success() && !out.stdout.is_empty() {
@@ -47,7 +53,12 @@ pub fn info(config: &Config) -> Result<i32> {
         // Search VUR indexes
         for (name, entry) in repos_conf.sorted_by_priority() {
             let path = config.vurs_dir().join(&name);
-            let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
+            let repo = VurRepo {
+                name: name.clone(),
+                path,
+                entry: entry.clone(),
+                git_bin: config.git_bin.clone(),
+            };
             if repo.ensure_cloned().is_err() {
                 continue;
             }
@@ -56,7 +67,8 @@ pub fn info(config: &Config) -> Result<i32> {
                 Err(_) => continue,
             };
             for info in infos {
-                let is_match = info.pkgname == *target || info.subpackages.iter().any(|s| &s.pkgname == target);
+                let is_match = info.pkgname == *target
+                    || info.subpackages.iter().any(|s| &s.pkgname == target);
                 if is_match {
                     println!("Repository      : vur:{}", repo.name);
                     println!("Package         : {}", info.pkgname);
@@ -89,10 +101,24 @@ pub fn info(config: &Config) -> Result<i32> {
                         println!("Maintainer      : {}", m);
                     }
                     if !info.subpackages.is_empty() {
-                        println!("Subpackages     : {}", info.subpackages.iter().map(|s| s.pkgname.as_str()).collect::<Vec<_>>().join(", "));
+                        println!(
+                            "Subpackages     : {}",
+                            info.subpackages
+                                .iter()
+                                .map(|s| s.pkgname.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
                     }
                     println!("Restricted      : {}", info.restricted);
-                    println!("Binary avail    : {}", if entry.has_binary() { "yes" } else { "no (source only)" });
+                    println!(
+                        "Binary avail    : {}",
+                        if entry.has_binary() {
+                            "yes"
+                        } else {
+                            "no (source only)"
+                        }
+                    );
                     println!();
                     found = true;
                     any_found = true;

@@ -1,13 +1,17 @@
 use crate::vur_client::TEMPLATE_PREFIXES;
 use anyhow::Result;
-use std::process::{Command, Stdio};
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<()> {
     use std::io::Write;
 
-    println!("Reviewing changes for {} in {}...", pkg_name, clone_dir.display());
-    
+    println!(
+        "Reviewing changes for {} in {}...",
+        pkg_name,
+        clone_dir.display()
+    );
+
     // Intentar leer vía git show (funciona sin checkout).
     // Prefijos conocidos + "" (flat); el primero que acierte gana.
     let mut prefixes: Vec<String> = TEMPLATE_PREFIXES.iter().map(|s| s.to_string()).collect();
@@ -20,12 +24,13 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
         } else {
             format!("{}/{}/template", prefix, pkg_name)
         };
-        
+
         let output = Command::new(git_bin)
-            .arg("-C").arg(clone_dir)
+            .arg("-C")
+            .arg(clone_dir)
             .args(["show", &format!("HEAD:{}", path)])
             .output();
-        
+
         if let Ok(out) = output {
             if out.status.success() {
                 content = String::from_utf8_lossy(&out.stdout).to_string();
@@ -33,7 +38,7 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
             }
         }
     }
-    
+
     if content.is_empty() {
         // Fallback: leer desde disco si ya materializado
         let mut candidates: Vec<std::path::PathBuf> = TEMPLATE_PREFIXES
@@ -45,7 +50,7 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
             content = std::fs::read_to_string(path).unwrap_or_default();
         }
     }
-    
+
     if content.is_empty() {
         return Ok(());
     }

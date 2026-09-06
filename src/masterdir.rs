@@ -54,7 +54,11 @@ impl Masterdir {
             anyhow::bail!("interrumpido por señal antes de compilar {}", pkg);
         }
 
-        tracing::info!("compilando {} con xbps-src (makejobs: {})...", pkg, makejobs);
+        tracing::info!(
+            "compilando {} con xbps-src (makejobs: {})...",
+            pkg,
+            makejobs
+        );
         let code = xbps_src(&self.path, &["pkg", pkg], Some(makejobs))
             .with_context(|| format!("falló ./xbps-src pkg {}", pkg))?;
 
@@ -81,8 +85,7 @@ pub fn clone_void_packages(target: &Path, git_bin: &str) -> Result<()> {
         return Ok(());
     }
     if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creando {}", parent.display()))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("creando {}", parent.display()))?;
     }
     tracing::info!("clonando void-packages (depth 1)...");
     let out = std::process::Command::new(git_bin)
@@ -101,7 +104,10 @@ pub fn clone_void_packages(target: &Path, git_bin: &str) -> Result<()> {
         .status()
         .context(format!("`{}` no encontrado: ¿está instalado?", git_bin))?;
     if !out.success() {
-        anyhow::bail!("git clone de void-packages falló con código {:?}", out.code());
+        anyhow::bail!(
+            "git clone de void-packages falló con código {:?}",
+            out.code()
+        );
     }
     Ok(())
 }

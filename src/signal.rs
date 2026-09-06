@@ -47,11 +47,24 @@ impl MountCleanup {
     pub fn run(&self) {
         if self.used_sudo {
             // Kernel overlay montado vía wrapper: desmontar por el mismo camino.
-            if elevated_status(&self.sudo_bin, &self.sudo_flags, "umount", &[self.merged.as_path()]) {
+            if elevated_status(
+                &self.sudo_bin,
+                &self.sudo_flags,
+                "umount",
+                &[self.merged.as_path()],
+            ) {
                 return;
             }
-            tracing::warn!("umount limpio falló en {}; reintentando lazy (-l)", self.merged.display());
-            if elevated_status(&self.sudo_bin, &self.sudo_flags, "umount", &[Path::new("-l"), self.merged.as_path()]) {
+            tracing::warn!(
+                "umount limpio falló en {}; reintentando lazy (-l)",
+                self.merged.display()
+            );
+            if elevated_status(
+                &self.sudo_bin,
+                &self.sudo_flags,
+                "umount",
+                &[Path::new("-l"), self.merged.as_path()],
+            ) {
                 return;
             }
             tracing::warn!("no se pudo desmontar {}", self.merged.display());
@@ -140,7 +153,11 @@ extern "C" fn on_signal(sig: nix::libc::c_int) {
 fn install_handlers() {
     use nix::sys::signal::{sigaction, SaFlags, SigAction, SigSet};
     for sig in [Signal::SIGINT, Signal::SIGTERM] {
-        let action = SigAction::new(SigHandler::Handler(on_signal), SaFlags::empty(), SigSet::empty());
+        let action = SigAction::new(
+            SigHandler::Handler(on_signal),
+            SaFlags::empty(),
+            SigSet::empty(),
+        );
         if let Err(e) = unsafe { sigaction(sig, &action) } {
             tracing::warn!("no se pudo instalar handler para {:?}: {}", sig, e);
         }
@@ -151,15 +168,13 @@ fn install_handlers() {
 pub fn init() {
     INIT.call_once(|| {
         install_handlers();
-        std::thread::spawn(|| {
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                let sig = GOT_SIGNAL.load(Ordering::SeqCst);
-                if sig == 0 {
-                    continue;
-                }
-                observer_cleanup_and_exit(sig);
+        std::thread::spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let sig = GOT_SIGNAL.load(Ordering::SeqCst);
+            if sig == 0 {
+                continue;
             }
+            observer_cleanup_and_exit(sig);
         });
     });
 }

@@ -1,12 +1,12 @@
-use vary::run;
 use std::process::exit;
+use vary::run;
 
 #[cfg(target_env = "musl")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn drop_privileges() {
-    use nix::unistd::{setresuid, setresgid, setgroups, Uid, Gid, User};
+    use nix::unistd::{setgroups, setresgid, setresuid, Gid, Uid, User};
     use std::env;
 
     if nix::unistd::getuid().is_root() {

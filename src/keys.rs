@@ -15,7 +15,6 @@ use crate::vur_client::VurRepo;
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 
-
 pub fn keys_dir() -> &'static str {
     "/etc/xbps.d/keys"
 }
@@ -33,7 +32,10 @@ pub fn validate_repo_name(name: &str) -> Result<()> {
             name
         );
     }
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
         bail!(
             "el nombre del repositorio '{}' contiene caracteres inválidos (solo a-z, 0-9, ., _, -)",
             name
@@ -76,9 +78,7 @@ pub(crate) fn write_root_file(
     tmp_file
         .write_all(contents.as_bytes())
         .context("escribiendo contenido en archivo temporal")?;
-    tmp_file
-        .flush()
-        .context("sincronizando archivo temporal")?;
+    tmp_file.flush().context("sincronizando archivo temporal")?;
 
     let status = crate::elevate::elevate(sudo_bin, sudo_flags, "install")?
         .args(["-m", mode])
@@ -122,7 +122,10 @@ pub fn setup_binary_repo(
     no_confirm: bool,
 ) -> Result<()> {
     // (1) ¿tiene binary_repo_url?
-    let Some(binary_url) = entry.binary_repo_url.as_deref().filter(|u| !u.trim().is_empty())
+    let Some(binary_url) = entry
+        .binary_repo_url
+        .as_deref()
+        .filter(|u| !u.trim().is_empty())
     else {
         bail!(
             "el VUR '{}' es source-only (sin binary_repo_url); solo puede compilarse",
@@ -142,7 +145,12 @@ pub fn setup_binary_repo(
 
     // (3) Fingerprint + confirmación interactiva
     let fp = VurRepo::fingerprint_sha256(&key_path)?;
-    if let Some(expected) = entry.key_fingerprint.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(expected) = entry
+        .key_fingerprint
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let expected_norm = expected.to_lowercase();
         let fp_norm = fp.to_lowercase();
         if expected_norm != fp_norm {
@@ -161,8 +169,10 @@ pub fn setup_binary_repo(
     println!("VUR '{}': llave pública {}", repo.name, key_path.display());
     println!("  SHA256: {}", fp);
     println!("  binary repo: {}", binary_url);
-    if !confirm("¿Confiás en esta llave y deseas registrar este repositorio binario?", no_confirm)?
-    {
+    if !confirm(
+        "¿Confiás en esta llave y deseas registrar este repositorio binario?",
+        no_confirm,
+    )? {
         bail!("registro de repositorio binario cancelado por el usuario");
     }
 
@@ -179,7 +189,11 @@ pub fn setup_binary_repo(
     let conf = format!("repository={}\n", binary_url);
     let conf_path = repo_conf_path(&repo.name)?;
     write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
-    tracing::info!("repositorio binario '{}' registrado en {}", repo.name, conf_path);
+    tracing::info!(
+        "repositorio binario '{}' registrado en {}",
+        repo.name,
+        conf_path
+    );
     Ok(())
 }
 
@@ -223,7 +237,12 @@ pub fn setup_vup_binary_repo(
         .collect::<Vec<_>>()
         .join(":");
 
-    if let Some(expected) = entry.key_fingerprint.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(expected) = entry
+        .key_fingerprint
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let expected_norm = expected.to_lowercase();
         let fp_norm = fp.to_lowercase();
         if expected_norm != fp_norm {
@@ -246,8 +265,10 @@ pub fn setup_vup_binary_repo(
     for u in &urls {
         println!("    {}", u);
     }
-    if !confirm("¿Confiás en esta llave y deseas registrar estos repositorios binarios?", no_confirm)?
-    {
+    if !confirm(
+        "¿Confiás en esta llave y deseas registrar estos repositorios binarios?",
+        no_confirm,
+    )? {
         bail!("registro de repositorios binarios cancelado por el usuario");
     }
 
@@ -265,7 +286,11 @@ pub fn setup_vup_binary_repo(
     }
     let conf_path = repo_conf_path(name)?;
     write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
-    tracing::info!("repositorios binarios '{}' registrados en {}", name, conf_path);
+    tracing::info!(
+        "repositorios binarios '{}' registrados en {}",
+        name,
+        conf_path
+    );
     Ok(())
 }
 
@@ -297,11 +322,7 @@ fn verify_key_tofu(dest_path: &std::path::Path, fp: &str, name: &str) -> Result<
 }
 
 /// Elimina llave y conf de un VUR binario (--repo remove / rekey).
-pub fn teardown_binary_repo(
-    name: &str,
-    sudo_bin: &str,
-    sudo_flags: &[String],
-) -> Result<()> {
+pub fn teardown_binary_repo(name: &str, sudo_bin: &str, sudo_flags: &[String]) -> Result<()> {
     validate_repo_name(name)?;
     let key_dest = key_dest_path(name)?;
     let conf_dest = repo_conf_path(name)?;
@@ -330,8 +351,14 @@ mod tests {
 
     #[test]
     fn rutas_derivadas_son_correctas() {
-        assert_eq!(repo_conf_path("mi-repo").unwrap(), "/etc/xbps.d/20-vur-mi-repo.conf");
-        assert_eq!(key_dest_path("mi-repo").unwrap(), "/etc/xbps.d/keys/vary-vur-mi-repo.pem");
+        assert_eq!(
+            repo_conf_path("mi-repo").unwrap(),
+            "/etc/xbps.d/20-vur-mi-repo.conf"
+        );
+        assert_eq!(
+            key_dest_path("mi-repo").unwrap(),
+            "/etc/xbps.d/keys/vary-vur-mi-repo.pem"
+        );
     }
 
     #[test]
@@ -390,7 +417,10 @@ mod tests {
         assert!(validate_repository_url("http://local.mirror/void").is_ok());
         assert!(validate_repository_url("file:///var/cache/binpkgs").is_ok());
 
-        assert!(validate_repository_url("https://repo.voidlinux.org\nrepository=https://evil.org").is_err());
+        assert!(
+            validate_repository_url("https://repo.voidlinux.org\nrepository=https://evil.org")
+                .is_err()
+        );
         assert!(validate_repository_url("https://repo.voidlinux.org\r\n").is_err());
         assert!(validate_repository_url("ftp://repo.voidlinux.org").is_err());
         assert!(validate_repository_url("ext::sh").is_err());
@@ -410,4 +440,3 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), content);
     }
 }
-

@@ -24,7 +24,7 @@
 use std::path::Path;
 use std::sync::Once;
 
-use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
 
 static INIT: Once = Once::new();
 
@@ -66,14 +66,13 @@ pub fn init(cache_dir: &Path, verbose: u8) -> LoggingGuard {
     let mut guard = LoggingGuard { _guard: None };
 
     INIT.call_once(|| {
-        let console_filter = EnvFilter::try_new(&console_spec)
-            .unwrap_or_else(|_| EnvFilter::new(console_default));
+        let console_filter =
+            EnvFilter::try_new(&console_spec).unwrap_or_else(|_| EnvFilter::new(console_default));
         let file_filter =
             EnvFilter::try_new(&file_spec).unwrap_or_else(|_| EnvFilter::new("debug"));
 
-        let (log_writer, worker) = tracing_appender::non_blocking(
-            tracing_appender::rolling::daily(cache_dir, "vary.log"),
-        );
+        let (log_writer, worker) =
+            tracing_appender::non_blocking(tracing_appender::rolling::daily(cache_dir, "vary.log"));
 
         let console_layer = fmt::layer()
             .compact()

@@ -191,9 +191,9 @@ fn handle_default(config: &mut Config) -> Result<i32> {
     upgrade::upgrade(config)
 }
 
-mod install;
-mod search;
 mod info;
-mod upgrade;
-mod review;
 mod init;
+mod install;
+mod review;
+mod search;
+mod upgrade;

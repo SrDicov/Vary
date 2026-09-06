@@ -110,7 +110,10 @@ pub struct ResolveOptions {
 
 impl Default for ResolveOptions {
     fn default() -> Self {
-        Self { prefer_binary: true, force_build: false }
+        Self {
+            prefer_binary: true,
+            force_build: false,
+        }
     }
 }
 
@@ -266,7 +269,11 @@ impl<'a> Ctx<'a> {
         } else {
             Action::Build
         };
-        let item = PlanItem { name: name.to_string(), info, action };
+        let item = PlanItem {
+            name: name.to_string(),
+            info,
+            action,
+        };
         let idx = self.push_item(item, dependent);
 
         // Punto 3: SOLO los builds expanden dependencias.
@@ -275,7 +282,12 @@ impl<'a> Ctx<'a> {
                 let info = &self.items[idx as usize].info;
                 let mut seen = HashSet::new();
                 let mut ordered = Vec::new();
-                for dep in info.hostmakedepends.iter().chain(&info.makedepends).chain(&info.depends) {
+                for dep in info
+                    .hostmakedepends
+                    .iter()
+                    .chain(&info.makedepends)
+                    .chain(&info.depends)
+                {
                     if seen.insert(dep.clone()) {
                         ordered.push(dep.clone());
                     }
@@ -316,14 +328,21 @@ impl<'a> Ctx<'a> {
         }
         officials.append(&mut vuls);
 
-        Ok(Plan { installs: officials, builds })
+        Ok(Plan {
+            installs: officials,
+            builds,
+        })
     }
 }
 
 /// Resuelve `targets` contra `source` produciendo un [`Plan`].
 ///
 /// Ver la documentación del módulo para la semántica completa.
-pub fn resolve(targets: &[String], source: &dyn PackageSource, opts: &ResolveOptions) -> Result<Plan> {
+pub fn resolve(
+    targets: &[String],
+    source: &dyn PackageSource,
+    opts: &ResolveOptions,
+) -> Result<Plan> {
     let mut ctx = Ctx::new(source, opts);
     for target in targets {
         ctx.resolve_name(target, None)?;
@@ -392,13 +411,19 @@ mod tests {
             self.official.contains(name)
         }
         fn vur_lookup(&self, name: &str) -> Option<(String, VurInfo)> {
-            self.vur.get(name).map(|(repo, info)| ((*repo).to_string(), info.clone()))
+            self.vur
+                .get(name)
+                .map(|(repo, info)| ((*repo).to_string(), info.clone()))
         }
         fn vur_lookup_any_arch(&self, name: &str) -> Option<(String, VurInfo)> {
-            self.vur.get(name).map(|(repo, info)| ((*repo).to_string(), info.clone()))
+            self.vur
+                .get(name)
+                .map(|(repo, info)| ((*repo).to_string(), info.clone()))
         }
         fn vur_lookup_provides(&self, virtual_name: &str) -> Option<(String, VurInfo)> {
-            self.provides.get(virtual_name).map(|(repo, info)| ((*repo).to_string(), info.clone()))
+            self.provides
+                .get(virtual_name)
+                .map(|(repo, info)| ((*repo).to_string(), info.clone()))
         }
         fn vul_binary_available(&self, repo: &str, info: &VurInfo, _arch: &str) -> bool {
             self.binaries.contains(&(repo, info.pkgname.as_str()))
@@ -416,7 +441,11 @@ mod tests {
     #[test]
     fn vur_sin_binario_genera_build_unico() {
         let src = MockSource {
-            vur: [("hello-vur", ("vur-main", vur_info("hello-vur", &["x86_64"])))].into(),
+            vur: [(
+                "hello-vur",
+                ("vur-main", vur_info("hello-vur", &["x86_64"])),
+            )]
+            .into(),
             ..MockSource::default()
         };
         let plan = resolve(&targets(&["hello-vur"]), &src, &ResolveOptions::default()).unwrap();
@@ -433,7 +462,12 @@ mod tests {
         b.depends = strs(&["c"]);
         let c = vur_info("c", &["x86_64"]);
         let src = MockSource {
-            vur: [("a", ("vur-main", a)), ("b", ("vur-main", b)), ("c", ("vur-main", c))].into(),
+            vur: [
+                ("a", ("vur-main", a)),
+                ("b", ("vur-main", b)),
+                ("c", ("vur-main", c)),
+            ]
+            .into(),
             ..MockSource::default()
         };
         let plan = resolve(&targets(&["a"]), &src, &ResolveOptions::default()).unwrap();
@@ -485,7 +519,10 @@ mod tests {
         assert!(plan.builds.is_empty());
         assert_eq!(plan.installs.len(), 1);
         assert_eq!(plan.installs[0].name, "tool");
-        assert_eq!(plan.installs[0].action, Action::Install(BinarySource::Official));
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
     }
 
     /// Test 5: "libfoo.so.1" no existe por nombre pero un VUR lo provee.
@@ -530,10 +567,15 @@ mod tests {
         assert_eq!(plan.installs.len(), 1);
         assert_eq!(
             plan.installs[0].action,
-            Action::Install(BinarySource::VulBinary { repo: "vur-main".to_string() })
+            Action::Install(BinarySource::VulBinary {
+                repo: "vur-main".to_string()
+            })
         );
 
-        let opts = ResolveOptions { force_build: true, ..ResolveOptions::default() };
+        let opts = ResolveOptions {
+            force_build: true,
+            ..ResolveOptions::default()
+        };
         let plan = resolve(&targets(&["app"]), &src, &opts).unwrap();
         assert!(plan.installs.is_empty());
         assert_eq!(build_names(&plan), vec!["app"]);
@@ -561,7 +603,12 @@ mod tests {
             vur: [("arm-only", ("vur-arm", vur_info("arm-only", &["aarch64"])))].into(),
             ..MockSource::default()
         };
-        let err = resolve(&targets(&["arm-only"]), &solo_arm, &ResolveOptions::default()).unwrap_err();
+        let err = resolve(
+            &targets(&["arm-only"]),
+            &solo_arm,
+            &ResolveOptions::default(),
+        )
+        .unwrap_err();
         // El paquete existe pero es incompatible con la arquitectura: el mensaje
         // debe aclararlo en vez de decir "no encontrado".
         let msg = err.to_string();
@@ -569,14 +616,22 @@ mod tests {
             msg.contains("no está disponible para tu arquitectura"),
             "error inesperado: {msg}"
         );
-        assert!(msg.contains("vur-arm"), "el mensaje debe nombrar el VUR: {msg}");
+        assert!(
+            msg.contains("vur-arm"),
+            "el mensaje debe nombrar el VUR: {msg}"
+        );
 
         let con_alternativa = MockSource {
             vur: [("gpukit", ("vur-arm", vur_info("gpukit", &["aarch64"])))].into(),
             provides: [("gpukit", ("vur-x86", vur_info("gpukit-x86", &["x86_64"])))].into(),
             ..MockSource::default()
         };
-        let plan = resolve(&targets(&["gpukit"]), &con_alternativa, &ResolveOptions::default()).unwrap();
+        let plan = resolve(
+            &targets(&["gpukit"]),
+            &con_alternativa,
+            &ResolveOptions::default(),
+        )
+        .unwrap();
         assert_eq!(build_names(&plan), vec!["gpukit"]);
         assert_eq!(plan.builds[0].info.pkgname, "gpukit-x86");
     }
@@ -591,13 +646,20 @@ mod tests {
         let libdata = vur_info("libdata", &["x86_64"]);
         let src = MockSource {
             official: ["curl"].into(),
-            vur: [("svc", ("vur-main", svc)), ("libdata", ("vur-main", libdata))].into(),
+            vur: [
+                ("svc", ("vur-main", svc)),
+                ("libdata", ("vur-main", libdata)),
+            ]
+            .into(),
             ..MockSource::default()
         };
         let plan = resolve(&targets(&["svc"]), &src, &ResolveOptions::default()).unwrap();
         assert_eq!(plan.installs.len(), 1);
         assert_eq!(plan.installs[0].name, "curl");
-        assert_eq!(plan.installs[0].action, Action::Install(BinarySource::Official));
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
         assert_eq!(build_names(&plan), vec!["libdata", "svc"]);
     }
 }

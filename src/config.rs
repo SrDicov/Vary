@@ -101,7 +101,8 @@ pub struct Config {
 
     pub sudo_bin: String,
     pub sudo_flags: Vec<String>,
-    pub git_bin: String,    /// Override de arquitectura (--arch); si es None se consulta a xbps.
+    pub git_bin: String,
+    /// Override de arquitectura (--arch); si es None se consulta a xbps.
     pub curl_bin: String,
     pub arch_override: Option<String>,
 

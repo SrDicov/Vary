@@ -41,20 +41,27 @@ impl VurRepo {
         if self.path.join(".git").exists() {
             // Migrar clone legacy (sin --filter) a partial clone
             let promisor = Command::new(&self.git_bin)
-                .arg("-C").arg(&self.path)
+                .arg("-C")
+                .arg(&self.path)
                 .args(["config", "--get", "remote.origin.promisor"])
                 .output();
             let is_partial = matches!(promisor, Ok(ref o) if o.status.success());
             if !is_partial {
-                tracing::info!("migrando clone legacy de '{}' a partial clone...", self.name);
+                tracing::info!(
+                    "migrando clone legacy de '{}' a partial clone...",
+                    self.name
+                );
                 let backup = self.path.with_extension("legacy-backup");
                 if backup.exists() {
                     let _ = std::fs::remove_dir_all(&backup);
                 }
-                std::fs::rename(&self.path, &backup)
-                    .with_context(|| format!("no se pudo mover {} para migración", self.path.display()))?;
+                std::fs::rename(&self.path, &backup).with_context(|| {
+                    format!("no se pudo mover {} para migración", self.path.display())
+                })?;
                 match self.clone_partial() {
-                    Ok(()) => { let _ = std::fs::remove_dir_all(&backup); }
+                    Ok(()) => {
+                        let _ = std::fs::remove_dir_all(&backup);
+                    }
                     Err(e) => {
                         // Restaurar backup si falló el re-clone
                         let _ = std::fs::rename(&backup, &self.path);
@@ -69,7 +76,10 @@ impl VurRepo {
 
     fn clone_partial(&self) -> Result<()> {
         if !is_safe_git_url(&self.entry.url) {
-            bail!("URL de repositorio git insegura o inválida: '{}'", self.entry.url);
+            bail!(
+                "URL de repositorio git insegura o inválida: '{}'",
+                self.entry.url
+            );
         }
         if let Some(parent) = self.path.parent() {
             if !parent.as_os_str().is_empty() {
@@ -170,7 +180,8 @@ impl VurRepo {
         let branch = self.entry.branch_or_default();
         // Fetch sin tocar worktree
         let fetch_out = Command::new(&self.git_bin)
-            .arg("-C").arg(&self.path)
+            .arg("-C")
+            .arg(&self.path)
             .args(["fetch", "--depth", "1", "origin", branch])
             .output()
             .context("no se pudo ejecutar git fetch")?;
@@ -183,7 +194,8 @@ impl VurRepo {
         }
         // Actualizar HEAD sin checkout completo
         let reset_out = Command::new(&self.git_bin)
-            .arg("-C").arg(&self.path)
+            .arg("-C")
+            .arg(&self.path)
             .args(["reset", "--soft", "FETCH_HEAD"])
             .output()
             .context("no se pudo ejecutar git reset --soft")?;
@@ -202,7 +214,8 @@ impl VurRepo {
     /// (`srcpkgs/<pkg>/template`) y su alias (`pkgs/<pkg>/template`, p. ej. voiders).
     pub fn list_packages(&self) -> Result<Vec<String>> {
         let output = Command::new(&self.git_bin)
-            .arg("-C").arg(&self.path)
+            .arg("-C")
+            .arg(&self.path)
             .args(["ls-tree", "--name-only", "HEAD"])
             .output()
             .context("no se pudo ejecutar git ls-tree")?;
@@ -224,7 +237,8 @@ impl VurRepo {
             let prefix = *prefix;
             let subdir = format!("{prefix}/");
             let output2 = Command::new(&self.git_bin)
-                .arg("-C").arg(&self.path)
+                .arg("-C")
+                .arg(&self.path)
                 .args(["ls-tree", "--name-only", "HEAD", subdir.as_str()])
                 .output()
                 .with_context(|| format!("no se pudo ejecutar git ls-tree {subdir}"))?;
@@ -239,16 +253,20 @@ impl VurRepo {
             // Layout flat (como cnr): cada directorio de nivel 1 = paquete potencial
             // Excluir archivos sueltos (README.md, LICENSE, etc.)
             let output_full = Command::new(&self.git_bin)
-                .arg("-C").arg(&self.path)
+                .arg("-C")
+                .arg(&self.path)
                 .args(["ls-tree", "HEAD"])
                 .output()
                 .context("no se pudo ejecutar git ls-tree")?;
             Ok(String::from_utf8_lossy(&output_full.stdout)
                 .lines()
-                .filter(|line| line.contains("\ttree\t") || line.contains(" tree ") || {
-                    // ls-tree format: "<mode> <type> <hash>\t<name>"
-                    let parts: Vec<&str> = line.splitn(4, |c: char| c.is_whitespace()).collect();
-                    parts.len() >= 4 && parts[1] == "tree"
+                .filter(|line| {
+                    line.contains("\ttree\t") || line.contains(" tree ") || {
+                        // ls-tree format: "<mode> <type> <hash>\t<name>"
+                        let parts: Vec<&str> =
+                            line.splitn(4, |c: char| c.is_whitespace()).collect();
+                        parts.len() >= 4 && parts[1] == "tree"
+                    }
                 })
                 .filter_map(|line| line.split('\t').nth(1))
                 .filter(|name| !name.starts_with('.'))
@@ -261,7 +279,8 @@ impl VurRepo {
     /// o vacío para flat.
     fn detect_layout_prefix(&self) -> Result<String> {
         let output = Command::new(&self.git_bin)
-            .arg("-C").arg(&self.path)
+            .arg("-C")
+            .arg(&self.path)
             .args(["ls-tree", "--name-only", "HEAD"])
             .output()?;
         let entries = String::from_utf8_lossy(&output.stdout);
@@ -277,7 +296,8 @@ impl VurRepo {
     /// Usa `git show HEAD:<path>` para acceder directo al object store.
     pub fn git_show_file(&self, tree_path: &str) -> Result<String> {
         let output = Command::new(&self.git_bin)
-            .arg("-C").arg(&self.path)
+            .arg("-C")
+            .arg(&self.path)
             .args(["show", &format!("HEAD:{}", tree_path)])
             .output()
             .with_context(|| format!("no se pudo ejecutar git show HEAD:{}", tree_path))?;
@@ -300,14 +320,16 @@ impl VurRepo {
         // Inicializar sparse-checkout si no está configurado
         if !self.path.join(".git/info/sparse-checkout").exists() {
             let _ = Command::new(&self.git_bin)
-                .arg("-C").arg(&self.path)
+                .arg("-C")
+                .arg(&self.path)
                 .args(["sparse-checkout", "init", "--cone"])
                 .output();
         }
 
         // Añadir el paquete al sparse-checkout
         let add_out = Command::new(&self.git_bin)
-            .arg("-C").arg(&self.path)
+            .arg("-C")
+            .arg(&self.path)
             .args(["sparse-checkout", "add", &sparse_path])
             .output()
             .with_context(|| format!("no se pudo agregar {} al sparse-checkout", sparse_path))?;
@@ -322,7 +344,8 @@ impl VurRepo {
 
         // Hacer checkout (Git descargará solo los blobs faltantes)
         let co_out = Command::new(&self.git_bin)
-            .arg("-C").arg(&self.path)
+            .arg("-C")
+            .arg(&self.path)
             .args(["checkout"])
             .output()
             .context("no se pudo ejecutar git checkout")?;
@@ -336,7 +359,11 @@ impl VurRepo {
 
         let materialized = self.path.join(&sparse_path);
         if !materialized.exists() {
-            bail!("el paquete '{}' no existe en el VUR '{}'", pkg_name, self.name);
+            bail!(
+                "el paquete '{}' no existe en el VUR '{}'",
+                pkg_name,
+                self.name
+            );
         }
 
         Ok(materialized)
@@ -375,7 +402,8 @@ impl VurRepo {
                     Ok(info) => packages.push(info),
                     Err(err) => tracing::warn!(
                         ".VURINFO inválido ignorado en {}:{}: {err:#}",
-                        self.name, vurinfo_path
+                        self.name,
+                        vurinfo_path
                     ),
                 }
             }
@@ -386,10 +414,9 @@ impl VurRepo {
             files_seen += 1;
             match metadata::parse_many(&text) {
                 Ok(mut infos) => packages.append(&mut infos),
-                Err(err) => tracing::warn!(
-                    ".VURINFO raíz inválido ignorado en {}: {err:#}",
-                    self.name
-                ),
+                Err(err) => {
+                    tracing::warn!(".VURINFO raíz inválido ignorado en {}: {err:#}", self.name)
+                }
             }
         }
 
@@ -410,7 +437,8 @@ impl VurRepo {
                         }
                         Err(err) => tracing::warn!(
                             "template inválido ignorado en {}:{}: {err:#}",
-                            self.name, tmpl_path
+                            self.name,
+                            tmpl_path
                         ),
                     }
                 }
@@ -418,7 +446,10 @@ impl VurRepo {
         }
 
         if packages.is_empty() && files_seen == 0 {
-            bail!("no se encontró ningún .VURINFO ni template en {}", self.name);
+            bail!(
+                "no se encontró ningún .VURINFO ni template en {}",
+                self.name
+            );
         }
 
         cache.store(&key, packages.clone());
@@ -441,7 +472,10 @@ impl VurRepo {
             candidates.push(self.path.join(prefix).join(pkgname));
         }
         candidates.push(self.path.join(pkgname));
-        let src = candidates.iter().find(|p| p.join("template").is_file()).cloned()
+        let src = candidates
+            .iter()
+            .find(|p| p.join("template").is_file())
+            .cloned()
             .or_else(|| {
                 let mut found = None;
                 for base in TEMPLATE_PREFIXES
@@ -454,8 +488,13 @@ impl VurRepo {
                             let p = entry.path();
                             if p.is_dir() {
                                 if let Ok(text) = std::fs::read_to_string(p.join("template")) {
-                                    if let Ok(info) = parse_template_text(&text, p.join("template").to_string_lossy().as_ref()) {
-                                        if info.pkgname == pkgname || info.subpackages.iter().any(|s| s.pkgname == pkgname) {
+                                    if let Ok(info) = parse_template_text(
+                                        &text,
+                                        p.join("template").to_string_lossy().as_ref(),
+                                    ) {
+                                        if info.pkgname == pkgname
+                                            || info.subpackages.iter().any(|s| s.pkgname == pkgname)
+                                        {
                                             found = Some(p);
                                             break;
                                         }
@@ -468,7 +507,9 @@ impl VurRepo {
                             }
                         }
                     }
-                    if found.is_some() { break; }
+                    if found.is_some() {
+                        break;
+                    }
                 }
                 found
             })
@@ -491,20 +532,29 @@ impl VurRepo {
             if meta.is_dir() && !meta.file_type().is_symlink() {
                 if dest.join(".vur_projection_marker").exists() {
                     // Proyección previa nuestra: reemplazar
-                    std::fs::remove_dir_all(&dest).with_context(|| format!("no se pudo limpiar proyección previa {}", dest.display()))?;
+                    std::fs::remove_dir_all(&dest).with_context(|| {
+                        format!("no se pudo limpiar proyección previa {}", dest.display())
+                    })?;
                 } else if force {
                     // Target explícito del usuario: el VUR manda sobre el
                     // template oficial no-publicado presente en el árbol.
                     tracing::warn!("reemplazando template oficial local de '{}' por la versión VUR (target explícito)", pkgname);
-                    std::fs::remove_dir_all(&dest).with_context(|| format!("no se pudo reemplazar {}", dest.display()))?;
+                    std::fs::remove_dir_all(&dest)
+                        .with_context(|| format!("no se pudo reemplazar {}", dest.display()))?;
                 } else {
-                    tracing::warn!("{} ya existe como directorio oficial, se omite proyección de VUR {}", dest.display(), pkgname);
+                    tracing::warn!(
+                        "{} ya existe como directorio oficial, se omite proyección de VUR {}",
+                        dest.display(),
+                        pkgname
+                    );
                     return Ok(());
                 }
             } else if meta.file_type().is_symlink() {
-                std::fs::remove_file(&dest).with_context(|| format!("no se pudo reemplazar symlink {}", dest.display()))?;
+                std::fs::remove_file(&dest)
+                    .with_context(|| format!("no se pudo reemplazar symlink {}", dest.display()))?;
             } else {
-                std::fs::remove_file(&dest).with_context(|| format!("no se pudo reemplazar {}", dest.display()))?;
+                std::fs::remove_file(&dest)
+                    .with_context(|| format!("no se pudo reemplazar {}", dest.display()))?;
             }
         }
         // Copiar recursivamente (equivalente a cp -a)
@@ -518,23 +568,42 @@ impl VurRepo {
         let dest = master_srcpkgs.join(pkgname);
         // Solo eliminar si es nuestra proyección (marcada) o symlink viejo
         if dest.join(".vur_projection_marker").exists() {
-            std::fs::remove_dir_all(&dest).with_context(|| format!("no se pudo eliminar proyección {}", dest.display()))?;
+            std::fs::remove_dir_all(&dest)
+                .with_context(|| format!("no se pudo eliminar proyección {}", dest.display()))?;
             // Restaurar template oficial si este paquete pertenece al árbol maestro
             if master_srcpkgs.join(pkgname).symlink_metadata().is_err()
-                && (master_srcpkgs.parent().and_then(|p| p.file_name()).map(|n| n == "void-packages").unwrap_or(false)
+                && (master_srcpkgs
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n == "void-packages")
+                    .unwrap_or(false)
                     || master_srcpkgs.join("../.git").exists())
-                {
-                    let _ = Command::new(&self.git_bin)
-                        .args(["checkout", "--", &format!("srcpkgs/{}", pkgname)])
-                        .current_dir(master_srcpkgs.parent().unwrap_or(Path::new(".")))
-                        .output();
-                }
-        } else if dest.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+            {
+                let _ = Command::new(&self.git_bin)
+                    .args(["checkout", "--", &format!("srcpkgs/{}", pkgname)])
+                    .current_dir(master_srcpkgs.parent().unwrap_or(Path::new(".")))
+                    .output();
+            }
+        } else if dest
+            .symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+        {
             if let Ok(target) = std::fs::read_link(&dest) {
-                let abs = if target.is_absolute() { target } else { dest.parent().unwrap().join(target) };
+                let abs = if target.is_absolute() {
+                    target
+                } else {
+                    dest.parent().unwrap().join(target)
+                };
                 let resolved = abs.canonicalize().unwrap_or(abs);
-                if resolved.starts_with(self.path.canonicalize().unwrap_or_else(|_| self.path.clone())) {
-                    std::fs::remove_file(&dest).with_context(|| format!("no se pudo eliminar symlink {}", dest.display()))?;
+                if resolved.starts_with(
+                    self.path
+                        .canonicalize()
+                        .unwrap_or_else(|_| self.path.clone()),
+                ) {
+                    std::fs::remove_file(&dest).with_context(|| {
+                        format!("no se pudo eliminar symlink {}", dest.display())
+                    })?;
                 }
             }
         }
@@ -542,7 +611,8 @@ impl VurRepo {
     }
 
     fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
-        std::fs::create_dir_all(dest).with_context(|| format!("no se pudo crear {}", dest.display()))?;
+        std::fs::create_dir_all(dest)
+            .with_context(|| format!("no se pudo crear {}", dest.display()))?;
         for entry in std::fs::read_dir(src)? {
             let entry = entry?;
             let src_path = entry.path();
@@ -552,10 +622,13 @@ impl VurRepo {
                 Self::copy_dir_recursive(&src_path, &dest_path)?;
             } else if ft.is_symlink() {
                 if let Ok(target) = std::fs::read_link(&src_path) {
-                    std::os::unix::fs::symlink(target, &dest_path).with_context(|| format!("symlink {}", dest_path.display()))?;
+                    std::os::unix::fs::symlink(target, &dest_path)
+                        .with_context(|| format!("symlink {}", dest_path.display()))?;
                 }
             } else {
-                std::fs::copy(&src_path, &dest_path).with_context(|| format!("copiando {} -> {}", src_path.display(), dest_path.display()))?;
+                std::fs::copy(&src_path, &dest_path).with_context(|| {
+                    format!("copiando {} -> {}", src_path.display(), dest_path.display())
+                })?;
             }
         }
         Ok(())
@@ -640,20 +713,26 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             continue;
         }
         // Detectar y advertir ruidosamente sobre constructos condicionales por arquitectura (A2)
-        if (trimmed.starts_with("case ") || trimmed.starts_with("if ") || trimmed.starts_with("elif "))
-            && (trimmed.contains("XBPS_TARGET_") || trimmed.contains("XBPS_MACHINE") || trimmed.contains("XBPS_ARCH")) {
-                tracing::warn!(
+        if (trimmed.starts_with("case ")
+            || trimmed.starts_with("if ")
+            || trimmed.starts_with("elif "))
+            && (trimmed.contains("XBPS_TARGET_")
+                || trimmed.contains("XBPS_MACHINE")
+                || trimmed.contains("XBPS_ARCH"))
+        {
+            tracing::warn!(
                     "{}: constructo condicional por arquitectura detectado ('{}'); la extracción estática puede ser incompleta",
                     debug_path, trimmed
                 );
-            }
+        }
         // Detectar definiciones de funciones shell
         if trimmed.contains("()") {
             let fn_name = trimmed.split("()").next().unwrap_or("").trim();
             if let Some(sub_name) = fn_name.strip_suffix("_package") {
                 let sub_name = sub_name.trim();
                 if !sub_name.is_empty() && crate::metadata::is_valid_pkgname(sub_name) {
-                    let mut sub_vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+                    let mut sub_vars: std::collections::HashMap<String, String> =
+                        std::collections::HashMap::new();
                     let mut brace_depth = trimmed.matches('{').count();
                     let mut found_open = brace_depth > 0;
 
@@ -666,13 +745,16 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
                         brace_depth += open_count;
                         brace_depth = brace_depth.saturating_sub(l.matches('}').count());
 
-                        if brace_depth == 1 && !l_trimmed.is_empty() && !l_trimmed.starts_with('#') {
+                        if brace_depth == 1 && !l_trimmed.is_empty() && !l_trimmed.starts_with('#')
+                        {
                             if let Some(eq) = l_trimmed.find('=') {
                                 let k = l_trimmed[..eq].trim().trim_end_matches('+');
                                 if matches!(k, "depends" | "short_desc") {
                                     let mut v = l_trimmed[eq + 1..].trim().to_string();
                                     if (v.starts_with('"') && v.ends_with('"') && v.len() >= 2)
-                                        || (v.starts_with('\'') && v.ends_with('\'') && v.len() >= 2)
+                                        || (v.starts_with('\'')
+                                            && v.ends_with('\'')
+                                            && v.len() >= 2)
                                     {
                                         v = v[1..v.len() - 1].to_string();
                                     }
@@ -737,29 +819,52 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         // Parsear asignaciones var=valor
         if let Some(eq) = buf.find('=') {
             let key = buf[..eq].trim().to_string();
-            if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') { continue; }
+            if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                continue;
+            }
             // Filtrar solo variables relevantes
-            let relevant = matches!(key.as_str(),
-                "pkgname" | "version" | "revision" | "archs" | "only_for_archs" |
-                "depends" | "hostmakedepends" | "makedepends" | "checkdepends" |
-                "build_style" | "distfiles" | "checksum" | "provides" | "replaces" |
-                "restricted" | "maintainer" | "short_desc" | "license" | "homepage"
+            let relevant = matches!(
+                key.as_str(),
+                "pkgname"
+                    | "version"
+                    | "revision"
+                    | "archs"
+                    | "only_for_archs"
+                    | "depends"
+                    | "hostmakedepends"
+                    | "makedepends"
+                    | "checkdepends"
+                    | "build_style"
+                    | "distfiles"
+                    | "checksum"
+                    | "provides"
+                    | "replaces"
+                    | "restricted"
+                    | "maintainer"
+                    | "short_desc"
+                    | "license"
+                    | "homepage"
             );
-            if !relevant { continue; }
-            let mut val = buf[eq+1..].trim().to_string();
+            if !relevant {
+                continue;
+            }
+            let mut val = buf[eq + 1..].trim().to_string();
             // Quitar comentarios al final (espacio + #), pero no dentro de comillas
             if let Some(hash) = val.find(" #") {
                 // Verificar que no esté dentro de comillas
                 let before = &val[..hash];
-                if before.matches('"').count().is_multiple_of(2) && before.matches('\'').count().is_multiple_of(2) {
+                if before.matches('"').count().is_multiple_of(2)
+                    && before.matches('\'').count().is_multiple_of(2)
+                {
                     val.truncate(hash);
                     val = val.trim().to_string();
                 }
             }
             // Descomillar
             if (val.starts_with('"') && val.ends_with('"') && val.len() >= 2)
-                || (val.starts_with('\'') && val.ends_with('\'') && val.len() >= 2) {
-                val = val[1..val.len()-1].to_string();
+                || (val.starts_with('\'') && val.ends_with('\'') && val.len() >= 2)
+            {
+                val = val[1..val.len() - 1].to_string();
             } else if val.starts_with('"') || val.starts_with('\'') {
                 // Valor multilínea entrecomillado sin cierre en misma línea
                 // Quitar comilla inicial y buscar cierre
@@ -775,11 +880,24 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         }
     }
 
-    let pkgname = vars.get("pkgname").cloned().filter(|s| !s.is_empty())
+    let pkgname = vars
+        .get("pkgname")
+        .cloned()
+        .filter(|s| !s.is_empty())
         .ok_or_else(|| anyhow::anyhow!("template sin pkgname: {}", debug_path))?;
-    let version = vars.get("version").cloned().unwrap_or_else(|| "1.0".to_string());
-    let revision: u32 = vars.get("revision").and_then(|s| s.parse().ok()).unwrap_or(1);
-    let archs_raw = vars.get("only_for_archs").or_else(|| vars.get("archs")).cloned().unwrap_or_default();
+    let version = vars
+        .get("version")
+        .cloned()
+        .unwrap_or_else(|| "1.0".to_string());
+    let revision: u32 = vars
+        .get("revision")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    let archs_raw = vars
+        .get("only_for_archs")
+        .or_else(|| vars.get("archs"))
+        .cloned()
+        .unwrap_or_default();
     // Normalizar wildcards de Void ("x86_64*", "aarch64*") a la base
     let archs = if archs_raw.is_empty() {
         vec!["all".to_string()]
@@ -791,17 +909,30 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             .collect()
     };
     let split_list = |key: &str| -> Vec<String> {
-        vars.get(key).map(|s| s.split_whitespace().map(|v| v.to_string()).collect()).unwrap_or_default()
+        vars.get(key)
+            .map(|s| s.split_whitespace().map(|v| v.to_string()).collect())
+            .unwrap_or_default()
     };
     let checksum_raw = split_list("checksum");
     // Normalizar checksum a sha256: prefijo si falta y no es SKIP
-    let checksum = checksum_raw.into_iter().map(|c| {
-        if c == "SKIP" || c.starts_with("sha256:") { c } else { format!("sha256:{}", c) }
-    }).collect();
+    let checksum = checksum_raw
+        .into_iter()
+        .map(|c| {
+            if c == "SKIP" || c.starts_with("sha256:") {
+                c
+            } else {
+                format!("sha256:{}", c)
+            }
+        })
+        .collect();
 
     let mut subpackages = Vec::new();
     for (sub_name, sub_vars) in raw_subpackages {
-        if sub_name == pkgname || subpackages.iter().any(|s: &crate::metadata::Subpackage| s.pkgname == sub_name) {
+        if sub_name == pkgname
+            || subpackages
+                .iter()
+                .any(|s: &crate::metadata::Subpackage| s.pkgname == sub_name)
+        {
             continue;
         }
         let sub_depends: Vec<String> = sub_vars
@@ -824,7 +955,10 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             })
             .unwrap_or_default();
 
-        let sub_short_desc = sub_vars.get("short_desc").cloned().filter(|s| !s.is_empty());
+        let sub_short_desc = sub_vars
+            .get("short_desc")
+            .cloned()
+            .filter(|s| !s.is_empty());
 
         subpackages.push(crate::metadata::Subpackage {
             pkgname: sub_name,
@@ -849,7 +983,10 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         checksum,
         provides: split_list("provides"),
         replaces: split_list("replaces"),
-        restricted: vars.get("restricted").map(|s| s == "yes" || s == "true" || s == "1").unwrap_or(false),
+        restricted: vars
+            .get("restricted")
+            .map(|s| s == "yes" || s == "true" || s == "1")
+            .unwrap_or(false),
         maintainer: vars.get("maintainer").cloned(),
     };
     // Validar
@@ -888,7 +1025,8 @@ mod tests {
     const HELLO_VURINFO: &str = r#"{"format_version":1,"pkgname":"hello","version":"1.0","revision":1,"archs":["x86_64"],"checksum":["sha256:aa"]}"#;
     const GOODBYE_VURINFO: &str = r#"{"format_version":1,"pkgname":"goodbye","version":"2.0_1","revision":1,"archs":["x86_64"],"checksum":["sha256:bb"]}"#;
     const THIRD_VURINFO: &str = r#"{"format_version":1,"pkgname":"third","version":"3.0_1","revision":1,"archs":["x86_64"],"checksum":["sha256:cc"]}"#;
-    const TEST_PEM: &str = "-----BEGIN PUBLIC KEY-----\naGVsbG8gd29ybGQ=\n-----END PUBLIC KEY-----\n";
+    const TEST_PEM: &str =
+        "-----BEGIN PUBLIC KEY-----\naGVsbG8gd29ybGQ=\n-----END PUBLIC KEY-----\n";
     const EXPECTED_FP: &str = "b9:4d:27:b9:93:4d:3e:08:a5:2e:52:d7:da:7d:ab:fa:c4:84:ef:e3:7a:53:80:ee:90:88:f7:ac:e2:ef:cd:e9";
 
     struct Fixture {
@@ -1006,7 +1144,10 @@ mod tests {
         std::fs::remove_dir_all(&dest)?;
         std::os::unix::fs::symlink(fx._clone_tmp.path(), &dest)?;
         repo.project_pkg(&master, "hello", false)?;
-        assert!(dest.is_dir(), "project debe reparar symlink apuntando a otro destino");
+        assert!(
+            dest.is_dir(),
+            "project debe reparar symlink apuntando a otro destino"
+        );
         assert!(dest.join(".vur_projection_marker").exists());
 
         let externo = fx._clone_tmp.path().join("externo");
@@ -1056,7 +1197,10 @@ mod tests {
         std::fs::create_dir_all(fx.origin.join("srcpkgs/third"))?;
         std::fs::write(fx.origin.join("srcpkgs/third/.VURINFO"), THIRD_VURINFO)?;
         run_git(&fx.origin, &["add", "."])?;
-        run_git(&fx.origin, &["commit", "--no-gpg-sign", "-am", "tercer paquete"])?;
+        run_git(
+            &fx.origin,
+            &["commit", "--no-gpg-sign", "-am", "tercer paquete"],
+        )?;
 
         let new_sha = fx.repo.pull()?;
         assert_ne!(old_sha, new_sha);
@@ -1215,7 +1359,10 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
         assert_eq!(info.archs, vec!["x86_64", "aarch64"]);
         assert_eq!(
             info.distfiles,
-            vec!["https://example.org/tar1.tar.gz", "https://example.org/tar2.tar.gz"]
+            vec![
+                "https://example.org/tar1.tar.gz",
+                "https://example.org/tar2.tar.gz"
+            ]
         );
         assert_eq!(info.makedepends, vec!["rust", "cargo", "pkg-config"]);
         assert_eq!(info.depends, vec!["libssl", "glibc"]);
@@ -1228,7 +1375,8 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
 
     #[test]
     fn parse_template_unclosed_quote_at_eof_does_not_hang() -> Result<()> {
-        let content = "pkgname=broken\nversion=0.1.0\nrevision=1\nshort_desc=\"unclosed quote at eof";
+        let content =
+            "pkgname=broken\nversion=0.1.0\nrevision=1\nshort_desc=\"unclosed quote at eof";
         let info = parse_template_text(content, "test:template")?;
         assert_eq!(info.pkgname, "broken");
         assert_eq!(info.version, "0.1.0");
@@ -1237,7 +1385,9 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
 
     #[test]
     fn is_safe_git_url_validates_and_rejects_dangerous_transports() {
-        assert!(is_safe_git_url("https://github.com/void-linux/void-packages.git"));
+        assert!(is_safe_git_url(
+            "https://github.com/void-linux/void-packages.git"
+        ));
         assert!(is_safe_git_url("http://git.example.org/repo.git"));
         assert!(is_safe_git_url("git://example.org/repo.git"));
         assert!(is_safe_git_url("ssh://git@example.org/repo.git"));
@@ -1247,7 +1397,9 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
         assert!(!is_safe_git_url("--upload-pack=touch /tmp/pwn"));
         assert!(!is_safe_git_url("-u"));
         assert!(!is_safe_git_url("ext::sh -c evil%G"));
-        assert!(!is_safe_git_url("https://example.org/repo.git\n--upload-pack=evil"));
+        assert!(!is_safe_git_url(
+            "https://example.org/repo.git\n--upload-pack=evil"
+        ));
         assert!(!is_safe_git_url(""));
         assert!(!is_safe_git_url("   "));
     }
@@ -1284,11 +1436,22 @@ myproject-doc_package() {
         assert_eq!(info.depends, vec!["glibc", "openssl"]);
         assert_eq!(info.subpackages.len(), 2);
 
-        let devel = info.subpackages.iter().find(|s| s.pkgname == "myproject-devel").unwrap();
-        assert_eq!(devel.short_desc.as_deref(), Some("My awesome development files"));
+        let devel = info
+            .subpackages
+            .iter()
+            .find(|s| s.pkgname == "myproject-devel")
+            .unwrap();
+        assert_eq!(
+            devel.short_desc.as_deref(),
+            Some("My awesome development files")
+        );
         assert_eq!(devel.depends, vec!["myproject>=2.5.0_3", "headers"]);
 
-        let doc = info.subpackages.iter().find(|s| s.pkgname == "myproject-doc").unwrap();
+        let doc = info
+            .subpackages
+            .iter()
+            .find(|s| s.pkgname == "myproject-doc")
+            .unwrap();
         assert_eq!(doc.short_desc.as_deref(), Some("My awesome documentation"));
         assert!(doc.depends.is_empty());
 

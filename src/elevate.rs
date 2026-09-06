@@ -74,7 +74,11 @@ pub fn resolve(
 }
 
 /// Construye el `Command` para ejecutar `program` con los privilegios adecuados.
-pub fn elevate(configured_bin: &str, configured_flags: &[String], program: &str) -> Result<Command> {
+pub fn elevate(
+    configured_bin: &str,
+    configured_flags: &[String],
+    program: &str,
+) -> Result<Command> {
     Ok(match resolve(configured_bin, configured_flags)? {
         None => Command::new(program),
         Some((bin, flags)) => {
@@ -130,10 +134,7 @@ mod tests {
     fn elevate_explicito_prefija_el_programa() {
         // Wrapper 'echo': el stdout debe ser exactamente el programa envuelto,
         // probando que el programa queda como argumento y no como argv[0].
-        let out = elevate("echo", &[], "/bin/true")
-            .unwrap()
-            .output()
-            .unwrap();
+        let out = elevate("echo", &[], "/bin/true").unwrap().output().unwrap();
         assert!(out.status.success());
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "/bin/true");
     }

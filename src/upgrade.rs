@@ -14,7 +14,12 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
             continue;
         }
         let path = config.vurs_dir().join(&name);
-        let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
+        let repo = VurRepo {
+            name: name.clone(),
+            path,
+            entry: entry.clone(),
+            git_bin: config.git_bin.clone(),
+        };
         if let Err(e) = repo.ensure_cloned() {
             tracing::warn!("failed to clone VUR '{}': {}", name, e);
             any_failed = true;
@@ -28,7 +33,11 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
             }
         }
     }
-    if any_failed { Ok(1) } else { Ok(0) }
+    if any_failed {
+        Ok(1)
+    } else {
+        Ok(0)
+    }
 }
 
 pub fn upgrade(config: &mut Config) -> Result<i32> {
@@ -53,18 +62,28 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     let repos_conf = ReposConf::load(config.repos_conf_path())?;
 
     // Build map of current VUR pkgver
-    let mut current_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut current_map: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for (name, entry) in repos_conf.sorted_by_priority() {
         let path = config.vurs_dir().join(&name);
-        let repo = VurRepo { name: name.clone(), path, entry: entry.clone(), git_bin: config.git_bin.clone() };
+        let repo = VurRepo {
+            name: name.clone(),
+            path,
+            entry: entry.clone(),
+            git_bin: config.git_bin.clone(),
+        };
         if repo.ensure_cloned().is_err() {
             continue;
         }
         if let Ok(infos) = repo.load_index(&mut cache, Some(config.ttl_cache_seconds)) {
             for info in infos {
-                current_map.entry(info.pkgname.clone()).or_insert_with(|| info.pkgver());
+                current_map
+                    .entry(info.pkgname.clone())
+                    .or_insert_with(|| info.pkgver());
                 for sub in &info.subpackages {
-                    current_map.entry(sub.pkgname.clone()).or_insert_with(|| info.pkgver());
+                    current_map
+                        .entry(sub.pkgname.clone())
+                        .or_insert_with(|| info.pkgver());
                 }
             }
         }
@@ -79,7 +98,9 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         // Keep only if still installed or we can't determine (fallback keep)
         manual_set.contains(name) || {
             // Also check via xbps-query -l
-            xbps::query_installed(name).map(|o| o.is_some()).unwrap_or(true)
+            xbps::query_installed(name)
+                .map(|o| o.is_some())
+                .unwrap_or(true)
         }
     });
     if db.len() != before {

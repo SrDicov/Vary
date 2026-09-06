@@ -8,25 +8,39 @@ pub struct VurInfo {
     pub version: String,
     pub revision: u32,
     pub archs: Vec<String>,
-    #[serde(default)] pub subpackages: Vec<Subpackage>,
-    #[serde(default)] pub depends: Vec<String>,
-    #[serde(default)] pub hostmakedepends: Vec<String>,
-    #[serde(default)] pub makedepends: Vec<String>,
-    #[serde(default)] pub checkdepends: Vec<String>,
-    #[serde(default)] pub build_style: Option<String>,
-    #[serde(default)] pub distfiles: Vec<String>,
-    #[serde(default)] pub checksum: Vec<String>,
-    #[serde(default)] pub provides: Vec<String>,
-    #[serde(default)] pub replaces: Vec<String>,
-    #[serde(default)] pub restricted: bool,
-    #[serde(default)] pub maintainer: Option<String>,
+    #[serde(default)]
+    pub subpackages: Vec<Subpackage>,
+    #[serde(default)]
+    pub depends: Vec<String>,
+    #[serde(default)]
+    pub hostmakedepends: Vec<String>,
+    #[serde(default)]
+    pub makedepends: Vec<String>,
+    #[serde(default)]
+    pub checkdepends: Vec<String>,
+    #[serde(default)]
+    pub build_style: Option<String>,
+    #[serde(default)]
+    pub distfiles: Vec<String>,
+    #[serde(default)]
+    pub checksum: Vec<String>,
+    #[serde(default)]
+    pub provides: Vec<String>,
+    #[serde(default)]
+    pub replaces: Vec<String>,
+    #[serde(default)]
+    pub restricted: bool,
+    #[serde(default)]
+    pub maintainer: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Subpackage {
     pub pkgname: String,
-    #[serde(default)] pub depends: Vec<String>,
-    #[serde(default)] pub short_desc: Option<String>,
+    #[serde(default)]
+    pub depends: Vec<String>,
+    #[serde(default)]
+    pub short_desc: Option<String>,
 }
 
 const SUPPORTED_FORMAT_VERSION: u32 = 1;
@@ -82,7 +96,10 @@ impl VurInfo {
             bail!("archs vacío: debe declararse al menos una arquitectura objetivo");
         }
         if self.checksum.is_empty() {
-            tracing::warn!("{}: checksum vacío (paquete con do_fetch personalizado?)", self.pkgname);
+            tracing::warn!(
+                "{}: checksum vacío (paquete con do_fetch personalizado?)",
+                self.pkgname
+            );
         } else {
             for (i, sum) in self.checksum.iter().enumerate() {
                 if sum == "SKIP" {
@@ -192,7 +209,9 @@ pub fn parse_many(json: &str) -> Result<Vec<VurInfo>> {
 }
 
 fn is_valid_version(v: &str) -> bool {
-    !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+'))
+    !v.is_empty()
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+'))
 }
 
 pub fn is_valid_pkgname(n: &str) -> bool {
@@ -295,7 +314,8 @@ mod tests {
         let json = CANONICAL.replace(r#""format_version":1"#, r#""format_version":2"#);
         let err = parse(&json).unwrap_err();
         assert!(
-            err.to_string().contains("format_version no soportado: 2 (soportado: 1)"),
+            err.to_string()
+                .contains("format_version no soportado: 2 (soportado: 1)"),
             "error inesperado: {err}"
         );
     }
@@ -374,7 +394,9 @@ mod tests {
 
     #[test]
     fn rejects_invalid_pkgname() {
-        for bad in ["-foo", ".foo", "_foo", "+foo", "fo o", "foo$", "foo/bar", "foo;bar", ""] {
+        for bad in [
+            "-foo", ".foo", "_foo", "+foo", "fo o", "foo$", "foo/bar", "foo;bar", "",
+        ] {
             let json = base_json(bad, "1.2.3", 1, r#"["x86_64"]"#);
             let err = parse(&json).unwrap_err();
             assert!(
@@ -404,7 +426,8 @@ mod tests {
         let json = r#"{"format_version":1,"pkgname":"foo","version":"1.0","revision":1,"archs":["x86_64"],"checksum":["sha256:aa"],"subpackages":[{"pkgname":"foo"}]}"#.to_string();
         let err = parse(&json).unwrap_err();
         assert!(
-            err.to_string().contains("coincide con el pkgname del padre"),
+            err.to_string()
+                .contains("coincide con el pkgname del padre"),
             "error inesperado: {err}"
         );
     }
@@ -482,5 +505,4 @@ mod tests {
         let w = parse(&s).unwrap();
         assert_eq!(v, w);
     }
-
 }

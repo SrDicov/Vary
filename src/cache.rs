@@ -6,7 +6,10 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn now_epoch() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -73,7 +76,10 @@ impl CacheIndex {
     }
 
     pub fn save(&self) -> Result<()> {
-        let parent = self.path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let parent = self
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
         std::fs::create_dir_all(parent)
             .with_context(|| format!("no se pudo crear {}", parent.display()))?;
 

@@ -14,9 +14,18 @@ fn derive_name_from_url(url: &str) -> String {
 
 pub fn handle_repo_cmd(config: &Config, cmd: RepoCmd) -> Result<i32> {
     match cmd {
-        RepoCmd::Add { url, name, branch, index_url } => {
-            repo_add(config, &url, name.as_deref(), branch.as_deref(), index_url.as_deref())
-        }
+        RepoCmd::Add {
+            url,
+            name,
+            branch,
+            index_url,
+        } => repo_add(
+            config,
+            &url,
+            name.as_deref(),
+            branch.as_deref(),
+            index_url.as_deref(),
+        ),
         RepoCmd::List => repo_list(config),
         RepoCmd::Remove { name, purge } => repo_remove(config, &name, purge),
         RepoCmd::Rekey(name) => repo_rekey(config, &name),
@@ -87,7 +96,12 @@ fn repo_add(
         git_bin: config.git_bin.clone(),
     };
 
-    println!("Cloning VUR '{}' from {} (branch {})...", name, url, entry.branch_or_default());
+    println!(
+        "Cloning VUR '{}' from {} (branch {})...",
+        name,
+        url,
+        entry.branch_or_default()
+    );
     repo.ensure_cloned().with_context(|| {
         format!(
             "cloning VUR {} (branch {}); si el repo usa otra rama, repite con --branch <rama>",
@@ -100,7 +114,10 @@ fn repo_add(
     // Vale tanto el .VURINFO raíz (array, p. ej. z-packages) como los
     // <prefijo>/*/.VURINFO por plantilla (srcpkgs/ o su alias pkgs/).
     if !repo_has_vurinfo(&repo) {
-        tracing::warn!("VUR '{}' has no .VURINFO (neither root nor per-template)", name);
+        tracing::warn!(
+            "VUR '{}' has no .VURINFO (neither root nor per-template)",
+            name
+        );
     }
 
     // Save to repos.conf
@@ -153,8 +170,15 @@ fn repo_list(config: &Config) -> Result<i32> {
     for (name, entry) in conf.sorted_by_priority() {
         let prio = entry.priority_or(100);
         let binary = if entry.has_binary() { "yes" } else { "no" };
-        let enabled = if entry.enabled_or(true) { "" } else { " (disabled)" };
-        println!("{:<20} {:<8} {:<45} {}{}", name, prio, entry.url, binary, enabled);
+        let enabled = if entry.enabled_or(true) {
+            ""
+        } else {
+            " (disabled)"
+        };
+        println!(
+            "{:<20} {:<8} {:<45} {}{}",
+            name, prio, entry.url, binary, enabled
+        );
     }
     Ok(0)
 }
@@ -200,7 +224,10 @@ fn repo_remove(config: &Config, name: &str, purge: bool) -> Result<i32> {
 fn repo_rekey(config: &Config, name: &str) -> Result<i32> {
     crate::keys::validate_repo_name(name)?;
     let conf = ReposConf::load(config.repos_conf_path())?;
-    let entry = conf.vur.get(name).ok_or_else(|| anyhow::anyhow!("VUR '{}' not found", name))?;
+    let entry = conf
+        .vur
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("VUR '{}' not found", name))?;
 
     teardown_binary_repo(name, &config.sudo_bin, &config.sudo_flags)?;
     println!("Binary repo artifacts for '{}' removed. They will be re-registered on next binary install.", name);
@@ -236,7 +263,10 @@ mod tests {
             Some("main"),
             None,
         );
-        assert!(res.is_err(), "repo_add debe fallar si repos.conf está corrupto");
+        assert!(
+            res.is_err(),
+            "repo_add debe fallar si repos.conf está corrupto"
+        );
 
         let content_after = std::fs::read_to_string(&conf_path).unwrap();
         assert_eq!(
@@ -258,7 +288,10 @@ mod tests {
         std::fs::write(&conf_path, bad_content).unwrap();
 
         let res = repo_remove(&config, "test", false);
-        assert!(res.is_err(), "repo_remove debe fallar si repos.conf está corrupto");
+        assert!(
+            res.is_err(),
+            "repo_remove debe fallar si repos.conf está corrupto"
+        );
 
         let content_after = std::fs::read_to_string(&conf_path).unwrap();
         assert_eq!(
@@ -280,6 +313,9 @@ mod tests {
         std::fs::write(&conf_path, bad_content).unwrap();
 
         let res = repo_list(&config);
-        assert!(res.is_err(), "repo_list debe fallar si repos.conf está corrupto");
+        assert!(
+            res.is_err(),
+            "repo_list debe fallar si repos.conf está corrupto"
+        );
     }
 }

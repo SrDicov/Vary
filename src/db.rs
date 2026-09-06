@@ -5,11 +5,17 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn now_epoch_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn now_epoch_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -57,7 +63,10 @@ impl InstalledDb {
                 if let Ok(bytes) = std::fs::read(&data_file) {
                     let migrated = parse_lmdb_data_file(&bytes);
                     if !migrated.is_empty() {
-                        tracing::info!("migradas {} entradas desde base de datos LMDB previa", migrated.len());
+                        tracing::info!(
+                            "migradas {} entradas desde base de datos LMDB previa",
+                            migrated.len()
+                        );
                         entries = migrated;
                     }
                 }
@@ -71,11 +80,19 @@ impl InstalledDb {
                 Ok(text) => {
                     if let Ok(file_v2) = serde_json::from_str::<InstalledDbFile>(&text) {
                         entries = file_v2.packages;
-                    } else if let Ok(legacy_v1) = serde_json::from_str::<BTreeMap<String, Entry>>(&text) {
-                        tracing::info!("migradas {} entradas desde installed.json v1 legacy", legacy_v1.len());
+                    } else if let Ok(legacy_v1) =
+                        serde_json::from_str::<BTreeMap<String, Entry>>(&text)
+                    {
+                        tracing::info!(
+                            "migradas {} entradas desde installed.json v1 legacy",
+                            legacy_v1.len()
+                        );
                         entries = legacy_v1;
                         for ent in entries.values_mut() {
-                            if ent.build_date.is_none() && ent.install_type == InstallType::Source && ent.install_date > 0 {
+                            if ent.build_date.is_none()
+                                && ent.install_type == InstallType::Source
+                                && ent.install_date > 0
+                            {
                                 ent.build_date = Some(ent.install_date * 1000);
                             }
                         }
@@ -84,7 +101,8 @@ impl InstalledDb {
                             "{} corrupta, preservando respaldo antes de iniciar vacía",
                             path.display()
                         );
-                        let corrupt_bak = path.with_extension(format!("corrupt.{}", now_epoch_secs()));
+                        let corrupt_bak =
+                            path.with_extension(format!("corrupt.{}", now_epoch_secs()));
                         let _ = std::fs::copy(&path, &corrupt_bak);
                     }
                 }
@@ -181,7 +199,10 @@ impl InstalledDb {
     }
 
     pub fn entries_snapshot(&self) -> Vec<(String, Entry)> {
-        self.entries.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.entries
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     pub fn len(&self) -> usize {
@@ -196,26 +217,42 @@ impl InstalledDb {
 
 pub fn decode_bincode_entry(data: &[u8]) -> Option<Entry> {
     let mut cursor = 0;
-    if data.len() < cursor + 8 { return None; }
-    let v_len = u64::from_le_bytes(data[cursor..cursor+8].try_into().ok()?) as usize;
+    if data.len() < cursor + 8 {
+        return None;
+    }
+    let v_len = u64::from_le_bytes(data[cursor..cursor + 8].try_into().ok()?) as usize;
     cursor += 8;
-    if data.len() < cursor + v_len { return None; }
-    let version = std::str::from_utf8(&data[cursor..cursor+v_len]).ok()?.to_string();
+    if data.len() < cursor + v_len {
+        return None;
+    }
+    let version = std::str::from_utf8(&data[cursor..cursor + v_len])
+        .ok()?
+        .to_string();
     cursor += v_len;
 
-    if data.len() < cursor + 8 { return None; }
-    let vur_len = u64::from_le_bytes(data[cursor..cursor+8].try_into().ok()?) as usize;
+    if data.len() < cursor + 8 {
+        return None;
+    }
+    let vur_len = u64::from_le_bytes(data[cursor..cursor + 8].try_into().ok()?) as usize;
     cursor += 8;
-    if data.len() < cursor + vur_len { return None; }
-    let vur = std::str::from_utf8(&data[cursor..cursor+vur_len]).ok()?.to_string();
+    if data.len() < cursor + vur_len {
+        return None;
+    }
+    let vur = std::str::from_utf8(&data[cursor..cursor + vur_len])
+        .ok()?
+        .to_string();
     cursor += vur_len;
 
-    if data.len() < cursor + 8 { return None; }
-    let install_date = u64::from_le_bytes(data[cursor..cursor+8].try_into().ok()?);
+    if data.len() < cursor + 8 {
+        return None;
+    }
+    let install_date = u64::from_le_bytes(data[cursor..cursor + 8].try_into().ok()?);
     cursor += 8;
 
-    if data.len() < cursor + 4 { return None; }
-    let itype_val = u32::from_le_bytes(data[cursor..cursor+4].try_into().ok()?);
+    if data.len() < cursor + 4 {
+        return None;
+    }
+    let itype_val = u32::from_le_bytes(data[cursor..cursor + 4].try_into().ok()?);
     let install_type = match itype_val {
         0 => InstallType::Source,
         1 => InstallType::Binary,
@@ -226,7 +263,11 @@ pub fn decode_bincode_entry(data: &[u8]) -> Option<Entry> {
         version,
         vur,
         install_date,
-        build_date: if install_type == InstallType::Source { Some(install_date * 1000) } else { None },
+        build_date: if install_type == InstallType::Source {
+            Some(install_date * 1000)
+        } else {
+            None
+        },
         install_type,
     })
 }
@@ -244,16 +285,27 @@ pub fn parse_lmdb_data_file(data: &[u8]) -> BTreeMap<String, Entry> {
             if lower >= 16 && lower <= page_size {
                 let mut indx_offset = 16;
                 while indx_offset + 2 <= lower {
-                    let node_pos = u16::from_le_bytes([page[indx_offset], page[indx_offset + 1]]) as usize;
+                    let node_pos =
+                        u16::from_le_bytes([page[indx_offset], page[indx_offset + 1]]) as usize;
                     indx_offset += 2;
                     if node_pos + 8 <= page_size {
-                        let val_size = u32::from_le_bytes([page[node_pos], page[node_pos+1], page[node_pos+2], page[node_pos+3]]) as usize;
-                        let ksize = u16::from_le_bytes([page[node_pos+6], page[node_pos+7]]) as usize;
+                        let val_size = u32::from_le_bytes([
+                            page[node_pos],
+                            page[node_pos + 1],
+                            page[node_pos + 2],
+                            page[node_pos + 3],
+                        ]) as usize;
+                        let ksize =
+                            u16::from_le_bytes([page[node_pos + 6], page[node_pos + 7]]) as usize;
                         let key_start = node_pos + 8;
                         let val_start = key_start + ksize;
                         if val_start + val_size <= page_size && ksize > 0 && val_size >= 28 {
-                            if let Ok(key) = std::str::from_utf8(&page[key_start..key_start + ksize]) {
-                                if let Some(entry) = decode_bincode_entry(&page[val_start..val_start + val_size]) {
+                            if let Ok(key) =
+                                std::str::from_utf8(&page[key_start..key_start + ksize])
+                            {
+                                if let Some(entry) =
+                                    decode_bincode_entry(&page[val_start..val_start + val_size])
+                                {
                                     entries.insert(key.to_string(), entry);
                                 }
                             }

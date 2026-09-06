@@ -29,7 +29,12 @@ pub fn ask(config: &Config, question: &str, default: bool) -> bool {
     let action = config.color.action;
     let bold = config.color.bold;
     let yn = if default { "[Y/n]:" } else { "[y/N]:" };
-    print!("{} {} {} ", action.paint("::"), bold.paint(question), bold.paint(yn));
+    print!(
+        "{} {} {} ",
+        action.paint("::"),
+        bold.paint(question),
+        bold.paint(yn)
+    );
     let _ = stdout().lock().flush();
     if config.no_confirm {
         println!();
@@ -107,4 +112,3 @@ mod tests {
         assert!(!ask_from_reader(&mut newline2, false));
     }
 }
-

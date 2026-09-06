@@ -175,23 +175,43 @@ enabled = true
         let mut conf = ReposConf::default();
         conf.vur.insert(
             "gamma".into(),
-            RepoEntry { priority: Some(30), url: "g".into(), ..Default::default() },
+            RepoEntry {
+                priority: Some(30),
+                url: "g".into(),
+                ..Default::default()
+            },
         );
         conf.vur.insert(
             "alpha".into(),
-            RepoEntry { priority: Some(20), url: "a".into(), ..Default::default() },
+            RepoEntry {
+                priority: Some(20),
+                url: "a".into(),
+                ..Default::default()
+            },
         );
         conf.vur.insert(
             "delta".into(),
-            RepoEntry { priority: Some(1), url: "d".into(), enabled: Some(false), ..Default::default() },
+            RepoEntry {
+                priority: Some(1),
+                url: "d".into(),
+                enabled: Some(false),
+                ..Default::default()
+            },
         );
         conf.vur.insert(
             "beta".into(),
-            RepoEntry { priority: Some(10), url: "b".into(), ..Default::default() },
+            RepoEntry {
+                priority: Some(10),
+                url: "b".into(),
+                ..Default::default()
+            },
         );
         conf.vur.insert(
             "zeta".into(),
-            RepoEntry { url: "z".into(), ..Default::default() },
+            RepoEntry {
+                url: "z".into(),
+                ..Default::default()
+            },
         );
 
         let names: Vec<String> = conf

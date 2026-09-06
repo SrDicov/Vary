@@ -13,7 +13,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 
 const XBPS_QUERY: &str = "xbps-query";
 
@@ -153,7 +153,10 @@ pub fn parse_search_line(line: &str) -> Option<SearchHit> {
 /// short_desc, repository) y valores sin clave; propiedades vacías o líneas
 /// faltantes se toleran (campo `None`). rc != 0 o salida vacía => `Ok(None)`.
 pub fn query_installed(name: &str) -> Result<Option<PkgInfo>> {
-    let out = run_capture(XBPS_QUERY, &["-p", "pkgver,short_desc,repository", "--", name])?;
+    let out = run_capture(
+        XBPS_QUERY,
+        &["-p", "pkgver,short_desc,repository", "--", name],
+    )?;
     if !out.status.success() {
         return Ok(None);
     }
@@ -208,7 +211,10 @@ pub fn official_repo_urls() -> Vec<String> {
         .lines()
         .filter_map(|line| {
             let url = line.split_whitespace().nth(1)?;
-            if !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("file://") {
+            if !url.starts_with("http://")
+                && !url.starts_with("https://")
+                && !url.starts_with("file://")
+            {
                 return None;
             }
             // Repositorio local de vary: excluirlo siempre
@@ -423,7 +429,9 @@ pub fn xbps_src(masterdir: &Path, args: &[&str], makejobs: Option<usize>) -> Res
     if let Some(j) = makejobs {
         cmd.env("XBPS_MAKEJOBS", j.to_string());
     } else if std::env::var("XBPS_MAKEJOBS").is_err() {
-        let n = std::thread::available_parallelism().map(|p| p.get()).unwrap_or(1);
+        let n = std::thread::available_parallelism()
+            .map(|p| p.get())
+            .unwrap_or(1);
         cmd.env("XBPS_MAKEJOBS", n.to_string());
     }
     // Grupo propio: el observador mata el grupo completo (nietos make/ninja
@@ -483,7 +491,8 @@ mod tests {
 
     #[test]
     fn search_line_con_repositorio() {
-        let hit = parse_search_line("[-] [multilib] gcc-multilib-4.1_1  GCC with multilib").unwrap();
+        let hit =
+            parse_search_line("[-] [multilib] gcc-multilib-4.1_1  GCC with multilib").unwrap();
         assert_eq!(hit.repository.as_deref(), Some("multilib"));
         assert_eq!(hit.name, "gcc-multilib");
         assert_eq!(hit.pkgver, "gcc-multilib-4.1_1");
@@ -541,8 +550,8 @@ mod tests {
 
     #[test]
     fn props_completas() {
-        let info = parse_installed_props("foo", "foo-1.0_1\nShort desc\nhttps://repo.void\n")
-            .unwrap();
+        let info =
+            parse_installed_props("foo", "foo-1.0_1\nShort desc\nhttps://repo.void\n").unwrap();
         assert_eq!(info.name, "foo");
         assert_eq!(info.pkgver, "foo-1.0_1");
         assert_eq!(info.short_desc.as_deref(), Some("Short desc"));
@@ -580,10 +589,7 @@ mod tests {
 
     #[test]
     fn manual_una_sola_columna_usa_toda_la_linea() {
-        assert_eq!(
-            manual_names("bar-2.0_1\n"),
-            vec!["bar-2.0_1".to_owned()]
-        );
+        assert_eq!(manual_names("bar-2.0_1\n"), vec!["bar-2.0_1".to_owned()]);
     }
 
     #[test]
@@ -599,8 +605,14 @@ mod tests {
         let targets = vec!["-f".to_string(), "pkg-name".to_string()];
         let flags = vec!["-y".to_string()];
         let cmd = build_install_command(&targets, &flags, "sudo", &[]).unwrap();
-        let args: Vec<String> = cmd.get_args().map(|s| s.to_string_lossy().into_owned()).collect();
-        let sep_pos = args.iter().position(|a| a == "--").expect("debe contener '--'");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
+        let sep_pos = args
+            .iter()
+            .position(|a| a == "--")
+            .expect("debe contener '--'");
         assert_eq!(&args[sep_pos..], &["--", "-f", "pkg-name"]);
     }
 
@@ -609,8 +621,14 @@ mod tests {
         let targets = vec!["-f".to_string(), "pkg-name".to_string()];
         let flags = vec!["-y".to_string()];
         let cmd = build_remove_command(&targets, &flags, "sudo", &[]).unwrap();
-        let args: Vec<String> = cmd.get_args().map(|s| s.to_string_lossy().into_owned()).collect();
-        let sep_pos = args.iter().position(|a| a == "--").expect("debe contener '--'");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
+        let sep_pos = args
+            .iter()
+            .position(|a| a == "--")
+            .expect("debe contener '--'");
         assert_eq!(&args[sep_pos..], &["--", "-f", "pkg-name"]);
     }
 
@@ -619,7 +637,10 @@ mod tests {
         let targets: Vec<String> = vec![];
         let flags = vec!["-u".to_string()];
         let cmd = build_install_command(&targets, &flags, "sudo", &[]).unwrap();
-        let args: Vec<String> = cmd.get_args().map(|s| s.to_string_lossy().into_owned()).collect();
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
         assert!(!args.iter().any(|a| a == "--"));
     }
 
@@ -629,7 +650,10 @@ mod tests {
     fn run_capture_binario_ausente_da_mensaje_accionable() {
         let err = run_capture("definitivamente-no-existe-xyz-1234", &[]).unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("`definitivamente-no-existe-xyz-1234` no encontrado"), "{msg}");
+        assert!(
+            msg.contains("`definitivamente-no-existe-xyz-1234` no encontrado"),
+            "{msg}"
+        );
         assert!(msg.contains("Void Linux"), "{msg}");
     }
 

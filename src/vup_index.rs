@@ -65,13 +65,13 @@ pub fn sanitize_repo_name(name: &str) -> String {
 }
 
 fn cache_is_fresh(path: &Path, ttl_secs: u64) -> bool {
-    let mtime = std::fs::metadata(path)
-        .and_then(|m| m.modified())
-        .ok();
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
     let Some(mtime) = mtime else {
         return false;
     };
-    let age = SystemTime::now().duration_since(mtime).unwrap_or(Duration::ZERO);
+    let age = SystemTime::now()
+        .duration_since(mtime)
+        .unwrap_or(Duration::ZERO);
     age < Duration::from_secs(ttl_secs)
 }
 
@@ -84,7 +84,12 @@ fn parse_index_bytes(bytes: &[u8]) -> Result<VupIndex> {
 /// Si la caché es más reciente que `ttl_secs`, no toca la red. Si la descarga
 /// falla pero hay una caché vieja, la usa con un aviso. Sin red ni caché,
 /// falla sugiriendo `--curl` si el problema es el binario.
-pub fn fetch_index(curl_bin: &str, url: &str, cache_path: &Path, ttl_secs: u64) -> Result<VupIndex> {
+pub fn fetch_index(
+    curl_bin: &str,
+    url: &str,
+    cache_path: &Path,
+    ttl_secs: u64,
+) -> Result<VupIndex> {
     if cache_is_fresh(cache_path, ttl_secs) {
         if let Ok(bytes) = std::fs::read(cache_path) {
             if let Ok(idx) = parse_index_bytes(&bytes) {
@@ -206,9 +211,7 @@ pub fn discover_plist_key(repo_path: &Path) -> Option<PathBuf> {
         .ok()?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .filter(|p| {
-            p.is_file() && p.extension().and_then(|ext| ext.to_str()) == Some("plist")
-        })
+        .filter(|p| p.is_file() && p.extension().and_then(|ext| ext.to_str()) == Some("plist"))
         .collect();
     candidates.sort();
     candidates.into_iter().next()
@@ -256,8 +259,8 @@ pub fn read_repo_plist_key(repo_path: &Path) -> Result<String> {
         "el repo no incluye llave pública en keys/*.plist; \
          sin ella no se pueden verificar los binarios",
     )?;
-    let text =
-        std::fs::read_to_string(&key_path).with_context(|| format!("leyendo {}", key_path.display()))?;
+    let text = std::fs::read_to_string(&key_path)
+        .with_context(|| format!("leyendo {}", key_path.display()))?;
     decode_plist_public_key_pem(&text)
 }
 
@@ -307,20 +310,14 @@ mod tests {
 
     #[test]
     fn split_pkgver_edges() {
-        assert_eq!(
-            split_pkgver("0.5.0_1"),
-            Some(("0.5.0".to_string(), 1))
-        );
+        assert_eq!(split_pkgver("0.5.0_1"), Some(("0.5.0".to_string(), 1)));
         assert_eq!(split_pkgver("1.2"), None);
         assert_eq!(split_pkgver(""), None);
         assert_eq!(split_pkgver("_1"), None);
         assert_eq!(split_pkgver("1.0_x"), None);
         assert_eq!(split_pkgver("2.0_0"), None);
         // La última parte manda (inverso exacto de version_revision).
-        assert_eq!(
-            split_pkgver("2025.06_3"),
-            Some(("2025.06".to_string(), 3))
-        );
+        assert_eq!(split_pkgver("2025.06_3"), Some(("2025.06".to_string(), 3)));
     }
 
     #[test]
@@ -350,10 +347,10 @@ mod tests {
     fn plist_decode_rejects_garbage() {
         assert!(decode_plist_public_key_pem("no es un plist").is_err());
         assert!(decode_plist_public_key_pem("<plist></plist>").is_err());
-        assert!(decode_plist_public_key_pem(
-            "<key>public-key</key><data>!!!no-base64!!!</data>"
-        )
-        .is_err());
+        assert!(
+            decode_plist_public_key_pem("<key>public-key</key><data>!!!no-base64!!!</data>")
+                .is_err()
+        );
     }
 
     #[test]

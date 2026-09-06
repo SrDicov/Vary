@@ -9,17 +9,28 @@ use anyhow::{bail, Result};
 /// Arquitecturas soportadas por Void Linux. `--arch` solo acepta estos
 /// valores para evitar pasar silenciosamente un arch inválido a xbps.
 const KNOWN_ARCHS: &[&str] = &[
-    "x86_64", "x86_64-musl",
-    "i686", "i686-musl",
-    "aarch64", "aarch64-musl",
-    "armv7l", "armv7l-musl",
-    "armv6l", "armv6l-musl",
-    "ppc64le", "ppc64le-musl",
-    "ppc64", "ppc64-musl",
-    "ppc", "ppc-musl",
-    "mips", "mips-musl",
-    "mipsel", "mipsel-musl",
-    "riscv64", "riscv64-musl",
+    "x86_64",
+    "x86_64-musl",
+    "i686",
+    "i686-musl",
+    "aarch64",
+    "aarch64-musl",
+    "armv7l",
+    "armv7l-musl",
+    "armv6l",
+    "armv6l-musl",
+    "ppc64le",
+    "ppc64le-musl",
+    "ppc64",
+    "ppc64-musl",
+    "ppc",
+    "ppc-musl",
+    "mips",
+    "mips-musl",
+    "mipsel",
+    "mipsel-musl",
+    "riscv64",
+    "riscv64-musl",
 ];
 
 fn is_valid_arch(arch: &str) -> bool {
@@ -32,9 +43,17 @@ thread_local! {
 
 #[derive(Debug, Clone)]
 pub enum RepoCmd {
-    Add { url: String, name: Option<String>, branch: Option<String>, index_url: Option<String> },
+    Add {
+        url: String,
+        name: Option<String>,
+        branch: Option<String>,
+        index_url: Option<String>,
+    },
     List,
-    Remove { name: String, purge: bool },
+    Remove {
+        name: String,
+        purge: bool,
+    },
     Rekey(String),
 }
 
@@ -148,7 +167,12 @@ pub fn parse_args<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<()> 
                         bail!("too many arguments for --repo add (expected <url> [name])");
                     }
                 }
-                set_repo_cmd(RepoCmd::Add { url, name, branch, index_url });
+                set_repo_cmd(RepoCmd::Add {
+                    url,
+                    name,
+                    branch,
+                    index_url,
+                });
                 return Ok(());
             }
             "list" => {
@@ -265,7 +289,9 @@ impl Config {
         forced: bool,
     ) -> Result<()> {
         match takes_value(arg) {
-            TakesValue::Required if value.is_none() => bail!(format!("option {} expects a value", arg)),
+            TakesValue::Required if value.is_none() => {
+                bail!(format!("option {} expects a value", arg))
+            }
             _ => (),
         }
         if takes_value(arg) != TakesValue::Required && !forced {
@@ -321,7 +347,9 @@ impl Config {
                 self.arch_override = Some(v.to_string());
             }
             Arg::Long("sudo") => self.sudo_bin = value.unwrap().to_string(),
-            Arg::Long("sudoflags") => self.sudo_flags.extend(value.unwrap().split_whitespace().map(|s| s.to_string())),
+            Arg::Long("sudoflags") => self
+                .sudo_flags
+                .extend(value.unwrap().split_whitespace().map(|s| s.to_string())),
             Arg::Long("git") => self.git_bin = value.unwrap().to_string(),
             Arg::Long("curl") => self.curl_bin = value.unwrap().to_string(),
             Arg::Long("force-build") => self.force_build = true,
@@ -333,30 +361,66 @@ impl Config {
             }
             // Generic pacman-style flags that we just record in args
             Arg::Long("search") | Arg::Short('s') => {
-                self.args.args.push(crate::args::Arg { key: "s".to_string(), value: None });
-                self.args.args.push(crate::args::Arg { key: "search".to_string(), value: None });
+                self.args.args.push(crate::args::Arg {
+                    key: "s".to_string(),
+                    value: None,
+                });
+                self.args.args.push(crate::args::Arg {
+                    key: "search".to_string(),
+                    value: None,
+                });
             }
             Arg::Long("info") | Arg::Short('i') => {
-                self.args.args.push(crate::args::Arg { key: "i".to_string(), value: None });
-                self.args.args.push(crate::args::Arg { key: "info".to_string(), value: None });
+                self.args.args.push(crate::args::Arg {
+                    key: "i".to_string(),
+                    value: None,
+                });
+                self.args.args.push(crate::args::Arg {
+                    key: "info".to_string(),
+                    value: None,
+                });
             }
             Arg::Long("refresh") | Arg::Short('y') => {
-                self.args.args.push(crate::args::Arg { key: "y".to_string(), value: None });
-                self.args.args.push(crate::args::Arg { key: "refresh".to_string(), value: None });
+                self.args.args.push(crate::args::Arg {
+                    key: "y".to_string(),
+                    value: None,
+                });
+                self.args.args.push(crate::args::Arg {
+                    key: "refresh".to_string(),
+                    value: None,
+                });
             }
             Arg::Long("sysupgrade") | Arg::Short('u') => {
-                self.args.args.push(crate::args::Arg { key: "u".to_string(), value: None });
-                self.args.args.push(crate::args::Arg { key: "sysupgrade".to_string(), value: None });
+                self.args.args.push(crate::args::Arg {
+                    key: "u".to_string(),
+                    value: None,
+                });
+                self.args.args.push(crate::args::Arg {
+                    key: "sysupgrade".to_string(),
+                    value: None,
+                });
             }
             Arg::Long("downloadonly") | Arg::Short('w') => {
-                self.args.args.push(crate::args::Arg { key: "w".to_string(), value: None });
-                self.args.args.push(crate::args::Arg { key: "downloadonly".to_string(), value: None });
+                self.args.args.push(crate::args::Arg {
+                    key: "w".to_string(),
+                    value: None,
+                });
+                self.args.args.push(crate::args::Arg {
+                    key: "downloadonly".to_string(),
+                    value: None,
+                });
             }
             Arg::Long("asdeps") => {
-                self.args.args.push(crate::args::Arg { key: "asdeps".to_string(), value: None });
+                self.args.args.push(crate::args::Arg {
+                    key: "asdeps".to_string(),
+                    value: None,
+                });
             }
             Arg::Long("asexplicit") => {
-                self.args.args.push(crate::args::Arg { key: "asexplicit".to_string(), value: None });
+                self.args.args.push(crate::args::Arg {
+                    key: "asexplicit".to_string(),
+                    value: None,
+                });
             }
             // ops
             Arg::Long("sync") | Arg::Short('S') => {
@@ -370,16 +434,16 @@ impl Config {
             Arg::Long(a) if !arg.is_pacman_arg() && !arg.is_pacman_global() => {
                 // Allow vary-specific long opts already handled above
                 match a {
-                    "force-build" | "prefer-binary" | "no-prefer-binary" | "interactive" | "sudo" | "sudoflags" | "git" | "curl" | "arch" | "help" | "version" | "noconfirm" | "confirm" | "color" | "verbose" | "quiet" => {},
+                    "force-build" | "prefer-binary" | "no-prefer-binary" | "interactive"
+                    | "sudo" | "sudoflags" | "git" | "curl" | "arch" | "help" | "version"
+                    | "noconfirm" | "confirm" | "color" | "verbose" | "quiet" => {}
                     _ => bail!(format!("unknown option --{}", a)),
                 }
             }
-            Arg::Short(a) if !arg.is_pacman_arg() && !arg.is_pacman_global() => {
-                match a {
-                    'h' | 'V' | 'v' | 'q' | 'S' | 'R' | 's' | 'i' | 'y' | 'u' | 'w' => {},
-                    _ => bail!(format!("unknown option -{}", a)),
-                }
-            }
+            Arg::Short(a) if !arg.is_pacman_arg() && !arg.is_pacman_global() => match a {
+                'h' | 'V' | 'v' | 'q' | 'S' | 'R' | 's' | 'i' | 'y' | 'u' | 'w' => {}
+                _ => bail!(format!("unknown option -{}", a)),
+            },
             _ => {}
         }
 
@@ -418,10 +482,21 @@ mod tests {
     #[test]
     fn repo_add_parses_name_branch_index_url() {
         match take_add(&[
-            "--repo", "add", "https://example.com/vur.git", "mi-vur",
-            "--branch", "master", "--index-url", "https://example.com/index.json",
+            "--repo",
+            "add",
+            "https://example.com/vur.git",
+            "mi-vur",
+            "--branch",
+            "master",
+            "--index-url",
+            "https://example.com/index.json",
         ]) {
-            RepoCmd::Add { url, name, branch, index_url } => {
+            RepoCmd::Add {
+                url,
+                name,
+                branch,
+                index_url,
+            } => {
                 assert_eq!(url, "https://example.com/vur.git");
                 assert_eq!(name.as_deref(), Some("mi-vur"));
                 assert_eq!(branch.as_deref(), Some("master"));
@@ -434,9 +509,17 @@ mod tests {
     #[test]
     fn repo_add_supports_equals_form() {
         match take_add(&[
-            "--repo", "add", "https://example.com/vur.git", "--branch=master",
+            "--repo",
+            "add",
+            "https://example.com/vur.git",
+            "--branch=master",
         ]) {
-            RepoCmd::Add { url, name, branch, index_url } => {
+            RepoCmd::Add {
+                url,
+                name,
+                branch,
+                index_url,
+            } => {
                 assert_eq!(url, "https://example.com/vur.git");
                 assert!(name.is_none());
                 assert_eq!(branch.as_deref(), Some("master"));
@@ -449,7 +532,12 @@ mod tests {
     #[test]
     fn repo_add_defaults_are_none() {
         match take_add(&["--repo", "add", "https://example.com/vur.git"]) {
-            RepoCmd::Add { url, name, branch, index_url } => {
+            RepoCmd::Add {
+                url,
+                name,
+                branch,
+                index_url,
+            } => {
                 assert_eq!(url, "https://example.com/vur.git");
                 assert!(name.is_none() && branch.is_none() && index_url.is_none());
             }
@@ -461,11 +549,23 @@ mod tests {
     fn repo_add_rejects_bad_options() {
         let mut config = Config::default();
         // --branch sin valor
-        assert!(parse_args(&mut config, &["--repo", "add", "https://example.com/v.git", "--branch"]).is_err());
+        assert!(parse_args(
+            &mut config,
+            &["--repo", "add", "https://example.com/v.git", "--branch"]
+        )
+        .is_err());
         // opción desconocida
-        assert!(parse_args(&mut config, &["--repo", "add", "https://example.com/v.git", "--nope"]).is_err());
+        assert!(parse_args(
+            &mut config,
+            &["--repo", "add", "https://example.com/v.git", "--nope"]
+        )
+        .is_err());
         // dos posicionales extra
-        assert!(parse_args(&mut config, &["--repo", "add", "https://example.com/v.git", "a", "b"]).is_err());
+        assert!(parse_args(
+            &mut config,
+            &["--repo", "add", "https://example.com/v.git", "a", "b"]
+        )
+        .is_err());
         // sin URL
         assert!(parse_args(&mut config, &["--repo", "add"]).is_err());
     }

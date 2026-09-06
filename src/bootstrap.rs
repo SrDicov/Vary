@@ -23,7 +23,12 @@ pub fn vary_conf_contents(binpkgs_root: &Path) -> String {
     format!("repository={}\n", binpkgs_root.display())
 }
 
-fn write_root_file(tmp_path: &Path, dest: &str, sudo_bin: &str, sudo_flags: &[String]) -> Result<()> {
+fn write_root_file(
+    tmp_path: &Path,
+    dest: &str,
+    sudo_bin: &str,
+    sudo_flags: &[String],
+) -> Result<()> {
     let status = crate::elevate::elevate(sudo_bin, sudo_flags, "install")?
         .args(["-m", "644"])
         .arg(tmp_path)
@@ -86,7 +91,9 @@ mod tests {
 
     #[test]
     fn conf_tiene_formato_repository() {
-        let c = vary_conf_contents(Path::new("/home/u/.cache/vary/void-packages/hostdir/binpkgs"));
+        let c = vary_conf_contents(Path::new(
+            "/home/u/.cache/vary/void-packages/hostdir/binpkgs",
+        ));
         assert_eq!(
             c,
             "repository=/home/u/.cache/vary/void-packages/hostdir/binpkgs\n"

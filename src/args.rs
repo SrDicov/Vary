@@ -124,8 +124,6 @@ pub struct Args {
 
 impl Args {
     pub fn has_arg(&self, s1: &str, s2: &str) -> bool {
-        self.args
-            .iter()
-            .any(|a| a.key == s1 || a.key == s2)
+        self.args.iter().any(|a| a.key == s1 || a.key == s2)
     }
 }

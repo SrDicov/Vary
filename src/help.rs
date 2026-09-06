@@ -1,4 +1,3 @@
-
 pub fn help() {
     println!("Usage:");
     println!("    vary");

@@ -43,7 +43,11 @@ pub fn acquire(cache_dir: &Path) -> Result<InstanceLock> {
             let pid = pid.trim();
             anyhow::bail!(
                 "otra instancia de vary está en ejecución{}; si no es así, borra {}",
-                if pid.is_empty() { String::new() } else { format!(" (pid {})", pid) },
+                if pid.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (pid {})", pid)
+                },
                 path.display()
             );
         }
