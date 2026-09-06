@@ -485,7 +485,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             return Ok(code);
         }
         for name in &all_install_names {
-            let _ = crate::init::post_install_hook(name, config.no_confirm);
+            let _ = crate::init::post_install_hook(name, config.no_confirm, &config.sudo_bin, &config.sudo_flags);
         }
     }
 

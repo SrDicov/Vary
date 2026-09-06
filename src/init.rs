@@ -1,8 +1,12 @@
 use anyhow::Result;
 use std::path::Path;
-use std::process::Command;
 
-pub fn post_install_hook(pkg_name: &str, no_confirm: bool) -> Result<()> {
+pub fn post_install_hook(
+    pkg_name: &str,
+    no_confirm: bool,
+    sudo_bin: &str,
+    sudo_flags: &[String],
+) -> Result<()> {
     let sv_dir = Path::new("/etc/sv").join(pkg_name);
     if !sv_dir.exists() {
         // Package does not provide a service
@@ -12,20 +16,37 @@ pub fn post_install_hook(pkg_name: &str, no_confirm: bool) -> Result<()> {
     if Path::new("/dev/dinitctl").exists() {
         // Dinit detected
         if no_confirm || crate::util::confirm(&format!("Enable and start dinit service for {}?", pkg_name), no_confirm)? {
-            let _ = Command::new("sudo").args(["dinitctl", "enable", pkg_name]).status();
-            let _ = Command::new("sudo").args(["dinitctl", "start", pkg_name]).status();
+            let _ = crate::elevate::elevate(sudo_bin, sudo_flags, "dinitctl")?
+                .args(["enable", pkg_name])
+                .status();
+            let _ = crate::elevate::elevate(sudo_bin, sudo_flags, "dinitctl")?
+                .args(["start", pkg_name])
+                .status();
         }
     } else if Path::new("/run/runit").exists() {
         // Runit detected
         if no_confirm || crate::util::confirm(&format!("Enable runit service for {}?", pkg_name), no_confirm)? {
             let service_link = Path::new("/var/service").join(pkg_name);
             if !service_link.exists() {
-                let _ = Command::new("sudo")
-                    .args(["ln", "-s", sv_dir.to_str().unwrap(), service_link.to_str().unwrap()])
+                let _ = crate::elevate::elevate(sudo_bin, sudo_flags, "ln")?
+                    .arg("-s")
+                    .arg(&sv_dir)
+                    .arg(&service_link)
                     .status();
             }
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hook_retorna_ok_si_paquete_no_tiene_servicio() {
+        let res = post_install_hook("nonexistent-pkg-service-xyz", true, "sudo", &[]);
+        assert!(res.is_ok());
+    }
 }

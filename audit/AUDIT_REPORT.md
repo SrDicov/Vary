@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 6 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-022]) | 10 |
+| 🟠 **High** | 16 | 7 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-022]) | 9 |
 | 🟡 **Medium** | 15 | 0 | 15 |
 | 🟢 **Low / Info** | 8 | 0 | 8 |
-| **TOTAL** | **47** | **14** | **33** |
+| **TOTAL** | **47** | **15** | **32** |
 
 ---
 
@@ -266,7 +266,7 @@
 - **Impacto:** Emplea una ruta estática predecible en `/tmp` con permisos mundiales (la vulnerabilidad clásica de `vura`). Un atacante local puede crear un enlace simbólico previo a un archivo sensible de root antes de que `vary` invoque el comando elevado `mv`, sobrescribiendo archivos del sistema.
 - **Fix propuesto:** Usar `tempfile::NamedTempFile` en un directorio privado con permisos `0700` dentro de `$XDG_CACHE_HOME/vary` o `tempfile::Builder` en `/tmp` con nombre aleatorio criptográfico y `O_EXCL`.
 - **Validación:** Test verificando creación con permisos `0600` sin nombres predecibles en `/tmp`.
-- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit: pendiente de commit H-013)
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `a595235`)
 
 ---
 
@@ -282,7 +282,7 @@
 - **Impacto:** En sistemas que utilizan `doas` o `run0` (o cuando vary corre como root), el post-install hook falla silenciosamente o intenta invocar un binario `sudo` inexistente, rompiendo la configuración de servicios.
 - **Fix propuesto:** Conectar `src/init.rs` con `crate::elevate::elevate(sudo_bin, sudo_flags, ...)`.
 - **Validación:** Test ejecutando hooks con wrapper no-sudo.
-- **Estado:** PENDIENTE
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit: pendiente de commit H-014)
 
 ---
 

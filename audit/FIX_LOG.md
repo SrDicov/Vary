@@ -250,7 +250,7 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 ### [H-013] Condición de carrera (TOCTOU) y archivo temporal predecible /tmp/vary-<PID>.tmp en write_root_file
 - **Severidad:** High
 - **Módulo:** `src/keys.rs:64-88, 400-415`
-- **Commit:** Pendiente de commit `fix(H-013): use secure NamedTempFile for root file writes`
+- **Commit:** `a595235` (`fix(H-013): use secure NamedTempFile for root file writes`)
 - **Descripción del problema:** `write_root_file` utilizaba una ruta estática predecible `/tmp/vary-<PID>.tmp` con permisos mundiales. En entornos multiusuario o compartidos, un atacante local podía crear enlaces simbólicos o explotar condiciones de carrera (TOCTOU) antes de la invocación de `install` con privilegios elevados para sobrescribir archivos del sistema.
 - **Remediación:**
   1. Se sustituyó la ruta predecible por `tempfile::Builder::new().prefix("vary-").tempfile()`, generando un archivo temporal con nombre criptográficamente aleatorio, flags `O_EXCL` y permisos restringidos `0600`.
@@ -261,6 +261,25 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `cargo test keys`
   - `cargo clippy --all-targets -- -D warnings`
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-014] Bypass del wrapper agnóstico de elevación y ejecución descontrolada con hardcode de Command::new("sudo")
+- **Severidad:** High
+- **Módulo:** `src/init.rs:5-40`, `src/install.rs:488`
+- **Commit:** Pendiente de commit `fix(H-014): use agnostic elevation in init service hook`
+- **Descripción del problema:** En `src/init.rs`, `post_install_hook` invocaba directamente `Command::new("sudo")` para habilitar/iniciar servicios (dinitctl, ln), ignorando la configuración agnóstica de elevación (`sudo_bin`, `sudo_flags`, opendoas, run0 o ejecución como root directo), y utilizaba `.unwrap()` sobre rutas (`sv_dir`, `service_link`).
+- **Remediación:**
+  1. Se actualizó la firma de `post_install_hook` para recibir `sudo_bin: &str, sudo_flags: &[String]` y se pasó desde `src/install.rs:488`.
+  2. Se reemplazaron todas las invocaciones directas a `sudo` por `crate::elevate::elevate(sudo_bin, sudo_flags, ...)`.
+  3. Se eliminaron las llamadas a `.unwrap()` pasando referencias directas de ruta a los argumentos.
+  4. Se agregó la prueba unitaria `hook_retorna_ok_si_paquete_no_tiene_servicio` en `init::tests`.
+- **Validación:**
+  - `init::tests::hook_retorna_ok_si_paquete_no_tiene_servicio`
+  - `cargo test`
+  - `cargo clippy --all-targets -- -D warnings`
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
 
 
 
