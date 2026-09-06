@@ -583,7 +583,8 @@
 - **Título:** Dependencias contractuales ausentes (`diffy = "0.4"`, `indicatif`) para A3 y A7
 - **Evidencia:** No están presentes en `dependencies`.
 - **Fix propuesto:** Añadirlas a `Cargo.toml`.
-- **Estado:** PENDIENTE
+- **Resolución:** Añadidas `indicatif@0.17` + `diffy@0.4` con lock actualizado. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-039)`)
 
 ---
 

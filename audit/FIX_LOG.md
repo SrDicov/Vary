@@ -381,3 +381,13 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Emisión real con stdin `/dev/null` queda para el smoke en Void real (FASE 5, humano; va a VALIDATION.md).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-039] Dependencias contractuales ausentes (`diffy`, `indicatif`)
+- **Severidad:** Medium
+- **Módulo:** `Cargo.toml`, `Cargo.lock`
+- **Commit:** `fix(H-039)` (`git log --oneline --grep="H-039"`)
+- **Descripción del problema:** A3 (diff pager) y A7 (spinner/logs) requerían `diffy` e `indicatif`, ausentes del manifiesto.
+- **Remediación:** `cargo add indicatif@0.17 diffy@0.4` (resolución + lock; `indicatif` se usa ya en H-020, `diffy` queda disponible para A3/Fase 6).
+- **Validación:** Run CI verde (build compila las nuevas deps) en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
