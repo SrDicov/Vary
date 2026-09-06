@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fmt;
 use std::io::{stderr, stdout, IsTerminal};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Op {
