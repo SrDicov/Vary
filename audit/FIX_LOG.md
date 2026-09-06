@@ -748,3 +748,12 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   como commit del fix).
 - H-022: cierre real `976d1af` + `302a966` (el fix original nunca pasó CI).
 - Regla vigente: ver "Regla de cierre" al inicio de este archivo.
+---
+
+### [H-040-adenda] Tests con wrapper `sudo` fantasma en sistemas sin sudo
+- **Módulo:** `src/xbps.rs` (tests)
+- **Commit:** `fix(H-040)` follow-up (`git log --oneline --grep="fantasma"`)
+- **Descripción:** El testeo local en Void real (sin `sudo` en PATH) reveló que 3 tests de H-009 pasaban `"sudo"` como wrapper dummy: con H-040 `resolve()` valida existencia y fallaban fuera de CI-ubuntu. Los 4 tests de integración xbps (`--ignored`) pasaron en Void real.
+- **Remediación:** Wrapper dummy `"sh"` (universal) + comentario. Suite local: **157 passed, 0 failed** (incl. los 4 de integración).
+- **Validación:** `cargo test -- --include-ignored` en Void real + run CI verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

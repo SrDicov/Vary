@@ -782,9 +782,10 @@ mod tests {
 
     #[test]
     fn build_install_command_incluye_separador_doble_guion() {
+        // "sh" y no "sudo": H-040 valida existencia en resolve(); sh es universal.
         let targets = vec!["-f".to_string(), "pkg-name".to_string()];
         let flags = vec!["-y".to_string()];
-        let cmd = build_install_command(&targets, &flags, "sudo", &[]).unwrap();
+        let cmd = build_install_command(&targets, &flags, "sh", &[]).unwrap();
         let args: Vec<String> = cmd
             .get_args()
             .map(|s| s.to_string_lossy().into_owned())
@@ -800,7 +801,7 @@ mod tests {
     fn build_remove_command_incluye_separador_doble_guion() {
         let targets = vec!["-f".to_string(), "pkg-name".to_string()];
         let flags = vec!["-y".to_string()];
-        let cmd = build_remove_command(&targets, &flags, "sudo", &[]).unwrap();
+        let cmd = build_remove_command(&targets, &flags, "sh", &[]).unwrap();
         let args: Vec<String> = cmd
             .get_args()
             .map(|s| s.to_string_lossy().into_owned())
@@ -816,7 +817,7 @@ mod tests {
     fn build_install_command_sin_targets_no_pone_doble_guion() {
         let targets: Vec<String> = vec![];
         let flags = vec!["-u".to_string()];
-        let cmd = build_install_command(&targets, &flags, "sudo", &[]).unwrap();
+        let cmd = build_install_command(&targets, &flags, "sh", &[]).unwrap();
         let args: Vec<String> = cmd
             .get_args()
             .map(|s| s.to_string_lossy().into_owned())
