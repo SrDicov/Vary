@@ -8,6 +8,14 @@ pub fn remove(config: &Config) -> Result<i32> {
     }
 
     let targets = config.targets.clone();
+    for target in &targets {
+        if !crate::metadata::is_valid_pkgname(target) {
+            anyhow::bail!(
+                "nombre de paquete inválido: '{}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)",
+                target
+            );
+        }
+    }
 
     tracing::info!("removing packages: {:?}", targets);
 
@@ -37,4 +45,26 @@ pub fn remove(config: &Config) -> Result<i32> {
     }
 
     Ok(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_rejects_invalid_target_name() {
+        let config = Config {
+            targets: vec![";bad".to_string()],
+            ..Default::default()
+        };
+        let err = remove(&config).unwrap_err();
+        assert!(err.to_string().contains("nombre de paquete inválido"));
+
+        let config2 = Config {
+            targets: vec![".hidden".to_string()],
+            ..Default::default()
+        };
+        let err2 = remove(&config2).unwrap_err();
+        assert!(err2.to_string().contains("nombre de paquete inválido"));
+    }
 }

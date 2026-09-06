@@ -107,6 +107,14 @@ pub fn install(config: &mut Config) -> Result<i32> {
     if targets.is_empty() {
         bail!("no targets specified");
     }
+    for target in &targets {
+        if !crate::metadata::is_valid_pkgname(target) {
+            bail!(
+                "nombre de paquete inválido: '{}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)",
+                target
+            );
+        }
+    }
 
     // 1. Bootstrap
     let md = bootstrap::initialize_environment(
@@ -523,6 +531,14 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
     if targets.is_empty() {
         bail!("no targets specified");
     }
+    for target in &targets {
+        if !crate::metadata::is_valid_pkgname(target) {
+            bail!(
+                "nombre de paquete inválido: '{}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)",
+                target
+            );
+        }
+    }
     let md = bootstrap::initialize_environment(
         &config.void_packages_dir(),
         &config.sudo_bin,
@@ -565,4 +581,36 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
         }
     }
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn install_rejects_invalid_target_name() {
+        let mut config = Config {
+            targets: vec!["-flag".to_string()],
+            ..Default::default()
+        };
+        let err = install(&mut config).unwrap_err();
+        assert!(err.to_string().contains("nombre de paquete inválido"));
+
+        let mut config2 = Config {
+            targets: vec!["bad/slash".to_string()],
+            ..Default::default()
+        };
+        let err2 = install(&mut config2).unwrap_err();
+        assert!(err2.to_string().contains("nombre de paquete inválido"));
+    }
+
+    #[test]
+    fn download_only_rejects_invalid_target_name() {
+        let mut config = Config {
+            targets: vec![".dotfile".to_string()],
+            ..Default::default()
+        };
+        let err = download_only(&mut config).unwrap_err();
+        assert!(err.to_string().contains("nombre de paquete inválido"));
+    }
 }

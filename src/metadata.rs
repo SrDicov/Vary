@@ -105,6 +105,14 @@ impl VurInfo {
                     i
                 );
             }
+            if !is_valid_pkgname(&sub.pkgname) {
+                bail!(
+                    "subpackages[{}].pkgname inválido: '{}' contiene caracteres prohibidos o no empieza por alfanumérico \
+                     (permitidos: [a-zA-Z0-9._+-], primer carácter alfanumérico)",
+                    i,
+                    sub.pkgname
+                );
+            }
             if sub.pkgname == self.pkgname {
                 bail!(
                     "subpackages[{}].pkgname duplicado: '{}' coincide con el pkgname del padre",
@@ -187,11 +195,14 @@ fn is_valid_version(v: &str) -> bool {
     !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+'))
 }
 
-fn is_valid_pkgname(n: &str) -> bool {
-    !n.is_empty()
-        && !n.starts_with('-')
-        && n.chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'))
+pub fn is_valid_pkgname(n: &str) -> bool {
+    let mut chars = n.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_alphanumeric() => {
+            chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'))
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -363,13 +374,27 @@ mod tests {
 
     #[test]
     fn rejects_invalid_pkgname() {
-        for bad in ["-foo", "fo o", "foo$"] {
+        for bad in ["-foo", ".foo", "_foo", "+foo", "fo o", "foo$", "foo/bar", "foo;bar", ""] {
             let json = base_json(bad, "1.2.3", 1, r#"["x86_64"]"#);
             let err = parse(&json).unwrap_err();
             assert!(
                 err.to_string().contains("pkgname inválido")
                     || err.to_string().contains("pkgname vacío"),
                 "error inesperado para '{bad}': {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_subpackage_name() {
+        for bad in ["-sub", ".sub", "_sub", "+sub", "sub space", "sub$"] {
+            let json = format!(
+                r#"{{"format_version":1,"pkgname":"foo","version":"1.0","revision":1,"archs":["x86_64"],"checksum":["sha256:aa"],"subpackages":[{{"pkgname":"{bad}"}}]}}"#
+            );
+            let err = parse(&json).unwrap_err();
+            assert!(
+                err.to_string().contains("subpackages[0].pkgname inválido"),
+                "error inesperado para subpaquete '{bad}': {err}"
             );
         }
     }

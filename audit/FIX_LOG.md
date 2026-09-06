@@ -186,3 +186,26 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `cargo clippy --all-targets -- -D warnings`
 - **Estado:** ✅ CORREGIDO Y VALIDADO
 
+---
+
+### [H-010] Ausencia de validación con regex estricta en nombres de paquetes CLI y omisión en subpaquetes
+- **Severidad:** High
+- **Módulo:** `src/metadata.rs:105-115,195-205`, `src/install.rs:110,535`, `src/remove.rs:11`, `src/info.rs:20`
+- **Commit:** Pendiente de commit `fix(H-010): strictly validate package target names and subpackage names`
+- **Descripción del problema:** No se validaban los nombres de los targets recibidos por línea de comandos ni los nombres de subpaquetes (`subpackages[i].pkgname`) contra la especificación de nombres de paquete de Void Linux (`^[a-zA-Z0-9][a-zA-Z0-9._+-]*$`). Nombres que empezaban con punto, guion, o contenían caracteres de control, rutas (`/`) o inyección podían corromper rutas locales o provocar comportamientos erráticos.
+- **Remediación:**
+  1. En `src/metadata.rs`, se hizo pública `is_valid_pkgname(n: &str) -> bool`, validando que el primer carácter sea ASCII alfanumérico y que los restantes sean alfanuméricos o `._+-`.
+  2. En `src/metadata.rs:validate()`, se agregó validación estricta de `sub.pkgname` con `is_valid_pkgname`.
+  3. En `src/install.rs` (`install`, `download_only`), `src/remove.rs` (`remove`) y `src/info.rs` (`info`), se validan todos los nombres de targets antes de iniciar la transacción.
+  4. Se implementaron pruebas unitarias en `metadata::tests`, `install::tests`, `remove::tests` e `info::tests` comprobando el rechazo de nombres que comienzan por punto, guion, contienen barras, espacios o caracteres ilegales.
+- **Validación:**
+  - `metadata::tests::rejects_invalid_pkgname`
+  - `metadata::tests::rejects_invalid_subpackage_name`
+  - `install::tests::install_rejects_invalid_target_name`
+  - `install::tests::download_only_rejects_invalid_target_name`
+  - `remove::tests::remove_rejects_invalid_target_name`
+  - `info::tests::info_rejects_invalid_target_name`
+  - `cargo test`
+  - `cargo clippy --all-targets -- -D warnings`
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+

@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 2 ([H-009], [H-022]) | 14 |
+| 🟠 **High** | 16 | 3 ([H-009], [H-010], [H-022]) | 13 |
 | 🟡 **Medium** | 15 | 0 | 15 |
 | 🟢 **Low / Info** | 8 | 0 | 8 |
-| **TOTAL** | **47** | **10** | **37** |
+| **TOTAL** | **47** | **11** | **36** |
 
 ---
 
@@ -215,7 +215,7 @@
 - **Impacto:** Nombres de paquete maliciosos con caracteres especiales de control o secuencias de escape pueden inyectar argumentos en subprocesos o corromper rutas de archivo locales.
 - **Fix propuesto:** Validar todos los nombres de targets con la regex estricta `^[a-zA-Z0-9][a-zA-Z0-9._+-]*$`, y aplicar la misma validación a `subpackages[i].pkgname` en `metadata.rs`.
 - **Validación:** Tests rechazando nombres con caracteres ilegales (espacios, saltos de línea, barras, caracteres de escape).
-- **Estado:** PENDIENTE
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit: pendiente de commit H-010)
 
 ---
 

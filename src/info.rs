@@ -17,6 +17,15 @@ pub fn info(config: &Config) -> Result<i32> {
     let mut exit_code = 0;
 
     for target in &config.targets {
+        if !crate::metadata::is_valid_pkgname(target) {
+            anyhow::bail!(
+                "nombre de paquete inválido: '{}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)",
+                target
+            );
+        }
+    }
+
+    for target in &config.targets {
         let mut found = false;
 
         // Try official (xbps-query -R)
@@ -101,4 +110,26 @@ pub fn info(config: &Config) -> Result<i32> {
         return Ok(exit_code);
     }
     Ok(exit_code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn info_rejects_invalid_target_name() {
+        let config = Config {
+            targets: vec!["-flag".to_string()],
+            ..Default::default()
+        };
+        let err = info(&config).unwrap_err();
+        assert!(err.to_string().contains("nombre de paquete inválido"));
+
+        let config2 = Config {
+            targets: vec![";bad".to_string()],
+            ..Default::default()
+        };
+        let err2 = info(&config2).unwrap_err();
+        assert!(err2.to_string().contains("nombre de paquete inválido"));
+    }
 }
