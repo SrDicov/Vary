@@ -13,10 +13,10 @@
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
-| 🟡 **Medium** | 15 | 8 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-038], [H-039]) | 7 |
+| 🟡 **Medium** | 15 | 9 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-031], [H-038], [H-039]) | 6 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **32** | **15** |
+| **TOTAL** | **47** | **33** | **14** |
 
 ---
 
@@ -522,7 +522,8 @@
 - **Título:** Inconsistencia de validación de checksum vacío en `metadata.rs` frente a la especificación VURINFO v1
 - **Evidencia:** La especificación exige rechazar checksums vacíos, pero el código emite un warning y lo acepta.
 - **Fix propuesto:** Alinear código con especificación o documentar la excepción justificada.
-- **Estado:** PENDIENTE
+- **Resolución:** Excepción justificada documentada (lista vacía OK con warning para do_fetch propio; elementos estrictos). Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-031)`)
 
 ---
 

@@ -553,3 +553,13 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `command_line::tests::yes_es_alias_de_noconfirm_y_guion_y_sigue_refresh` (`--yes` activa, `-y` no confirma, `--yes=x` falla).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-031] Inconsistencia de validación de checksum vacío frente a VURINFO v1
+- **Severidad:** Medium
+- **Módulo:** `src/metadata.rs`
+- **Commit:** `fix(H-031)` (`git log --oneline --grep="H-031"`)
+- **Descripción del problema:** El doc en código (regla 5) decía "la lista no puede estar vacía" y un comentario de test afirmaba "validate exige >= 1 checksum", pero el código acepta lista vacía con warning (plantillas con `do_fetch` propio) y la especificación (`docs/VURINFO.md`: campo opcional, regla por elemento) lo ampara.
+- **Remediación (excepción justificada, sin cambio de conducta):** Doc de la regla 5 y comentario del test alineados con código + especificación: lista vacía aceptada con warning; elementos deben ser `sha256:`/`SKIP` (vacío rechazado, ya testeado).
+- **Validación:** Tests existentes (`allows_empty_checksum_for_custom_fetch`, `rejects_checksum_elemento_vacio`) + run CI verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

@@ -55,8 +55,9 @@ impl VurInfo {
     ///    según la convención de nombrado de paquetes de Void Linux).
     /// 3. `revision` >= 1.
     /// 4. `archs` no vacío.
-    /// 5. cada elemento de `checksum` no vacío y con prefijo `sha256:`; la
-    ///    lista no puede estar vacía (un paquete sin sumas es inválido).
+    /// 5. cada elemento de `checksum` no vacío y con prefijo `sha256:` (o
+    ///    `SKIP`); la lista PUEDE estar vacía (plantillas con do_fetch propio
+    ///    sin distfiles): se acepta con warning, según VURINFO.md.
     /// 6. `pkgname` no vacío, caracteres `[a-zA-Z0-9._+-]` y sin empezar por `-`.
     /// 7. subpaquetes: nombre no vacío y distinto del padre; cada dependencia
     ///    una cadena no vacía ni blanca.
@@ -263,8 +264,8 @@ mod tests {
     #[test]
     fn applies_defaults_for_omitted_fields() {
         let json = r#"{"format_version":1,"pkgname":"bar","version":"0.9","revision":1,"archs":["x86_64"]}"#;
-        // checksum omitido => lista vacía; para validar el default usamos
-        // deserialización directa (validate exige >= 1 checksum).
+        // checksum omitido => lista vacía (aceptada con warning para do_fetch
+        // propio); para validar el default usamos deserialización directa.
         let mut v: VurInfo = serde_json::from_str(json).unwrap();
         assert!(v.subpackages.is_empty());
         assert!(v.depends.is_empty());
