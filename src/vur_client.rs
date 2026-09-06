@@ -554,6 +554,41 @@ impl VurRepo {
     }
 }
 
+fn has_unclosed_quote(buf: &str) -> bool {
+    let Some(eq) = buf.find('=') else {
+        return false;
+    };
+    let val_part = buf[eq + 1..].trim_start();
+    if !val_part.starts_with('"') && !val_part.starts_with('\'') {
+        return false;
+    }
+
+    let mut in_double = false;
+    let mut in_single = false;
+    let mut escaped = false;
+    let mut prev_char: Option<char> = None;
+
+    for c in val_part.chars() {
+        if escaped {
+            escaped = false;
+            prev_char = Some(c);
+            continue;
+        }
+        if !in_double && !in_single && c == '#' && prev_char.is_some_and(|p| p.is_whitespace()) {
+            break;
+        }
+        match c {
+            '\\' if !in_single => escaped = true,
+            '"' if !in_single => in_double = !in_double,
+            '\'' if !in_double => in_single = !in_single,
+            _ => {}
+        }
+        prev_char = Some(c);
+    }
+
+    in_double || in_single
+}
+
 fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     // Unir continuaciones con \ y manejar valores multilínea entre comillas
     let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -564,6 +599,15 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
+        }
+        // Detectar y advertir ruidosamente sobre constructos condicionales por arquitectura (A2)
+        if trimmed.starts_with("case ") || trimmed.starts_with("if ") || trimmed.starts_with("elif ") {
+            if trimmed.contains("XBPS_TARGET_") || trimmed.contains("XBPS_MACHINE") || trimmed.contains("XBPS_ARCH") {
+                tracing::warn!(
+                    "{}: constructo condicional por arquitectura detectado ('{}'); la extracción estática puede ser incompleta",
+                    debug_path, trimmed
+                );
+            }
         }
         // Ignorar definiciones de funciones y bloques shell
         if trimmed.starts_with("do_") || trimmed.starts_with("pre_") || trimmed.starts_with("post_") || trimmed.starts_with("}") || trimmed.starts_with("{") {
@@ -588,13 +632,11 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
                 break;
             }
         }
-        // Manejar valores multilínea entre comillas dobles
-        let quote_count = buf.matches('"').count();
-        while quote_count % 2 == 1 {
+        // Manejar valores multilínea entre comillas dobles o simples
+        while has_unclosed_quote(&buf) {
             if let Some(next) = lines.next() {
                 buf.push('\n');
                 buf.push_str(next);
-                if next.contains('"') { break; }
             } else {
                 break;
             }
@@ -1012,6 +1054,56 @@ mod tests {
         let dest = master.join("hyfetch");
         assert!(dest.join("template").is_file());
         assert!(dest.join(".vur_projection_marker").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn parse_template_handles_multiline_and_quotes() -> Result<()> {
+        let content = r#"
+# Template de prueba
+pkgname=multiline-pkg
+version=1.2.3
+revision=2
+archs="x86_64 aarch64"
+distfiles="
+    https://example.org/tar1.tar.gz
+    https://example.org/tar2.tar.gz
+"
+makedepends="
+    rust
+    cargo
+    pkg-config
+"
+depends='
+    libssl
+    glibc
+'
+maintainer="Maintainer Name <user@example.org> # not a comment" # comentario real con ' quote
+"#;
+        let info = parse_template_text(content, "test:template")?;
+        assert_eq!(info.pkgname, "multiline-pkg");
+        assert_eq!(info.version, "1.2.3");
+        assert_eq!(info.revision, 2);
+        assert_eq!(info.archs, vec!["x86_64", "aarch64"]);
+        assert_eq!(
+            info.distfiles,
+            vec!["https://example.org/tar1.tar.gz", "https://example.org/tar2.tar.gz"]
+        );
+        assert_eq!(info.makedepends, vec!["rust", "cargo", "pkg-config"]);
+        assert_eq!(info.depends, vec!["libssl", "glibc"]);
+        assert_eq!(
+            info.maintainer.as_deref(),
+            Some("Maintainer Name <user@example.org> # not a comment")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_template_unclosed_quote_at_eof_does_not_hang() -> Result<()> {
+        let content = "pkgname=broken\nversion=0.1.0\nrevision=1\nshort_desc=\"unclosed quote at eof";
+        let info = parse_template_text(content, "test:template")?;
+        assert_eq!(info.pkgname, "broken");
+        assert_eq!(info.version, "0.1.0");
         Ok(())
     }
 }
