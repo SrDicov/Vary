@@ -507,7 +507,11 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             // registrar las necesarias para los paquetes del plan.
                             let urls: Vec<String> =
                                 vup_urls_by_repo.get(repo).cloned().unwrap_or_default();
-                            let key_pem = crate::vup_index::read_repo_plist_key(&r.path)?;
+                            // T-006: el clon suele ser sparse (keys/ no está en
+                            // disco); leer la llave vía git con fallback a fs.
+                            let key_pem =
+                                crate::vup_index::read_repo_plist_key_git(&r.git_bin, &r.path)
+                                    .or_else(|_| crate::vup_index::read_repo_plist_key(&r.path))?;
                             if let Err(e) = crate::keys::setup_vup_binary_repo(
                                 repo,
                                 &urls,

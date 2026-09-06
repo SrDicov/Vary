@@ -261,6 +261,47 @@ pub fn read_repo_plist_key(repo_path: &Path) -> Result<String> {
     decode_plist_public_key_pem(&text)
 }
 
+/// Lee `keys/*.plist` vía git (`ls-tree` + `show`), sin checkout materializado.
+///
+/// Los clones de vary son sparse/partial: `keys/` rara vez existe en disco
+/// aunque sí en HEAD. Sin esta variante, todo install VUP falla con
+/// "el repo no incluye llave pública" aunque el upstream sí la publique (T-006).
+pub fn read_repo_plist_key_git(git_bin: &str, repo_path: &Path) -> Result<String> {
+    let output = Command::new(git_bin)
+        .arg("-C")
+        .arg(repo_path)
+        .args(["ls-tree", "-r", "--name-only", "HEAD", "keys"])
+        .output()
+        .with_context(|| format!("no se pudo ejecutar git ls-tree en {}", repo_path.display()))?;
+    anyhow::ensure!(
+        output.status.success(),
+        "git ls-tree falló en {}",
+        repo_path.display()
+    );
+    let mut names: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.ends_with(".plist"))
+        .map(str::to_string)
+        .collect();
+    names.sort();
+    let first = names.into_iter().next().context(
+        "el repo no incluye llave pública en keys/*.plist (HEAD); \
+         sin ella no se pueden verificar los binarios",
+    )?;
+    let show = Command::new(git_bin)
+        .arg("-C")
+        .arg(repo_path)
+        .args(["show", &format!("HEAD:{first}")])
+        .output()
+        .with_context(|| format!("no se pudo ejecutar git show HEAD:{first}"))?;
+    anyhow::ensure!(
+        show.status.success(),
+        "llave no legible en el repo: {first}"
+    );
+    decode_plist_public_key_pem(&String::from_utf8_lossy(&show.stdout))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,5 +395,46 @@ mod tests {
     fn sanitize_repo_name_replaces_separators() {
         assert_eq!(sanitize_repo_name("mi-vup"), "mi-vup");
         assert_eq!(sanitize_repo_name("a/b\\c"), "a_b_c");
+    }
+
+    #[test]
+    fn plist_key_via_git_sin_checkout_materializado() {
+        // T-006: keys/ existe en HEAD pero NO en disco (clon sparse). La vía
+        // de sistema de archivos debe fallar y la vía git debe resolver.
+        use std::process::Command;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(args)
+                .output()
+                .expect("git en PATH");
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            out
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t"]);
+        git(&["config", "user.name", "t"]);
+        let pem = "-----BEGIN PUBLIC KEY-----\naGVsbG8gd29ybGQ=\n-----END PUBLIC KEY-----\n";
+        let b64 = general_purpose::STANDARD.encode(pem);
+        let plist = format!(
+            "<?xml version=\"1.0\"?><plist><dict><key>public-key</key><data>{b64}</data></dict></plist>"
+        );
+        std::fs::create_dir(root.join("keys")).unwrap();
+        std::fs::write(root.join("keys").join("aa.plist"), &plist).unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "llave"]);
+        // Simular sparse: borrar keys/ del worktree (los objetos quedan en HEAD).
+        std::fs::remove_dir_all(root.join("keys")).unwrap();
+        assert!(discover_plist_key(root).is_none());
+        assert!(read_repo_plist_key(root).is_err());
+        let got = read_repo_plist_key_git("git", root).expect("llave vía git");
+        assert_eq!(got, pem);
     }
 }

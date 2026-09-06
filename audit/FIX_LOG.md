@@ -764,3 +764,17 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Remediación:** Wrapper dummy `"sh"` (universal) + comentario. Suite local: **157 passed, 0 failed** (incl. los 4 de integración).
 - **Validación:** `cargo test -- --include-ignored` en Void real + run CI verde.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [T-006] Install VUP imposible: llave keys/*.plist buscada solo en disco (clon sparse)
+- **Severidad:** High
+- **Módulo:** `src/vup_index.rs`, `src/install.rs:510`
+- **Commit:** `fix(T-006)` (`git log --oneline --grep="T-006"`)
+- **Descripción:** `read_repo_plist_key()` listaba `keys/` en el sistema de archivos, pero los clones de vary son sparse/partial y `keys/` no está materializada aunque sí exista en HEAD. Todo `vary -S <pkg-vup>` abortaba con "el repo no incluye llave pública en keys/*.plist" pese a que el upstream sí la publica (verificado: `keys/78:b8:…:1e.plist` en VUP-Linux/vup). Detectado en test intensivo T3 (install `nvm`).
+- **Remediación:**
+  1. Nuevo `read_repo_plist_key_git(git_bin, repo_path)`: `git ls-tree -r --name-only HEAD keys` + `git show HEAD:<plist>` + `decode_plist_public_key_pem` existente.
+  2. `install.rs`: vía git primero, fallback a sistema de archivos.
+- **Validación:**
+  - `vup_index::tests::plist_key_via_git_sin_checkout_materializado` (repo git real con `keys/` borrada del worktree: fs falla, git resuelve).
+  - Suite local 158+1 en verde + run CI verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
