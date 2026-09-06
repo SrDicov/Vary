@@ -1,8 +1,9 @@
 use crate::config::Config;
 
 use std::io::{stdin, stdout, BufRead, Write};
+use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub fn ask_from_reader<R: BufRead>(reader: &mut R, default: bool) -> bool {
     let mut input = String::new();
@@ -63,6 +64,19 @@ pub fn confirm_from_reader<R: BufRead>(reader: &mut R) -> Result<Option<bool>> {
     ))
 }
 
+/// Crea `path` (y padres) con permisos `0700` (H-025): cachés, DBs, locks,
+/// logs y clones contienen estado e índices que no deben ser legibles por
+/// otros usuarios del sistema. Solo aplica en creación; directorios
+/// preexistentes no se tocan (no se cambian permisos ajenos por sorpresa).
+pub fn ensure_private_dir(path: &Path) -> Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)
+        .with_context(|| format!("creando {}", path.display()))
+}
+
 /// Confirmación y/n compartida por install/keys. `no_confirm` => true.
 pub fn confirm(prompt: &str, no_confirm: bool) -> Result<bool> {
     if no_confirm {
@@ -117,6 +131,21 @@ mod tests {
             EOF_DENIAL_HINT.contains("--noconfirm"),
             "el hint debe decir cómo proceder en CI/pipes"
         );
+    }
+
+    #[test]
+    fn ensure_private_dir_crea_con_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().expect("tempdir");
+        let nested = base.path().join("a").join("b");
+        ensure_private_dir(&nested).expect("crear");
+        let mode = std::fs::metadata(&nested)
+            .expect("meta")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700, "el dir debe crearse 0700, no según umask");
+        ensure_private_dir(&nested).expect("re-crear es idempotente");
     }
 
     #[test]

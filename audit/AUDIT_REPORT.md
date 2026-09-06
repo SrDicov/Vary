@@ -13,10 +13,10 @@
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
-| 🟡 **Medium** | 15 | 3 ([H-029], [H-038], [H-039]) | 12 |
+| 🟡 **Medium** | 15 | 4 ([H-025], [H-029], [H-038], [H-039]) | 11 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **27** | **20** |
+| **TOTAL** | **47** | **28** | **19** |
 
 ---
 
@@ -457,7 +457,8 @@
 - **Título:** Creación de directorios de caché, logs, lock y DB sin permisos Unix restringidos `0700`
 - **Evidencia:** `std::fs::create_dir_all(&path)` utiliza la umask heredada del usuario, pudiendo crear directorios con permisos mundiales de lectura en entornos multiusuario.
 - **Fix propuesto:** Usar `std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700)`.
-- **Estado:** PENDIENTE
+- **Resolución:** `util::ensure_private_dir()` en los 13 sitios (el defecto excedía los 4 citados). Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-025)`)
 
 ---
 

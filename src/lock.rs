@@ -18,7 +18,7 @@ pub struct InstanceLock {
 }
 
 pub fn acquire(cache_dir: &Path) -> Result<InstanceLock> {
-    std::fs::create_dir_all(cache_dir)
+    crate::util::ensure_private_dir(cache_dir)
         .with_context(|| format!("creando {}", cache_dir.display()))?;
     let path = cache_dir.join("vary.lock");
     let file = std::fs::OpenOptions::new()

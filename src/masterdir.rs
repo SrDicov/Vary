@@ -95,7 +95,8 @@ pub fn clone_void_packages(target: &Path, git_bin: &str) -> Result<()> {
         return Ok(());
     }
     if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("creando {}", parent.display()))?;
+        crate::util::ensure_private_dir(parent)
+            .with_context(|| format!("creando {}", parent.display()))?;
     }
     tracing::info!("clonando void-packages (depth 1)...");
     let out = std::process::Command::new(git_bin)

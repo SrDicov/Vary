@@ -462,3 +462,15 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   3. Resto real: `upgrade.rs` nunca consulta `build_date`; no hay trigger de recompilación preventiva ante drift de sonames. Eso requiere diseño (fuente de sonames, política) fuera del alcance de la auditoría: se registra como trabajo futuro en `roadmap/STATUS.md` (P2).
 - **Validación:** Tests H-005 (`roundtrip_preserves_entries_and_build_date`, `migrate_legacy_v1_json`) + suite verde.
 - **Estado:** ✅ CERRADO POR OBSOLESCENCIA PARCIAL (veredicto con evidencia; resto a roadmap)
+---
+
+### [H-025] Directorios de caché/logs/lock/DB sin permisos restringidos `0700`
+- **Severidad:** Medium
+- **Módulo:** `src/util.rs`, `src/cache.rs`, `src/db.rs`, `src/lock.rs`, `src/logging.rs`, `src/masterdir.rs`, `src/repo.rs`, `src/reposconf.rs`, `src/vup_index.rs`, `src/vur_client.rs`, `src/xbps.rs`
+- **Commit:** `fix(H-025)` (`git log --oneline --grep="H-025"`)
+- **Descripción del problema:** Todos los `create_dir_all` usaban la umask heredada; el defecto excedía los 4 sitios citados (13 sitios en total).
+- **Remediación:** Nuevo `util::ensure_private_dir()` (`DirBuilder` recursivo con `mode(0o700)`) usado en los 13 sitios. Solo aplica en creación: directorios preexistentes no se tocan.
+- **Validación:**
+  - `util::tests::ensure_private_dir_crea_con_0700` (modo exacto + idempotencia).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

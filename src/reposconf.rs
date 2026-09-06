@@ -72,7 +72,7 @@ impl ReposConf {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
+                crate::util::ensure_private_dir(parent)
                     .with_context(|| format!("no se pudo crear {}", parent.display()))?;
             }
         }

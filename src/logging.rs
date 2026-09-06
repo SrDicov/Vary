@@ -39,8 +39,8 @@ pub struct LoggingGuard {
 
 /// Inicializa el logging global de `vary`.
 ///
-/// * `cache_dir`: directorio donde vive `vary.log`; se crea con
-///   [`std::fs::create_dir_all`] ignorando errores no fatales.
+/// * `cache_dir`: directorio donde vive `vary.log`; se crea 0700 con
+///   [`crate::util::ensure_private_dir`] ignorando errores no fatales.
 /// * `verbose`: 0 => INFO en stdout, >=1 => DEBUG, >=2 => TRACE (el archivo
 ///   siempre registra DEBUG+).
 /// * Si `RUST_LOG` está definida, su filtro gana sobre ambos niveles.
@@ -49,7 +49,7 @@ pub struct LoggingGuard {
 /// [`LoggingGuard`] con el worker; las siguientes devuelven un guardián vacío
 /// y no tocan nada.
 pub fn init(cache_dir: &Path, verbose: u8) -> LoggingGuard {
-    let _ = std::fs::create_dir_all(cache_dir);
+    let _ = crate::util::ensure_private_dir(cache_dir);
 
     let rust_log = std::env::var("RUST_LOG").ok();
     let console_default = match verbose {

@@ -72,7 +72,7 @@ fn repo_add(
     };
 
     let vurs_dir = config.vurs_dir();
-    std::fs::create_dir_all(&vurs_dir).context("creating vurs dir")?;
+    crate::util::ensure_private_dir(&vurs_dir).context("creating vurs dir")?;
     let dest = vurs_dir.join(&name);
 
     let entry = RepoEntry {

@@ -121,7 +121,7 @@ pub fn fetch_index(
             Some((bytes, idx)) => {
                 if let Some(parent) = cache_path.parent() {
                     if !parent.as_os_str().is_empty() {
-                        let _ = std::fs::create_dir_all(parent);
+                        let _ = crate::util::ensure_private_dir(parent);
                     }
                 }
                 // La caché es solo una optimización: si no se puede escribir, seguir igual.

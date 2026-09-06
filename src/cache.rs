@@ -80,7 +80,7 @@ impl CacheIndex {
             .path
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."));
-        std::fs::create_dir_all(parent)
+        crate::util::ensure_private_dir(parent)
             .with_context(|| format!("no se pudo crear {}", parent.display()))?;
 
         let json_bytes = serde_json::to_vec_pretty(&self.entries)?;

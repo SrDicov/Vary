@@ -96,7 +96,7 @@ impl VurRepo {
         }
         if let Some(parent) = self.path.parent() {
             if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
+                crate::util::ensure_private_dir(parent)
                     .with_context(|| format!("no se pudo crear {}", parent.display()))?;
             }
         }
@@ -502,7 +502,7 @@ impl VurRepo {
     /// `git checkout` en `unproject_pkg`). Con `force=false` (dependencias)
     /// la precedencia oficial gana y se omite la proyección VUR.
     pub fn project_pkg(&self, master_srcpkgs: &Path, pkgname: &str, force: bool) -> Result<()> {
-        std::fs::create_dir_all(master_srcpkgs)
+        crate::util::ensure_private_dir(master_srcpkgs)
             .with_context(|| format!("no se pudo crear {}", master_srcpkgs.display()))?;
         // Buscar el directorio fuente del paquete (prefijos conocidos + flat)
         let mut candidates = Vec::new();
@@ -682,7 +682,7 @@ impl VurRepo {
     }
 
     fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
-        std::fs::create_dir_all(dest)
+        crate::util::ensure_private_dir(dest)
             .with_context(|| format!("no se pudo crear {}", dest.display()))?;
         for entry in std::fs::read_dir(src)? {
             let entry = entry?;

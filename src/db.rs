@@ -134,7 +134,7 @@ impl InstalledDb {
 
     pub fn save(&self) -> Result<()> {
         let parent = self.path.parent().unwrap_or_else(|| Path::new("."));
-        std::fs::create_dir_all(parent)
+        crate::util::ensure_private_dir(parent)
             .with_context(|| format!("no se pudo crear directorio {}", parent.display()))?;
 
         let file_repr = InstalledDbFile {

@@ -493,7 +493,7 @@ fn spawn_tracked(mut cmd: Command, prog: &str) -> Result<std::process::Child> {
 /// spinner en la terminal (H-020).
 fn run_logged(mut cmd: Command, args: &[&str], log_path: &Path) -> Result<i32> {
     if let Some(parent) = log_path.parent() {
-        std::fs::create_dir_all(parent)
+        crate::util::ensure_private_dir(parent)
             .with_context(|| format!("creando dir de logs {}", parent.display()))?;
     }
     let file = std::fs::OpenOptions::new()
