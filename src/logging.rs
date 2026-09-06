@@ -75,8 +75,14 @@ pub fn init(cache_dir: &Path, verbose: u8) {
         EnvFilter::try_new(&console_spec).unwrap_or_else(|_| EnvFilter::new(console_default));
     let file_filter = EnvFilter::try_new(&file_spec).unwrap_or_else(|_| EnvFilter::new("debug"));
 
-    let (console_filter, console_handle) = reload::Layer::new(console_filter);
-    let (file_filter, file_handle) = reload::Layer::new(file_filter);
+    let (console_filter, console_handle): (
+        reload::Layer<EnvFilter, Registry>,
+        reload::Handle<EnvFilter, Registry>,
+    ) = reload::Layer::new(console_filter);
+    let (file_filter, file_handle): (
+        reload::Layer<EnvFilter, Registry>,
+        reload::Handle<EnvFilter, Registry>,
+    ) = reload::Layer::new(file_filter);
 
     let (log_writer, worker) =
         tracing_appender::non_blocking(tracing_appender::rolling::daily(cache_dir, "vary.log"));
