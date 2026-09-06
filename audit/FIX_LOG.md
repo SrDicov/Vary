@@ -720,3 +720,16 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Comportamiento interactivo real queda para el smoke en Void (FASE 5, humano).
   - Run CI verde en el commit.
 - **Estado:** ✅ IMPLEMENTADO Y VALIDADO
+---
+
+### [A6] Descubrimiento profundo de monorepos (`srcpkgs/<cat>/<pkg>`)
+- **Severidad:** Contractual (matriz de cumplimiento)
+- **Módulo:** `src/vur_client.rs`
+- **Commit:** `feat(A6)` (`git log --oneline --grep="A6"`; el código entró con `c1f7cca`, este commit cierra docs)
+- **Descripción:** `list_packages` solo veía profundidad 1: en repos con categorías los subdirs eran invisibles (o fantasmas).
+- **Implementación:** `con_nivel_extra()`: un `ls-tree -r` adicional detecta subdirs con `template`/`.VURINFO` y los lista como `cat/pkg` (forma que `load_index` ya abre); la categoría se retira solo si no trae índice propio; sin anidados el resultado es idéntico. Límite documentado: profundidad 2.
+- **Validación:**
+  - `vur_client::tests::lista_nivel_extra_para_categorias` (lista exacta + `load_index` abre ambos).
+  - Fixtures existentes (sin anidados) sin cambios = sin regresión.
+  - Run CI verde acumulativo.
+- **Estado:** ✅ IMPLEMENTADO Y VALIDADO
