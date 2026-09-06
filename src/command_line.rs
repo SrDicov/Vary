@@ -328,6 +328,9 @@ impl Config {
             Arg::Long("prefer-binary") => self.prefer_binary = true,
             Arg::Long("no-prefer-binary") => self.prefer_binary = false,
             Arg::Long("interactive") => self.interactive = true,
+            Arg::Long("print") | Arg::Short('p') | Arg::Long("print-format") => {
+                bail!("el flag --print / -p no está soportado (reservado para Roadmap P0-4). Para instalar use vary -S <pkg>");
+            }
             // Generic pacman-style flags that we just record in args
             Arg::Long("search") | Arg::Short('s') => {
                 self.args.args.push(crate::args::Arg { key: "s".to_string(), value: None });
@@ -465,5 +468,18 @@ mod tests {
         assert!(parse_args(&mut config, &["--repo", "add", "https://example.com/v.git", "a", "b"]).is_err());
         // sin URL
         assert!(parse_args(&mut config, &["--repo", "add"]).is_err());
+    }
+
+    #[test]
+    fn print_flag_is_disabled_with_informative_error() {
+        let mut config = Config::default();
+        let err1 = parse_args(&mut config, &["-Sp", "foo"]).unwrap_err();
+        assert!(format!("{:#}", err1).contains("Roadmap P0-4"));
+
+        let err2 = parse_args(&mut config, &["-S", "--print", "foo"]).unwrap_err();
+        assert!(format!("{:#}", err2).contains("Roadmap P0-4"));
+
+        let err3 = parse_args(&mut config, &["--print-format", "%n"]).unwrap_err();
+        assert!(format!("{:#}", err3).contains("Roadmap P0-4"));
     }
 }

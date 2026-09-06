@@ -142,6 +142,10 @@ fn handle_cmd(config: &mut Config) -> Result<i32> {
 }
 
 fn handle_sync(config: &mut Config) -> Result<i32> {
+    if config.args.has_arg("p", "print") {
+        bail!("el flag --print / -p no está soportado (reservado para Roadmap P0-4). Para instalar use vary -S <pkg>");
+    }
+
     let has_search = config.args.has_arg("s", "search");
     let has_info = config.args.has_arg("i", "info");
     let has_refresh = config.args.has_arg("y", "refresh");
