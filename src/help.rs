@@ -20,6 +20,7 @@ pub fn help() {
     println!();
     println!("General options:");
     println!("    --noconfirm             Do not ask for confirmation");
+    println!("    --yes                   Alias of --noconfirm (-y is refresh, not yes)");
     println!("    --confirm               Ask for confirmation (default)");
     println!("    --color <when>          Color output: always|never|auto");
     println!("    -v --verbose            Increase verbosity (-vv for debug)");

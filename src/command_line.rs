@@ -337,6 +337,7 @@ impl Config {
             Arg::Long("help") | Arg::Short('h') => self.help = true,
             Arg::Long("version") | Arg::Short('V') => self.version = true,
             Arg::Long("noconfirm") => self.no_confirm = true,
+            Arg::Long("yes") => self.no_confirm = true,
             Arg::Long("confirm") => self.no_confirm = false,
             Arg::Long("color") => {
                 let v = value.unwrap_or("auto");
@@ -443,17 +444,15 @@ impl Config {
                     value: None,
                 });
             }
-            Arg::Long("asdeps") => {
-                self.args.args.push(crate::args::Arg {
-                    key: "asdeps".to_string(),
-                    value: None,
-                });
-            }
-            Arg::Long("asexplicit") => {
-                self.args.args.push(crate::args::Arg {
-                    key: "asexplicit".to_string(),
-                    value: None,
-                });
+            Arg::Long("asdeps")
+            | Arg::Long("asdep")
+            | Arg::Long("asexplicit")
+            | Arg::Long("asexp") => {
+                // H-032: mentir sobre el motivo de instalación es peor que
+                // rechazar (precedente H-007): vary instala siempre explícito.
+                bail!(
+                    "el flag --asdeps/--asexplicit no está soportado: vary instala siempre como explícito"
+                );
             }
             // ops
             Arg::Long("sync") | Arg::Short('S') => {
@@ -469,7 +468,7 @@ impl Config {
                 match a {
                     "force-build" | "prefer-binary" | "no-prefer-binary" | "interactive"
                     | "sudo" | "sudoflags" | "git" | "curl" | "arch" | "help" | "version"
-                    | "noconfirm" | "confirm" | "color" | "verbose" | "quiet" => {}
+                    | "noconfirm" | "yes" | "confirm" | "color" | "verbose" | "quiet" => {}
                     _ => bail!(format!("unknown option --{a}")),
                 }
             }
@@ -645,6 +644,46 @@ mod tests {
             assert!(
                 msg.contains("expects a value"),
                 "flag trailing sin valor debe fallar limpio: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn yes_es_alias_de_noconfirm_y_guion_y_sigue_refresh() {
+        // H-033.
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "foo", "--yes"]).expect("--yes parsea");
+        assert!(config.no_confirm, "--yes debe activar no_confirm");
+        assert!(
+            !config.args.has_arg("y", "refresh"),
+            "--yes no debe marcar refresh"
+        );
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["-Sy"]).expect("-y parsea");
+        assert!(
+            config.args.has_arg("y", "refresh"),
+            "-y sigue siendo refresh"
+        );
+        assert!(!config.no_confirm, "-y no debe activar no_confirm");
+
+        let mut config = Config::default();
+        assert!(
+            parse_args(&mut config, &["-S", "foo", "--yes=x"]).is_err(),
+            "--yes con valor debe fallar (TakesValue::No)"
+        );
+    }
+
+    #[test]
+    fn asdeps_y_alias_se_rechazan_sin_mentir() {
+        // H-032: las 4 grafías fallan con mensaje, nunca en silencio.
+        for flag in ["--asdeps", "--asdep", "--asexplicit", "--asexp"] {
+            let mut config = Config::default();
+            let err = parse_args(&mut config, &["-S", "foo", flag]).unwrap_err();
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("explícito"),
+                "{flag} debe rechazarse explicando: {msg}"
             );
         }
     }

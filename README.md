@@ -38,7 +38,7 @@ vary --repo add https://git.example.com/user/vur.git
 vary --repo add https://github.com/SrDicov/z-packages z-packages --branch master
 ```
 
-Other commands available in the MVP: `-Si` (detailed info), `-Sw` (download without installing), `-R` (remove), `--repo list|remove|rekey`, `--force-build` (build from source even if a binary exists) and `--prefer-binary` (prefer signed binaries over compiling).
+Other commands available in the MVP: `-Si` (detailed info), `-Sw` (download without installing), `-R` (remove), `--repo list|remove|rekey`, `--force-build` (build from source even if a binary exists) and `--prefer-binary` (prefer signed binaries over compiling). `--yes` is an alias of `--noconfirm` (note: `-y` means refresh, not yes); `--asdeps`/`--asexplicit` are rejected (vary always installs as explicit).
 
 ## Configuration
 
