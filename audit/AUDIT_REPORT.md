@@ -13,10 +13,10 @@
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
-| 🟡 **Medium** | 15 | 7 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-038], [H-039]) | 8 |
+| 🟡 **Medium** | 15 | 8 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-038], [H-039]) | 7 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **31** | **16** |
+| **TOTAL** | **47** | **32** | **15** |
 
 ---
 
@@ -512,7 +512,8 @@
 - **Título:** Consulta masiva con comodín erróneo `""` en vez de `'*'` y ejecución previa a la sincronización de repositorios (A4)
 - **Evidencia:** Pasa cadena vacía `""` a `xbps-query -Rs` y consulta antes de invocar `xbps-install -S`, arriesgando metadatos obsoletos.
 - **Fix propuesto:** Cambiar `""` por `'*'` y ordenar el sync antes de la consulta masiva.
-- **Estado:** PENDIENTE
+- **Resolución:** Refutado en Void real (`""` ≡ `"*"`); orden seguro por diseño (bulk solo-acelerador + confirm escalar en cada miss). Ver FIX_LOG.
+- **Estado:** ✅ CERRADO (Commit `fix(H-030)`)
 
 ---
 
@@ -530,7 +531,8 @@
 - **Título:** Banderas heredadas de pacman/paru aceptadas sin error e ignoradas en silencio (`--asdeps`, etc.)
 - **Evidencia:** `--asdeps` se parsea pero no añade `-A` a `xbps-install`.
 - **Fix propuesto:** Conectar `--asdeps` pasando `-A` o emitir advertencia clara de flag no soportada.
-- **Estado:** PENDIENTE
+- **Resolución:** Las 4 grafías se rechazan con error (xbps no tiene equivalente; mentir es peor). Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-032, H-033)`)
 
 ---
 
@@ -539,7 +541,8 @@
 - **Título:** Inconsistencia en flags de confirmación: `-y` interpretado como refresh en vez de yes
 - **Evidencia:** `-y` colisiona con el alias de `--refresh` de paru/pacman.
 - **Fix propuesto:** Soportar `--yes` como alias explícito de `--noconfirm`.
-- **Estado:** PENDIENTE
+- **Resolución:** `--yes` alias de `--noconfirm`; `-y` intacto; documentado en help + READMEs. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-032, H-033)`)
 
 ---
 

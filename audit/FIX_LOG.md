@@ -517,3 +517,39 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Nivel efectivo con `-v`/TOML queda para verificación manual (una línea `tracing::debug!` visible con `-v`).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-030] Comodín masivo `""` y orden respecto a la sincronización
+- **Severidad:** Medium
+- **Módulo:** `src/xbps.rs:270-288`, `src/install.rs:251-263`
+- **Commit:** `fix(H-030)` (`git log --oneline --grep="H-030"`)
+- **Descripción del problema:** La evidencia afirmaba que `""` era un comodín erróneo (debía ser `'*'`) y que consultar antes del sync usaba metadatos obsoletos.
+- **Veredicto con evidencia (Void real, 2026-09-06):** `xbps-query -Rs ""` y `-Rs "*"` devuelven exactamente lo mismo en este sistema. El comodín NO es erróneo; se fija con comentario en el código para que nadie lo "arregle". Sobre el orden: el bulk es snapshot solo-acelerador — cada miss se confirma con query escalar en vivo (`official_exists_remote`), así que la dirección peligrosa (paquete nuevo tras el snapshot) se resuelve bien; un hit obsoleto (paquete retirado a mitad de corrida) aflora como error claro de `xbps-install`, no como corrupción silenciosa.
+- **Remediación:** Comentario fijando `""` + test de parsing ya existente (`bulk_names_stripea_repo_y_version` cubre `[*]`/`[-]`/`[repo]`).
+- **Validación:** Comandos reales en Void + run CI verde en el commit del fix.
+- **Estado:** ✅ CERRADO (premisa del comodín refutada con evidencia; orden seguro por diseño)
+---
+
+### [H-032] Banderas heredadas aceptadas sin error e ignoradas en silencio
+- **Severidad:** Medium
+- **Módulo:** `src/command_line.rs`, `src/help.rs`, `README.md`, `README.es.md`
+- **Commit:** `fix(H-032, H-033)` (`git log --oneline --grep="H-032"`)
+- **Descripción del problema:** `--asdeps`/`--asexplicit` (+alias) se parseaban y registraban sin ningún efecto: el usuario creía marcar dependencias y vary instalaba todo como explícito.
+- **Remediación:** Las 4 grafías (`asdeps/asdep/asexplicit/asexp`) se rechazan con `bail!` explicativo (precedente H-007: un flag que miente es peor que ausente). README bilingüe documenta el rechazo.
+- **Validación:**
+  - `command_line::tests::asdeps_y_alias_se_rechazan_sin_mentir` (las 4 grafías).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-033] `-y` interpretado como refresh en vez de yes
+- **Severidad:** Medium
+- **Módulo:** `src/command_line.rs`, `src/help.rs`, `README.md`, `README.es.md`
+- **Commit:** `fix(H-032, H-033)` (`git log --oneline --grep="H-033"`)
+- **Descripción del problema:** Herencia pacman: `-y` es refresh en vary, pero usuarios esperan "yes"; `--yes` directamente fallaba como opción desconocida.
+- **Remediación:** `Arg::Long("yes")` como alias de `--noconfirm` (incluido en la allow-list de opciones vary; `TakesValue::No` rechaza `--yes=x` con el check existente). `-y` intacto como refresh. Help + README bilingüe lo explicitan.
+- **Validación:**
+  - `command_line::tests::yes_es_alias_de_noconfirm_y_guion_y_sigue_refresh` (`--yes` activa, `-y` no confirma, `--yes=x` falla).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

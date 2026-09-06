@@ -278,6 +278,8 @@ pub fn bulk_official_names() -> Option<std::collections::HashSet<String>> {
         owned.push(u.clone());
     }
     owned.push("-Rs".to_string());
+    // Patrón "": lista todo el repo. Verificado en Void real (2026-09-06):
+    // `-Rs ""` y `-Rs "*"` devuelven lo mismo; NO cambiar a "*" sin motivo.
     owned.push(String::new());
     let args: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
     let out = run_capture(XBPS_QUERY, &args).ok()?;
@@ -509,6 +511,9 @@ fn run_logged(mut cmd: Command, args: &[&str], log_path: &Path) -> Result<i32> {
     let mut child = spawn_tracked(cmd, "./xbps-src")?;
     let pid = child.id();
 
+    // Guardia de cursor viva durante todo el build (H-034).
+    let _cursor = CursorGuard;
+
     let mut pumps = Vec::new();
     let mut streams: Vec<Box<dyn std::io::Read + Send>> = Vec::new();
     if let Some(s) = child.stdout.take() {
@@ -548,6 +553,20 @@ fn run_logged(mut cmd: Command, args: &[&str], log_path: &Path) -> Result<i32> {
         ));
     }
     Ok(code)
+}
+
+/// Restaura el cursor visible al salir (H-034): `indicatif` lo oculta durante
+/// el spinner y un panic/`exit()` en medio del build lo dejaría invisible.
+/// Idempotente e invisible en la ruta normal.
+struct CursorGuard;
+
+impl Drop for CursorGuard {
+    fn drop(&mut self) {
+        use std::io::{IsTerminal, Write};
+        if std::io::stderr().is_terminal() {
+            let _ = write!(std::io::stderr(), "\x1b[?25h");
+        }
+    }
 }
 
 /// Vuelca líneas de `reader` a `file` (una por línea). Hilo de bombeo de H-020.
