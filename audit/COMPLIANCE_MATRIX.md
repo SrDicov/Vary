@@ -1,7 +1,8 @@
 # COMPLIANCE MATRIX — Matriz de Cumplimiento Contractual (`vary`)
 
-**Fecha:** 2026-09-06 (cierre de auditoría FASE 5)
-**Rama / Commit:** `vary-mvp` @ `f08b761` (+ `c1f7cca` como último commit con código; suite CI verde en `34060680595`: 153 passed, 4 ignored)
+**Fecha:** 2026-09-06 (cierre de auditoría FASE 5; cabecera sincronizada con HEAD en T0.1)
+**Rama / Commit:** `vary-mvp` @ `387b48e` ( suite CI verde en `34061196195`: tests + H-040-adenda; el cambio respecto a `c1f7cca` solo toca tests, veredicto inalterado)
+**Requisitos:** 11 (R1,R2,R3,A1,A2,A3,A4,A5,A6,A7,A8) en 10 filas (R3+A1 comparten fila: batch+elevación única).
 **Historial:** matriz inicial @ `1e32f1f` (1/10 implementado). Esta revisión re-verifica cada ítem contra el código actual.
 
 ---
@@ -10,7 +11,7 @@
 
 | Total Requisitos | ✅ IMPLEMENTADO | 🟡 PARCIAL | ❌ AUSENTE |
 |:---:|:---:|:---:|:---:|
-| 10 | 8 (80%) | 1 (10%) | 1 (10%) |
+| 11 | 9 (R2,R3,A1,A2,A3,A4,A6,A7,A8) | 1 (A5) | 1 (R1) |
 
 **Conclusión:** el contrato está ejecutado salvo R1 (diferido a P1-3 por decisión humana PC-2: exige masterdirs aislados estilo xbps-fbulk antes de paralelizar) y el trigger preventivo de A5 (requiere diseño de drift de sonames; registrado en `roadmap/STATUS.md` P2).
 

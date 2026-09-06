@@ -1,11 +1,16 @@
 # FIX LOG — Registro de Remediaciones
 
-> **Regla de cierre (2026-09-06):** un hallazgo se considera cerrado solo con un
-> run de CI verde (fmt + clippy `-D warnings` + test) en el commit del fix;
-> la validación local no cuenta. Los commits que solo tocan `audit/**`,
-> `docs/**`, `roadmap/**` o `*.md` no disparan CI (paths-ignore) y quedan
-> exentos. Los fixes se citan por subject (`git log --oneline
-> --grep="H-###"`); el hash exacto no puede autocontenerse en el propio commit.
+> **Regla de cierre (2026-09-06, enmendada en T0.1):** un hallazgo se considera
+> cerrado con un run de CI verde (fmt + clippy `-D warnings` + test) en su
+> commit de CIERRE; la validación local no cuenta. Los pushes intermedios en
+> rojo se admiten solo como cadena fix-forward trazada (el verde cabeza valida
+> el árbol final que los contiene; no amend de pusheados). Los commits que solo
+> tocan `audit/**`, `docs/**`, `roadmap/**` o `*.md` no disparan CI
+> (paths-ignore) y quedan exentos. Excepción histórica aceptada (T0.1/D7): los
+> fixes previos a los gates (H-001–H-014, H-017, H-022-orig.) quedan cubiertos
+> por las suites verdes acumulativas posteriores. Los fixes se citan por
+> subject (`git log --oneline --grep="H-###"`); el hash exacto no puede
+> autocontenerse en el propio commit.
 
 ---
 
@@ -718,7 +723,9 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Validación:**
   - `upgrade::tests::diff_identico_da_none_cambio_da_patch`, `review_no_tty_sin_yes_aborta`, `review_no_tty_con_yes_aprueba`.
   - Comportamiento interactivo real queda para el smoke en Void (FASE 5, humano).
-  - Run CI verde en el commit.
+  - Enmienda T0.1/D2: el run propio de `4063820` fue `failure` (clippy: `new`
+    muerto + fn de 8 args); el cierre real es el verde acumulativo `c1f7cca`
+    (run `34060680595`), que contiene este código + su fix.
 - **Estado:** ✅ IMPLEMENTADO Y VALIDADO
 ---
 
@@ -752,7 +759,7 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 
 ### [H-040-adenda] Tests con wrapper `sudo` fantasma en sistemas sin sudo
 - **Módulo:** `src/xbps.rs` (tests)
-- **Commit:** `fix(H-040)` follow-up (`git log --oneline --grep="fantasma"`)
+- **Commit:** `fix(H-040)` follow-up (`git log --oneline --grep="ghost sudo"` → `387b48e`)
 - **Descripción:** El testeo local en Void real (sin `sudo` en PATH) reveló que 3 tests de H-009 pasaban `"sudo"` como wrapper dummy: con H-040 `resolve()` valida existencia y fallaban fuera de CI-ubuntu. Los 4 tests de integración xbps (`--ignored`) pasaron en Void real.
 - **Remediación:** Wrapper dummy `"sh"` (universal) + comentario. Suite local: **157 passed, 0 failed** (incl. los 4 de integración).
 - **Validación:** `cargo test -- --include-ignored` en Void real + run CI verde.

@@ -12,7 +12,7 @@ Vary: gestor de paquetes comunitarios (helper VUR) para Void Linux — port de [
 
 ## Definition of Done (auditoría 2026-09-06, vigente)
 
-- Cada commit con código exige run CI verde en ESE commit: `fmt` + `clippy --all-targets -- -D warnings` + `test`. **La validación local no cuenta.** Commits solo-docs (`audit/**`, `docs/**`, `roadmap/**`, `*.md`) no disparan CI (paths-ignore) y quedan exentos.
+- Cada hallazgo se cierra con run CI verde en su commit de CIERRE: `fmt` + `clippy --all-targets -- -D warnings` + `test`. **La validación local no cuenta.** Los pushes intermedios en rojo se admiten solo como cadena fix-forward trazada (el verde cabeza valida el árbol final; no amend de commits pusheados). Commits solo-docs (`audit/**`, `docs/**`, `roadmap/**`, `*.md`) no disparan CI (paths-ignore) y quedan exentos. Excepción histórica aceptada 2026-09-06 (T0.1/D7): fixes previos a los gates con cobertura acumulativa de suites verdes posteriores.
 - Fixes se citan por subject (`git log --oneline --grep="H-###"`); FIX_LOG + AUDIT_REPORT se actualizan EN el mismo commit que el código.
 - Un hallazgo se cierra solo con su run verde; la tabla de `AUDIT_REPORT.md` debe cuadrar con `git log` en todo momento (cero huecos).
 
