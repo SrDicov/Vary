@@ -407,3 +407,15 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Verificación visual del spinner + contenido del log con build real queda para el smoke en Void real (FASE 5, humano).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-021] Violación XDG: rutas `$HOME/.config` etc. hardcodeadas
+- **Severidad:** High
+- **Módulo:** `src/config.rs:176-196`
+- **Commit:** `fix(H-021)` (`git log --oneline --grep="H-021"`)
+- **Descripción del problema:** `Config::new` ignoraba `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`.
+- **Remediación:** Nuevo `default_dirs(home)` que usa `dirs::cache_dir/data_dir/config_dir` (el crate ya respeta XDG) con fallback a `$HOME/.cache`, `$HOME/.local/share`, `$HOME/.config` si la variable no existe. Precedencia intacta: `vary.conf` explícito sigue ganando.
+- **Validación:**
+  - `config::tests::default_dirs_respeta_xdg_con_fallback_a_home` (XDG seteado + fallback; restaura el entorno).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

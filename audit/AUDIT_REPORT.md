@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 12 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-022]) | 4 |
+| 🟠 **High** | 16 | 13 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022]) | 3 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **22** | **25** |
+| **TOTAL** | **47** | **23** | **24** |
 
 ---
 
@@ -403,7 +403,8 @@
 - **Impacto:** Ignora las variables de entorno estándar `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` y `XDG_DATA_HOME`, violando las directrices de empaquetado de distribuciones Linux.
 - **Fix propuesto:** Utilizar las funciones del crate `dirs`: `dirs::config_dir()`, `dirs::cache_dir()`, `dirs::data_dir()`.
 - **Validación:** Test configurando `XDG_CONFIG_HOME=/tmp/custom_config` y verificando que vary lo respeta.
-- **Estado:** PENDIENTE
+- **Resolución:** `default_dirs()` con XDG + fallback a `$HOME`; `vary.conf` explícito sigue ganando. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-021)`)
 
 ---
 

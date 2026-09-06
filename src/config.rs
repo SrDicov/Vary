@@ -173,12 +173,26 @@ fn expand_home(p: &str) -> PathBuf {
     PathBuf::from(p)
 }
 
+/// Resuelve los directorios base de vary (H-021): respeta
+/// `XDG_CACHE_HOME` / `XDG_DATA_HOME` / `XDG_CONFIG_HOME` vía el crate `dirs`
+/// y solo recurre a `$HOME/.cache` etc. si la variable no está definida.
+fn default_dirs(home: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    let cache = dirs::cache_dir()
+        .unwrap_or_else(|| home.join(".cache"))
+        .join("vary");
+    let data = dirs::data_dir()
+        .unwrap_or_else(|| home.join(".local").join("share"))
+        .join("vary");
+    let config = dirs::config_dir()
+        .unwrap_or_else(|| home.join(".config"))
+        .join("vary");
+    (cache, data, config)
+}
+
 impl Config {
     pub fn new() -> Result<Self> {
         let home = dirs::home_dir().context("no se pudo determinar el directorio HOME")?;
-        let cache_dir = home.join(".cache").join("vary");
-        let data_dir = home.join(".local").join("share").join("vary");
-        let config_dir = home.join(".config").join("vary");
+        let (cache_dir, data_dir, config_dir) = default_dirs(&home);
 
         let makejobs = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -306,5 +320,49 @@ impl Config {
 
     pub fn parse_args<S: AsRef<str>>(&mut self, args: &[S]) -> Result<()> {
         crate::command_line::parse_args(self, args)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_dirs_respeta_xdg_con_fallback_a_home() {
+        // Nota: muta env del proceso; usa valores únicos y restaura al final.
+        // Ningún otro test afirma sobre estos defaults (H-044), así que el
+        // riesgo de cross-talk entre hilos es nulo en la práctica.
+        let home = PathBuf::from("/tmp/vary-fake-home-xyz");
+        let prev = (
+            std::env::var("XDG_CACHE_HOME").ok(),
+            std::env::var("XDG_DATA_HOME").ok(),
+            std::env::var("XDG_CONFIG_HOME").ok(),
+        );
+        std::env::set_var("XDG_CACHE_HOME", "/tmp/vary-xdg-cache");
+        std::env::set_var("XDG_DATA_HOME", "/tmp/vary-xdg-data");
+        std::env::set_var("XDG_CONFIG_HOME", "/tmp/vary-xdg-config");
+        let (cache, data, config) = default_dirs(&home);
+        assert_eq!(cache, PathBuf::from("/tmp/vary-xdg-cache/vary"));
+        assert_eq!(data, PathBuf::from("/tmp/vary-xdg-data/vary"));
+        assert_eq!(config, PathBuf::from("/tmp/vary-xdg-config/vary"));
+        // Sin variables XDG: fallback a $HOME. Luego se restaura el entorno.
+        std::env::remove_var("XDG_CACHE_HOME");
+        std::env::remove_var("XDG_DATA_HOME");
+        std::env::remove_var("XDG_CONFIG_HOME");
+        let (cache, data, config) = default_dirs(&home);
+        assert_eq!(cache, home.join(".cache").join("vary"));
+        assert_eq!(data, home.join(".local").join("share").join("vary"));
+        assert_eq!(config, home.join(".config").join("vary"));
+        restore_env("XDG_CACHE_HOME", prev.0);
+        restore_env("XDG_DATA_HOME", prev.1);
+        restore_env("XDG_CONFIG_HOME", prev.2);
+    }
+
+    fn restore_env(key: &str, val: Option<String>) {
+        if let Some(v) = val {
+            std::env::set_var(key, v);
+        } else {
+            std::env::remove_var(key);
+        }
     }
 }
