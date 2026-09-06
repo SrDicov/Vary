@@ -492,7 +492,6 @@ fn spawn_tracked(mut cmd: Command, prog: &str) -> Result<std::process::Child> {
 /// Ejecuta `cmd` con stdout/stderr canalizados a `log_path` (append) y un
 /// spinner en la terminal (H-020).
 fn run_logged(mut cmd: Command, args: &[&str], log_path: &Path) -> Result<i32> {
-    use std::io::{BufRead, BufReader, Write};
     if let Some(parent) = log_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creando dir de logs {}", parent.display()))?;
@@ -511,14 +510,19 @@ fn run_logged(mut cmd: Command, args: &[&str], log_path: &Path) -> Result<i32> {
     let pid = child.id();
 
     let mut pumps = Vec::new();
-    for stream in [child.stdout.take(), child.stderr.take()] {
+    let mut streams: Vec<Box<dyn std::io::Read + Send>> = Vec::new();
+    if let Some(s) = child.stdout.take() {
+        streams.push(Box::new(s));
+    }
+    if let Some(s) = child.stderr.take() {
+        streams.push(Box::new(s));
+    }
+    for stream in streams {
         let mut file = file
             .try_clone()
             .with_context(|| format!("clonando handle de {}", log_path.display()))?;
         let pump = std::thread::spawn(move || {
-            if let Some(s) = stream {
-                pump_stream_to_log(BufReader::new(s), &mut file);
-            }
+            pump_stream_to_log(std::io::BufReader::new(stream), &mut file);
         });
         pumps.push(pump);
     }
