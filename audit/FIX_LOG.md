@@ -419,3 +419,23 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `config::tests::default_dirs_respeta_xdg_con_fallback_a_home` (XDG seteado + fallback; restaura el entorno).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-023] Pánicos por `unwrap()`/`expect()` en rutas alcanzables por el usuario (+H-038)
+- **Severidad:** High (H-038: Medium, cerrado por el mismo cambio)
+- **Módulo:** `src/command_line.rs`, `src/install.rs:163`, `src/keys.rs:28`, `src/main.rs:37-45`, `src/vur_client.rs:664,936`
+- **Commit:** `fix(H-023)` (`git log --oneline --grep="H-023"`)
+- **Descripción del problema:** Barrido completo: 154 `unwrap`/`expect` en el árbol, 146 en tests (convención aceptada) y 8 en código productivo. Los 8: valores de flags CLI sin valor, `repos_conf` inconsistente, abandono de privilegios con `expect`, `parent()` de symlink y primera comilla del parser.
+- **Remediación:**
+  1. `command_line.rs`: `split.next()`, `chars.next()` y los 5 brazos `--arch/--sudo/--sudoflags/--git/--curl` usan let-else/`is_none` con `bail!` accionable. (Los 5 ya tenían guard `TakesValue::Required`; el let-else es defensa sin panic si la clasificación cambia.)
+  2. `install.rs:163`: `ok_or_else` con contexto en vez de `unwrap()` sobre `repos_conf`.
+  3. `keys.rs:28`: let-else subsume el chequeo de vacío.
+  4. `main.rs`: `drop_privileges()` devuelve `Result`; `main` imprime a stderr y sale 1. Cierra también H-038 (su única evidencia eran estas líneas).
+  5. `vur_client.rs:664`: `parent()` con `ok_or_else`; `:936`: `if let` en vez de `unwrap()` (el `remove(0)` posterior habría hecho panic en cadena).
+  6. `config.rs:128` (`Default` con `expect`) queda para H-037: `Default` no puede propagar errores, requiere rediseño propio.
+- **Validación:**
+  - `command_line::tests::opciones_con_valor_sin_valor_devuelven_error_en_vez_de_panic` (los 5 flags: error con nombre, sin panic).
+  - Test `drop_privileges_sin_root_devuelve_ok` en el binario (no-root → Ok).
+  - Fuzzing de entradas queda para FASE 5 (humano, opcional).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

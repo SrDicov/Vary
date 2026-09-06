@@ -661,7 +661,10 @@ impl VurRepo {
                 let abs = if target.is_absolute() {
                     target
                 } else {
-                    dest.parent().unwrap().join(target)
+                    let parent = dest.parent().ok_or_else(|| {
+                        anyhow::anyhow!("ruta de destino sin padre: {}", dest.display())
+                    })?;
+                    parent.join(target)
                 };
                 let resolved = abs.canonicalize().unwrap_or(abs);
                 if resolved.starts_with(
@@ -931,12 +934,14 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             {
                 val = val[1..val.len() - 1].to_string();
             } else if val.starts_with('"') || val.starts_with('\'') {
-                // Valor multilínea entrecomillado sin cierre en misma línea
-                // Quitar comilla inicial y buscar cierre
-                let quote = val.chars().next().unwrap();
-                val.remove(0);
-                if let Some(end) = val.rfind(quote) {
-                    val.truncate(end);
+                // Valor multilínea entrecomillado sin cierre en misma línea.
+                // `starts_with` garantiza no-vacío, pero sin unwrap por
+                // principio (H-023): si estuviera vacío se conserva tal cual.
+                if let Some(quote) = val.chars().next() {
+                    val.remove(0);
+                    if let Some(end) = val.rfind(quote) {
+                        val.truncate(end);
+                    }
                 }
             }
             // Colapsar whitespace y newlines a espacios para listas

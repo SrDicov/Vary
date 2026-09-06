@@ -160,7 +160,9 @@ pub fn install(config: &mut Config) -> Result<i32> {
     let mut vup_binary_urls: HashMap<String, String> = HashMap::new();
 
     for repo in &repos {
-        let entry = repos_conf.vur.get(&repo.name).unwrap();
+        let entry = repos_conf.vur.get(&repo.name).ok_or_else(|| {
+            anyhow::anyhow!("repositorio '{}' sin entrada en repos.conf", repo.name)
+        })?;
         priority_map.insert(repo.name.clone(), entry.priority_or(100));
         let has_binary = entry.has_binary();
         let infos = match repo.load_index(&mut cache, None) {

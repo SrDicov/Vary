@@ -22,10 +22,9 @@ pub fn keys_dir() -> &'static str {
 /// Valida estrictamente el nombre de un repositorio para prevenir path traversal
 /// o sobreescritura de archivos de configuración de sistema oficiales.
 pub fn validate_repo_name(name: &str) -> Result<()> {
-    if name.is_empty() {
+    let Some(first) = name.chars().next() else {
         bail!("el nombre del repositorio no puede estar vacío");
-    }
-    let first = name.chars().next().unwrap();
+    };
     if !first.is_ascii_alphanumeric() {
         bail!("el nombre del repositorio '{name}' debe comenzar con un carácter alfanumérico");
     }

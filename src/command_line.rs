@@ -248,7 +248,10 @@ impl Config {
         if arg.starts_with("--") {
             let mut value = value;
             let mut split = arg.splitn(2, '=');
-            let arg_str = split.next().unwrap();
+            // splitn siempre rinde ≥1 elemento; el let-else es defensa sin panic.
+            let Some(arg_str) = split.next() else {
+                bail!("opción larga vacía");
+            };
             let arg = Arg::Long(arg_str.trim_start_matches("--"));
             let mut used_next = takes_value(arg) == TakesValue::Required;
             if let Some(val) = split.next() {
@@ -260,7 +263,10 @@ impl Config {
             Ok(used_next)
         } else if arg.starts_with('-') {
             let mut chars = arg.chars();
-            chars.next().unwrap();
+            // `arg` no está vacío (empieza con '-'); defensa sin panic.
+            if chars.next().is_none() {
+                bail!("opción corta vacía");
+            }
             while let Some(c) = chars.next() {
                 let arg = Arg::Short(c);
                 if takes_value(arg) == TakesValue::Required {
@@ -336,7 +342,9 @@ impl Config {
             Arg::Long("verbose") | Arg::Short('v') => self.verbose = self.verbose.saturating_add(1),
             Arg::Long("quiet") | Arg::Short('q') => self.quiet = true,
             Arg::Long("arch") => {
-                let v = value.unwrap();
+                let Some(v) = value else {
+                    bail!("la opción --arch requiere un valor");
+                };
                 if !is_valid_arch(v) {
                     bail!(
                         "invalid --arch value '{}' (supported: {})",
@@ -346,12 +354,31 @@ impl Config {
                 }
                 self.arch_override = Some(v.to_string());
             }
-            Arg::Long("sudo") => self.sudo_bin = value.unwrap().to_string(),
-            Arg::Long("sudoflags") => self
-                .sudo_flags
-                .extend(value.unwrap().split_whitespace().map(|s| s.to_string())),
-            Arg::Long("git") => self.git_bin = value.unwrap().to_string(),
-            Arg::Long("curl") => self.curl_bin = value.unwrap().to_string(),
+            Arg::Long("sudo") => {
+                let Some(v) = value else {
+                    bail!("la opción --sudo requiere un valor");
+                };
+                self.sudo_bin = v.to_string();
+            }
+            Arg::Long("sudoflags") => {
+                let Some(v) = value else {
+                    bail!("la opción --sudoflags requiere un valor");
+                };
+                self.sudo_flags
+                    .extend(v.split_whitespace().map(|s| s.to_string()));
+            }
+            Arg::Long("git") => {
+                let Some(v) = value else {
+                    bail!("la opción --git requiere un valor");
+                };
+                self.git_bin = v.to_string();
+            }
+            Arg::Long("curl") => {
+                let Some(v) = value else {
+                    bail!("la opción --curl requiere un valor");
+                };
+                self.curl_bin = v.to_string();
+            }
             Arg::Long("force-build") => self.force_build = true,
             Arg::Long("prefer-binary") => self.prefer_binary = true,
             Arg::Long("no-prefer-binary") => self.prefer_binary = false,
@@ -581,5 +608,24 @@ mod tests {
 
         let err3 = parse_args(&mut config, &["--print-format", "%n"]).unwrap_err();
         assert!(format!("{err3:#}").contains("Roadmap P0-4"));
+    }
+
+    #[test]
+    fn opciones_con_valor_sin_valor_devuelven_error_en_vez_de_panic() {
+        // H-023: --arch/--sudo/--sudoflags/--git/--curl sin valor deben fallar
+        // con error accionable, nunca con panic por unwrap. (El guard de
+        // TakesValue::Required o el let-else del brazo: ambos sin panic.)
+        for name in ["arch", "sudo", "sudoflags", "git", "curl"] {
+            let mut config = Config::default();
+            let mut n = 0u8;
+            let err = config
+                .handle_arg(Arg::Long(name), None, &mut n, false)
+                .unwrap_err();
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains(name),
+                "--{name} sin valor debe mencionar el flag: {msg}"
+            );
+        }
     }
 }

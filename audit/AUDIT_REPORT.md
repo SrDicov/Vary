@@ -12,10 +12,11 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 13 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022]) | 3 |
+| 🟠 **High** | 16 | 14 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023]) | 2 |
+| 🟡 **Medium** | 15 | 2 ([H-038], [H-039]) | 13 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **23** | **24** |
+| **TOTAL** | **47** | **25** | **22** |
 
 ---
 
@@ -430,7 +431,8 @@
 - **Impacto:** Crash directo del binario si se presenta una inconsistencia en nombres de repositorio o codificación de caracteres.
 - **Fix propuesto:** Reemplazar `unwrap()` por propagación con `ok_or_else(|| anyhow!("..."))` con contexto.
 - **Validación:** `cargo test` y fuzzing de entradas.
-- **Estado:** PENDIENTE
+- **Resolución:** Barrido completo (8 sitios productivos; 146 en tests se quedan por convención). `main.rs` pasa a `Result` + exit 1, lo que cierra también H-038. `config.rs:128` queda para H-037. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-023)`)
 
 ---
 
@@ -576,7 +578,8 @@
 - **Título:** Abandono inseguro de privilegios usando `expect()` en vez de propagación de error
 - **Evidencia:** Pánico si falla `setresuid`.
 - **Fix propuesto:** Manejar el error y abortar limpiamente.
-- **Estado:** PENDIENTE
+- **Resolución:** Cerrado por `fix(H-023)`: `drop_privileges()` devuelve `Result`, `main` imprime a stderr y sale 1. Ver FIX_LOG H-023.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-023)`)
 
 ---
 
