@@ -21,7 +21,7 @@ pub fn info(config: &Config) -> Result<i32> {
 
         // Try official (xbps-query -R)
         let official = std::process::Command::new("xbps-query")
-            .args(["-R", "-p", "pkgver,short_desc,homepage,maintainer,depends", target])
+            .args(["-R", "-p", "pkgver,short_desc,homepage,maintainer,depends", "--", target])
             .output();
         if let Ok(out) = official {
             if out.status.success() && !out.stdout.is_empty() {

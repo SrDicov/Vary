@@ -79,7 +79,7 @@ fn official_exists_remote(name: &str, exclude: &str) -> bool {
     // Consultar la propiedad `repository`: si solo existe en el repo local de
     // vary (hostdir/binpkgs) NO cuenta como oficial.
     let out = std::process::Command::new("xbps-query")
-        .args(["-R", "--property=repository", name])
+        .args(["-R", "--property=repository", "--", name])
         .output();
     match out {
         Ok(o) if o.status.success() && !o.stdout.is_empty() => {

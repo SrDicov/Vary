@@ -153,7 +153,7 @@ pub fn parse_search_line(line: &str) -> Option<SearchHit> {
 /// short_desc, repository) y valores sin clave; propiedades vacías o líneas
 /// faltantes se toleran (campo `None`). rc != 0 o salida vacía => `Ok(None)`.
 pub fn query_installed(name: &str) -> Result<Option<PkgInfo>> {
-    let out = run_capture(XBPS_QUERY, &["-p", "pkgver,short_desc,repository", name])?;
+    let out = run_capture(XBPS_QUERY, &["-p", "pkgver,short_desc,repository", "--", name])?;
     if !out.status.success() {
         return Ok(None);
     }
@@ -185,7 +185,7 @@ fn parse_installed_props(name: &str, text: &str) -> Option<PkgInfo> {
 /// filtran las líneas que no producen resultados (vacías o malformadas). Un
 /// rc != 0 se tolera: salida sin hits equivale a `Ok(vec![])`.
 pub fn search_remote(pattern: &str) -> Result<Vec<PkgInfo>> {
-    let out = run_capture(XBPS_QUERY, &["-Rs", pattern])?;
+    let out = run_capture(XBPS_QUERY, &["-Rs", "--", pattern])?;
     Ok(stdout_text(&out)
         .lines()
         .filter_map(parse_search_line)
@@ -342,21 +342,46 @@ pub fn query_architecture() -> Result<String> {
 /// heredando stdio; devuelve el código de salida (-1 si muere por señal).
 /// La elevación es agnóstica (ver `crate::elevate`): sudo, doas, run0 o
 /// directa si ya somos root.
+pub(crate) fn build_install_command(
+    targets: &[String],
+    extra_flags: &[String],
+    sudo_bin: &str,
+    sudo_flags: &[String],
+) -> Result<Command> {
+    let mut cmd = crate::elevate::elevate(sudo_bin, sudo_flags, "xbps-install")?;
+    cmd.arg("-S").args(extra_flags);
+    if !targets.is_empty() {
+        cmd.arg("--").args(targets);
+    }
+    Ok(cmd)
+}
+
 pub fn install(
     targets: &[String],
     extra_flags: &[String],
     sudo_bin: &str,
     sudo_flags: &[String],
 ) -> Result<i32> {
-    let mut cmd = crate::elevate::elevate(sudo_bin, sudo_flags, "xbps-install")?;
-    cmd.arg("-S")
-        .args(extra_flags)
-        .args(targets);
+    let mut cmd = build_install_command(targets, extra_flags, sudo_bin, sudo_flags)?;
     status_code(&mut cmd)
 }
 
+pub(crate) fn build_remove_command(
+    targets: &[String],
+    extra_flags: &[String],
+    sudo_bin: &str,
+    sudo_flags: &[String],
+) -> Result<Command> {
+    let mut cmd = crate::elevate::elevate(sudo_bin, sudo_flags, "xbps-remove")?;
+    cmd.arg("-Ro").args(extra_flags);
+    if !targets.is_empty() {
+        cmd.arg("--").args(targets);
+    }
+    Ok(cmd)
+}
+
 /// Elimina recursivamente `targets` ejecutando
-/// `[wrapper] xbps-remove -Ro ...extra_flags ...targets` heredando
+/// `[wrapper] xbps-remove -Ro ...extra_flags -- ...targets` heredando
 /// stdio; devuelve el código de salida (-1 si muere por señal).
 pub fn remove_recursive(
     targets: &[String],
@@ -364,10 +389,7 @@ pub fn remove_recursive(
     sudo_bin: &str,
     sudo_flags: &[String],
 ) -> Result<i32> {
-    let mut cmd = crate::elevate::elevate(sudo_bin, sudo_flags, "xbps-remove")?;
-    cmd.arg("-Ro")
-        .args(extra_flags)
-        .args(targets);
+    let mut cmd = build_remove_command(targets, extra_flags, sudo_bin, sudo_flags)?;
     status_code(&mut cmd)
 }
 
@@ -570,6 +592,35 @@ mod tests {
             manual_names("\n   \nii a-1_1 x\nb-1_1\n"),
             vec!["a-1_1".to_owned(), "b-1_1".to_owned()]
         );
+    }
+
+    #[test]
+    fn build_install_command_incluye_separador_doble_guion() {
+        let targets = vec!["-f".to_string(), "pkg-name".to_string()];
+        let flags = vec!["-y".to_string()];
+        let cmd = build_install_command(&targets, &flags, "sudo", &[]).unwrap();
+        let args: Vec<String> = cmd.get_args().map(|s| s.to_string_lossy().into_owned()).collect();
+        let sep_pos = args.iter().position(|a| a == "--").expect("debe contener '--'");
+        assert_eq!(&args[sep_pos..], &["--", "-f", "pkg-name"]);
+    }
+
+    #[test]
+    fn build_remove_command_incluye_separador_doble_guion() {
+        let targets = vec!["-f".to_string(), "pkg-name".to_string()];
+        let flags = vec!["-y".to_string()];
+        let cmd = build_remove_command(&targets, &flags, "sudo", &[]).unwrap();
+        let args: Vec<String> = cmd.get_args().map(|s| s.to_string_lossy().into_owned()).collect();
+        let sep_pos = args.iter().position(|a| a == "--").expect("debe contener '--'");
+        assert_eq!(&args[sep_pos..], &["--", "-f", "pkg-name"]);
+    }
+
+    #[test]
+    fn build_install_command_sin_targets_no_pone_doble_guion() {
+        let targets: Vec<String> = vec![];
+        let flags = vec!["-u".to_string()];
+        let cmd = build_install_command(&targets, &flags, "sudo", &[]).unwrap();
+        let args: Vec<String> = cmd.get_args().map(|s| s.to_string_lossy().into_owned()).collect();
+        assert!(!args.iter().any(|a| a == "--"));
     }
 
     // ---------- run_capture (mensaje accionable, sin invocar xbps real) ----------
