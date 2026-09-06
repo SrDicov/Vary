@@ -50,6 +50,13 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
         return Ok(());
     }
 
+    use std::io::IsTerminal;
+    if !std::io::stdout().is_terminal() {
+        // En entornos no interactivos (CI, pipes), imprimir plano directamente
+        println!("{content}");
+        return Ok(());
+    }
+
     // Try bat first, fallback to less
     let mut pager = Command::new("bat")
         .args(["--paging=always", "--language=bash", "--style=plain"])
