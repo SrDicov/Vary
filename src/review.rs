@@ -81,3 +81,25 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
     let _ = pager.wait()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_review_imprime_plano_en_no_tty() {
+        // En CI/pipes stdout no es TTY: usa el fallback en disco e imprime
+        // plano sin invocar paginadores. (cargo test captura stdout: nunca TTY.)
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pkgdir = dir.path().join("srcpkgs").join("foo");
+        std::fs::create_dir_all(&pkgdir).expect("mkdir");
+        std::fs::write(pkgdir.join("template"), "pkgname=foo\n").expect("write");
+        assert!(prompt_review("foo", dir.path(), "git").is_ok());
+    }
+
+    #[test]
+    fn prompt_review_sin_template_es_ok_silencioso() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(prompt_review("inexistente", dir.path(), "git").is_ok());
+    }
+}

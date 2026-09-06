@@ -439,3 +439,26 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Fuzzing de entradas queda para FASE 5 (humano, opcional).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-024] Vacío de cobertura en módulos centrales
+- **Severidad:** High
+- **Módulo:** transversal (`src/`)
+- **Commit:** `fix(H-024)` (`git log --oneline --grep="H-024"`)
+- **Descripción del problema:** Al abrirse el hallazgo, `install/config/upgrade/db` y otros tenían cero tests.
+- **Remediación:** Cobertura acumulada durante la auditoría (cada fix trae sus tests) + cierre de huecos puros restantes: `args.rs` (`Arg::fmt`, `Args::has_arg`), `review.rs` (ruta no-TTY con fallback en disco). Tally final: 27 de 29 módulos con tests; quedan en cero solo `upgrade.rs`, `search.rs`, `lib.rs` y `help.rs`, todos integration-bound (requieren repos/xbps/flujos completos) y cubiertos por el smoke de FASE 5 en Void real.
+- **Validación:** `cargo test` (suite en verde) + run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-029] Campo fantasma `install_date`, `build_date` ausente y cero recompilación preventiva
+- **Severidad:** Medium
+- **Módulo:** `src/db.rs`, `src/upgrade.rs`
+- **Commit:** Sin cambio de código (resuelto-obsoleto; veredicto documentado aquí)
+- **Evidencia contra el hallazgo (código actual, post-H-005):**
+  1. `build_date: Option<u64>` en ms EXISTE (`db.rs:36`, doc A5) y se puebla en `upsert()` para `InstallType::Source` (`db.rs:162-172`), en la migración LMDB (`db.rs:265-267`) y por backfill tolerante desde `install_date` (`db.rs:92-96`).
+  2. `install_date` NO es fantasma: se lee como fuente del backfill (`db.rs:92-96`) y se decodifica del LMDB (`db.rs:249,265`).
+  3. Resto real: `upgrade.rs` nunca consulta `build_date`; no hay trigger de recompilación preventiva ante drift de sonames. Eso requiere diseño (fuente de sonames, política) fuera del alcance de la auditoría: se registra como trabajo futuro en `roadmap/STATUS.md` (P2).
+- **Validación:** Tests H-005 (`roundtrip_preserves_entries_and_build_date`, `migrate_legacy_v1_json`) + suite verde.
+- **Estado:** ✅ CERRADO POR OBSOLESCENCIA PARCIAL (veredicto con evidencia; resto a roadmap)

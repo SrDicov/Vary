@@ -127,3 +127,39 @@ impl Args {
         self.args.iter().any(|a| a.key == s1 || a.key == s2)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn arg_display_corto_largo_y_valor() {
+        let corto = Arg {
+            key: "S".to_string(),
+            value: None,
+        };
+        assert_eq!(corto.to_string(), "-S");
+        let largo = Arg {
+            key: "noconfirm".to_string(),
+            value: None,
+        };
+        assert_eq!(largo.to_string(), "--noconfirm");
+        let con_valor = Arg {
+            key: "branch".to_string(),
+            value: Some("main".to_string()),
+        };
+        assert_eq!(con_valor.to_string(), "--branch=main");
+    }
+
+    #[test]
+    fn has_arg_matchea_cualquiera_de_los_dos_alias() {
+        let args = Args {
+            args: vec![Arg {
+                key: "s".to_string(),
+                value: None,
+            }],
+        };
+        assert!(args.has_arg("s", "search"));
+        assert!(!args.has_arg("y", "refresh"));
+    }
+}

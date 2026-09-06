@@ -12,11 +12,11 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 14 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023]) | 2 |
-| 🟡 **Medium** | 15 | 2 ([H-038], [H-039]) | 13 |
+| 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
+| 🟡 **Medium** | 15 | 3 ([H-029], [H-038], [H-039]) | 12 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **25** | **22** |
+| **TOTAL** | **47** | **27** | **20** |
 
 ---
 
@@ -443,7 +443,8 @@
 - **Impacto:** Alto riesgo de regresiones funcionales no detectadas durante las fases de remediación.
 - **Fix propuesto:** Desarrollar pruebas unitarias sistemáticas para cada uno de estos módulos.
 - **Validación:** Incremento de cobertura y tests automatizados en verde.
-- **Estado:** PENDIENTE
+- **Resolución:** Cobertura acumulada por fix + huecos puros (`args`, `review`) cerrados; resto integration-bound al smoke FASE 5. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-024)`)
 
 ---
 
@@ -497,7 +498,8 @@
 - **Título:** Campo fantasma `install_date: u64`, ausencia contractual de `build_date` ms y cero recompilación preventiva (A5)
 - **Evidencia:** `install_date` solo se escribe en `upsert()` y jamás se lee. No existe `build_date` en milisegundos ni lógica para recompilar ante cambios en librerías compartidas.
 - **Fix propuesto:** Incorporar `build_date` (ms con `time`) y conectar la verificación en `upgrade.rs`.
-- **Estado:** PENDIENTE (Sujeto a PC-2)
+- **Resolución:** Obsoleto en 2/3 tras H-005 (`build_date` existe y `install_date` se lee en migración/backfill); el trigger preventivo queda como trabajo futuro P2. Ver FIX_LOG con evidencia línea a línea.
+- **Estado:** ✅ CERRADO POR OBSOLESCENCIA PARCIAL
 
 ---
 
