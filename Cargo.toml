@@ -36,7 +36,7 @@ tempfile = "3.24.0"
 toml = { version = "0.9.10", features = ["preserve_order"] }
 tracing = "0.1"
 tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "reload"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [profile.release]
 codegen-units = 1
