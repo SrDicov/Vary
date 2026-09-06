@@ -307,6 +307,16 @@ impl VurRepo {
 
     /// Lee el contenido de un archivo del repo sin materializarlo en disco.
     /// Usa `git show HEAD:<path>` para acceder directo al object store.
+    /// Contenido del `template` de `pkg` en HEAD sin tocar el worktree (A3).
+    /// Prueba `srcpkgs/`, `pkgs/` y flat. `None` si no existe en HEAD.
+    pub(crate) fn read_template(&self, pkg: &str) -> Option<String> {
+        TEMPLATE_PREFIXES
+            .iter()
+            .map(|p| format!("{p}/{pkg}/template"))
+            .chain(std::iter::once(format!("{pkg}/template")))
+            .find_map(|path| self.git_show_file(&path).ok())
+    }
+
     pub fn git_show_file(&self, tree_path: &str) -> Result<String> {
         let output = Command::new(&self.git_bin)
             .arg("-C")

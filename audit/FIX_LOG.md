@@ -703,3 +703,20 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `resolver::tests::info_pkgname_es_siempre_el_nombre_operativo` (el test entró con `e84f898`; invariante oficiales) + `resuelve_via_provides` preexistente.
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [A3] Diff pager de templates con diffy en upgrades VUR
+- **Severidad:** Contractual (matriz de cumplimiento)
+- **Módulo:** `src/upgrade.rs`, `src/vur_client.rs`, `src/review.rs`
+- **Commit:** `feat(A3)` (`git log --oneline --grep="A3"`)
+- **Descripción:** Los upgrades VUR aplicaban cambios de template (código bash de terceros que se compila con privilegios) sin mostrarlos ni pedir consentimiento.
+- **Implementación:**
+  1. `VurRepo::read_template()` (HEAD sin checkout, srcpkgs/pkgs/flat).
+  2. `upgrade()` captura templates de paquetes instalados ANTES del pull (el shallow `--depth 1` puede podar objetos viejos; el contenido se guarda, no el sha).
+  3. Tras detectar outdated: diff unificado con `diffy` por paquete cambiado; puerta de revisión — TTY: pager + sí explícito por paquete (`ask` default no); no-TTY: plano + abort salvo `--yes` (fail-closed).
+  4. Sin cambios de template todo sigue igual (cero fricción en upgrades limpios).
+- **Validación:**
+  - `upgrade::tests::diff_identico_da_none_cambio_da_patch`, `review_no_tty_sin_yes_aborta`, `review_no_tty_con_yes_aprueba`.
+  - Comportamiento interactivo real queda para el smoke en Void (FASE 5, humano).
+  - Run CI verde en el commit.
+- **Estado:** ✅ IMPLEMENTADO Y VALIDADO

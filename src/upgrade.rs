@@ -4,7 +4,80 @@ use crate::db::InstalledDb;
 use crate::reposconf::ReposConf;
 use crate::vur_client::VurRepo;
 use crate::xbps;
-use anyhow::Result;
+use anyhow::{Context, Result};
+
+/// Diff de template pendiente de revisión en un upgrade (A3).
+struct TemplateDiff {
+    pkg: String,
+    repo: String,
+    patch: String,
+}
+
+/// Patch unificado viejo→nuevo con diffy; `None` si son idénticos.
+/// Pura y testeable sin git.
+fn template_diff_text(old: &str, new: &str) -> Option<String> {
+    if old == new {
+        return None;
+    }
+    Some(diffy::create_patch(old, new).to_string())
+}
+
+/// Muestra un patch por el paginador en TTY o plano si no.
+fn show_patch(patch: &str) -> Result<()> {
+    use std::io::{IsTerminal, Write};
+    if std::io::stdout().is_terminal() {
+        let (bin, args) = crate::review::pager_cmd();
+        let mut pager = std::process::Command::new(&bin)
+            .args(&args)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .or_else(|_| {
+                std::process::Command::new("less")
+                    .args(["-R"])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+            })
+            .context("no se pudo abrir el paginador")?;
+        if let Some(mut stdin) = pager.stdin.take() {
+            let _ = stdin.write_all(patch.as_bytes());
+        }
+        let _ = pager.wait();
+    } else {
+        println!("{patch}");
+    }
+    Ok(())
+}
+
+/// Puerta de revisión de templates (A3): devuelve los paquetes aprobados.
+/// En TTY muestra cada diff y pide sí explícito; fuera de TTY imprime plano
+/// y aborta salvo `--yes`/`--noconfirm` (fail-closed como H-001/H-019).
+fn review_template_diffs(config: &Config, diffs: &[TemplateDiff]) -> Result<Vec<String>> {
+    use std::io::IsTerminal;
+    let tty = std::io::stdout().is_terminal();
+    let mut approved = Vec::new();
+    for d in diffs {
+        println!("--- template {} (repo {}) ---", d.pkg, d.repo);
+        show_patch(&d.patch)?;
+        if tty {
+            if crate::util::ask(
+                config,
+                &format!("¿Aplicar upgrade de {} con estos cambios?", d.pkg),
+                false,
+            ) {
+                approved.push(d.pkg.clone());
+            } else {
+                println!("upgrade de {} omitido por el usuario", d.pkg);
+            }
+        } else if config.no_confirm {
+            approved.push(d.pkg.clone());
+        } else {
+            anyhow::bail!(
+                "hay cambios de template sin revisar en entorno no interactivo; re-ejecuta con --yes para aceptarlos o revísalos en TTY"
+            );
+        }
+    }
+    Ok(approved)
+}
 
 pub fn refresh_repos(config: &Config) -> Result<i32> {
     let repos_conf = ReposConf::load(config.repos_conf_path())?;
@@ -52,14 +125,54 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         return Ok(code);
     }
 
+    // Phase 2a: snapshot de templates instalados ANTES del pull (A3).
+    // Tras el pull los viejos solo vivirían en objetos que el shallow puede
+    // podar; el contenido se captura ahora vía git show HEAD.
+    let mut db = InstalledDb::load(config.installed_db_path())?;
+    let repos_conf = ReposConf::load(config.repos_conf_path())?;
+    let mut old_templates: std::collections::HashMap<(String, String), String> =
+        std::collections::HashMap::new();
+    let mut parent_of: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    {
+        let mut cache = CacheIndex::load(config.cache_index_path())?;
+        for (name, entry) in repos_conf.sorted_by_priority() {
+            let repo = VurRepo {
+                name: name.clone(),
+                path: config.vurs_dir().join(&name),
+                entry: entry.clone(),
+                git_bin: config.git_bin.clone(),
+            };
+            if repo.ensure_cloned().is_err() {
+                continue;
+            }
+            if let Ok(infos) = repo.load_index(&mut cache, Some(config.ttl_cache_seconds)) {
+                for info in infos {
+                    let mut wanted = false;
+                    for n in std::iter::once(&info.pkgname)
+                        .chain(info.subpackages.iter().map(|s| &s.pkgname))
+                    {
+                        if db.get(n).is_some() {
+                            parent_of.insert(n.clone(), info.pkgname.clone());
+                            wanted = true;
+                        }
+                    }
+                    if wanted {
+                        if let Some(text) = repo.read_template(&info.pkgname) {
+                            old_templates.insert((name.clone(), info.pkgname.clone()), text);
+                        }
+                    }
+                }
+            }
+        }
+        let _ = cache.save();
+    }
+
     // Phase 2: refresh VUR repos
     println!(":: Refreshing VUR repositories...");
     refresh_repos(config)?;
 
     // Phase 3: detect VUR upgrades via installed.json
-    let mut db = InstalledDb::load(config.installed_db_path())?;
     let mut cache = CacheIndex::load(config.cache_index_path())?;
-    let repos_conf = ReposConf::load(config.repos_conf_path())?;
 
     // Build map of current VUR pkgver
     let mut current_map: std::collections::HashMap<String, String> =
@@ -122,6 +235,50 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         return Ok(0);
     }
 
+    // Phase 3b: puerta de revisión de templates (A3). Solo los paquetes cuyo
+    // template cambió pasan por el diff-gate; el resto sigue como antes.
+    let mut diffs = Vec::new();
+    for name in &outdated {
+        let parent = parent_of.get(name).cloned().unwrap_or_else(|| name.clone());
+        let found = old_templates
+            .iter()
+            .find(|((_, p), _)| p == &parent)
+            .map(|((r, _), old)| (r.clone(), old.clone()));
+        let Some((repo_name, old)) = found else {
+            continue;
+        };
+        let Some(entry) = repos_conf.vur.get(&repo_name) else {
+            continue;
+        };
+        let repo = VurRepo {
+            name: repo_name.clone(),
+            path: config.vurs_dir().join(&repo_name),
+            entry: entry.clone(),
+            git_bin: config.git_bin.clone(),
+        };
+        if let Some(new) = repo.read_template(&parent) {
+            if let Some(patch) = template_diff_text(&old, &new) {
+                diffs.push(TemplateDiff {
+                    pkg: name.clone(),
+                    repo: repo_name.clone(),
+                    patch,
+                });
+            }
+        }
+    }
+    if !diffs.is_empty() {
+        println!(
+            "\n{} templates cambiaron en esta actualización; revisión obligatoria:",
+            diffs.len()
+        );
+        let approved = review_template_diffs(config, &diffs)?;
+        outdated.retain(|n| approved.contains(n));
+        if outdated.is_empty() {
+            println!("Sin upgrades aprobados.");
+            return Ok(0);
+        }
+    }
+
     println!("\nVUR upgrades available: {}", outdated.join(", "));
     if !crate::util::ask(config, "Upgrade VUR packages?", true) {
         return Ok(1);
@@ -129,4 +286,47 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
 
     config.targets = outdated;
     crate::install::install(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn diff_identico_da_none_cambio_da_patch() {
+        // A3: el gate solo dispara con cambios reales.
+        assert!(template_diff_text("a\n", "a\n").is_none());
+        let patch = template_diff_text("pkgver=1\n", "pkgver=2\n").expect("patch");
+        assert!(patch.contains("-pkgver=1"), "línea quitada: {patch}");
+        assert!(patch.contains("+pkgver=2"), "línea puesta: {patch}");
+    }
+
+    fn un_diff() -> Vec<TemplateDiff> {
+        vec![TemplateDiff {
+            pkg: "foo".to_string(),
+            repo: "mi-repo".to_string(),
+            patch: "--- viejo\n+++ nuevo\n".to_string(),
+        }]
+    }
+
+    #[test]
+    fn review_no_tty_sin_yes_aborta() {
+        // A3: en CI/pipes (stdout capturado, nunca TTY) sin --yes: abort.
+        let config = Config::default();
+        assert!(!config.no_confirm);
+        assert!(review_template_diffs(&config, &un_diff()).is_err());
+    }
+
+    #[test]
+    fn review_no_tty_con_yes_aprueba() {
+        let config = Config {
+            no_confirm: true,
+            ..Config::default()
+        };
+        assert_eq!(
+            review_template_diffs(&config, &un_diff()).unwrap(),
+            vec!["foo".to_string()]
+        );
+    }
 }
