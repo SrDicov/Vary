@@ -1,5 +1,27 @@
 # FIX LOG — Registro de Remediaciones
 
+> **Regla de cierre (2026-09-06):** un hallazgo se considera cerrado solo con un
+> run de CI verde (fmt + clippy `-D warnings` + test) en el commit del fix;
+> la validación local no cuenta. Los commits que solo tocan `audit/**`,
+> `docs/**`, `roadmap/**` o `*.md` no disparan CI (paths-ignore) y quedan
+> exentos. Los fixes se citan por subject (`git log --oneline
+> --grep="H-###"`); el hash exacto no puede autocontenerse en el propio commit.
+
+---
+
+### [H-047] Archivo residual `guia` en la raíz reubicado a `docs/CONTRATO.md`
+- **Severidad:** Info
+- **Módulo:** `guia` → `docs/CONTRATO.md`
+- **Commit:** `fix(H-047)` (`git log --oneline --grep="H-047"`)
+- **Descripción del problema:** Archivo de 29 KB en la raíz fuera de cualquier convención de layout. Contenido verificado: es el contrato original (análisis comparativo vary/vuru/vura/vouru, base de COMPLIANCE_MATRIX), por lo que se mueve, no se elimina.
+- **Remediación:**
+  1. Reubicación a `docs/CONTRATO.md`.
+  2. Actualizada la entrada H-047 en `AUDIT_REPORT.md` (módulo + resolución + estado). Sin otras referencias a la ruta vieja en el repo (verificado con grep en README, docs, src, etc.).
+- **Validación:** Commit docs-only (exento de CI por paths-ignore); verificación de ausencia de referencias rotas.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
 Este documento registra cronológicamente cada corrección atómica realizada sobre el código de `vary`, vinculada a su hallazgo, commit y validación.
 
 ---

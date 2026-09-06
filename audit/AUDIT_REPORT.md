@@ -624,6 +624,7 @@
 - **Estado:** PENDIENTE
 
 #### [H-047] Severidad: Info
-- **Módulo:** `/run/media/dicov/LudoDrive/dicov-op/Vary/guia`
+- **Módulo:** `docs/CONTRATO.md` (reubicado desde `/guia` en la raíz)
 - **Título:** Archivo de texto residual `guia` (29 KB) en la raíz del repositorio
-- **Estado:** PENDIENTE
+- **Resolución:** El archivo es el contrato original (análisis comparativo vary/vuru/vura/vouru, base de COMPLIANCE_MATRIX): se movió a `docs/CONTRATO.md`, no se eliminó. Ninguna otra referencia a la ruta vieja en el repo.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-047)`)
