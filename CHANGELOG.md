@@ -2,6 +2,37 @@
 
 All notable changes to vary will be documented in this file.
 
+## Unreleased (auditoría FASE 4–5, 2026-09-06)
+
+Auditoría integral cerrada: 46/47 hallazgos + A3 + A6 (resta H-015, diferido
+a P1-3 por decisión PC-2). Detalle: `audit/FIX_LOG.md`.
+
+### Added
+
+- `--yes` como alias de `--noconfirm` (`-y` sigue siendo refresh).
+- Puerta de revisión de templates en upgrades (A3): diff unificado con
+  `diffy` + consentimiento por paquete; no-TTY aborta salvo `--yes`.
+- Descubrimiento de monorepos `srcpkgs/<cat>/<pkg>` (A6, profundidad 2).
+- `[tools] install_bin` configurable; `$PAGER` para el revisor.
+- Respeto XDG (`XDG_*_HOME` con fallback a `$HOME`).
+- Spinner `indicatif` + salida de `xbps-src` a `<cache>/logs/xbps-src.log`.
+- Niveles de log recargables (`RUST_LOG` > `-v` > `log_level`).
+- Códigos de salida POSIX: parseo → 2, binario ausente → 127, señal → 128+sig.
+
+### Fixed
+
+- Señales: sin hijos huérfanos (máscara en spawn) ni `/tmp/vary-*` residuales.
+- EOF en no-TTY explica con hint `--noconfirm` en vez de abortar en silencio.
+- Avisos de índice/plantilla inválidos llegan a stderr (antes invisibles).
+- Lock solo en operaciones mutantes; mensaje sin "borra" (anti split-brain).
+- `--sudoflags` de CLI reemplaza `vary.conf`; directorios propios con 0700.
+- Nombres virtuales de `provides` resueltos al real en install/review/DB.
+- `unwrap`/`expect` en rutas de usuario convertidos a errores (incluye
+  abandono de privilegios); `Config::default()` puro sin I/O.
+- Flags `--asdeps`/`--asexplicit` y rutas pacman (`--config`…) rechazados
+  con mensaje en vez de ignorarse en silencio.
+- Sanitización de entorno en elevación + wrapper en ruta absoluta.
+
 ## 0.2.5 - 2026-09-05
 
 ### Added

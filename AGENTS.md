@@ -4,26 +4,38 @@ Vary: gestor de paquetes comunitarios (helper VUR) para Void Linux — port de [
 
 ## Comandos
 
-- Test completo: `cargo test` — 85 passed / 4 ignored (los ignorados requieren Void Linux real + `xbps-query`; pasan en contenedores Void).
-- Un solo test: `cargo test <filtro>` (p. ej. `cargo test resolver`, `cargo test vur_sin_binario`).
-- Release: `cargo build --release` (`lto=true`, `codegen-units=1` — lento a propósito).
-- No hay rustfmt/clippy configurados; la verificación es build + test. Corre `cargo test` tras cada cambio.
+- Test completo: `cargo test` (~150 tests; 4 ignorados en `src/xbps.rs`, requieren Void Linux real + `xbps-query`; los corre el humano según `audit/VALIDATION.md`).
+- Un solo test: `cargo test <filtro>` (p. ej. `cargo test resolver`).
+- Release: `cargo build --release` (`lto=true`, `codegen-units=1` — lento a propósito; NUNCA en el PC dev, solo CI por dispatch/tags).
 - MSRV fijado en DOS sitios: `Cargo.toml` (`rust-version = "1.88"`) y `.github/workflows/ci.yml` (`dtolnay/rust-toolchain@1.88`) — cámbialos juntos. No bajar de 1.88: la dependencia transitiva `time@0.3.x` lo exige.
 - Docs bilingües: todo cambio user-facing actualiza `README.md` + `README.es.md`; todo cambio de formato VUR actualiza `docs/VURINFO.md` + `src/metadata.rs` (ver `CONTRIBUTING.md`).
 
+## Definition of Done (auditoría 2026-09-06, vigente)
+
+- Cada commit con código exige run CI verde en ESE commit: `fmt` + `clippy --all-targets -- -D warnings` + `test`. **La validación local no cuenta.** Commits solo-docs (`audit/**`, `docs/**`, `roadmap/**`, `*.md`) no disparan CI (paths-ignore) y quedan exentos.
+- Fixes se citan por subject (`git log --oneline --grep="H-###"`); FIX_LOG + AUDIT_REPORT se actualizan EN el mismo commit que el código.
+- Un hallazgo se cierra solo con su run verde; la tabla de `AUDIT_REPORT.md` debe cuadrar con `git log` en todo momento (cero huecos).
+
+## Operativa PC lento (vigente)
+
+- En local SOLO: editar + `cargo fmt` + `git push`. `cargo check` únicamente como diagnóstico. Tests SIEMPRE en CI, nunca local (compila toda la crate).
+- `cargo build --release`, `cargo test` completo y `cargo clippy` completos, prohibidos en local salvo caída de CI (registrar desviación).
+- Push serial: mientras CI valida N, el fix N+1 se commitea local SIN push. Nunca dos pushes concurrentes (el `concurrency` cancela el run anterior y se pierde su evidencia).
+- Verificación: `gh run watch <id>` / `gh run list --workflow CI`; ante rojo, `gh run view --job <id> --log-failed` y fix-forward (no amend de commits pusheados).
+
 ## CI
 
-- `ci.yml` — test + build release en push/PR.
+- `ci.yml` — gates del DoD en push/PR (paths-ignore para solo-docs): `fmt --check` + `clippy --all-targets -- -D warnings` + `test` en paralelo; `concurrency` cancela runs viejos; `rust-cache` en jobs pesados; job `release` solo por dispatch/tags.
 - `xbps.yml` — construye `.xbps` para glibc+musl en contenedores oficiales de Void, verifica cada paquete funcionalmente en un contenedor FRESCO (instalar + `vary -V/-h/--repo list`), publica GitHub Release al pushear tag `v*`, y mantiene el release rodante `repo` (URL fija con repodata firmado por arch; clave privada en el secret `XBPSSIGN_PRIVKEY`, pública en `keys/vary-repo.pub.pem`).
 - Gotcha de contenedores Void: `voidlinux/voidlinux:latest` apunta a `alpha.de.repo.voidlinux.org` cuyo certificado TLS no coincide — hay que reescribir `/etc/xbps.d/00-repository-main.conf` a `https://repo-default.voidlinux.org/current` y correr `xbps-install -u xbps -y` antes de instalar nada (la imagen musl no necesita esto). Esa lógica vive en `.github/scripts/{build,verify}-xbps.sh` — edita ahí, no YAML inline.
 
 ## Arquitectura
 
-Entrada: `src/main.rs` → `vary::run()` (`src/lib.rs:60`) → `Config::new()` → `handle_cmd()`; las operaciones de sync se despachan en `handle_sync()` (`src/lib.rs:128`).
+Entrada: `src/main.rs` → `vary::run()` (`src/lib.rs`) → `Config::new()` → `handle_cmd()`; las operaciones de sync se despachan en `handle_sync()` (`src/lib.rs`).
 
 - `resolver.rs` — resolver DAG puro, sin I/O; dependencias inyectadas vía `trait PackageSource`. **Los paquetes del repo oficial son hojas** (no se recursa en sus deps); solo `Action::Build` expande hostmakedepends+makedepends+depends.
 - `metadata.rs` — esquema `.VURINFO` v1 + validación (parsea objeto único o array).
-- `vur_client.rs` — clona repos VUR, fusiona índice desde `srcpkgs/*/.VURINFO` + `.VURINFO` raíz + fallback parseando template; pkgname duplicado = error. Layouts aceptados: `srcpkgs/<pkg>`, alias `pkgs/<pkg>` (voiders) y flat (`TEMPLATE_PREFIXES`). Copia (no symlink) las plantillas a `void-packages/srcpkgs/`. `detect_default_branch()` lee la rama por defecto del remoto (`git ls-remote --symref`); `repo add` la usa salvo `--branch` explícito.
+- `vur_client.rs` — clona repos VUR, fusiona índice desde `srcpkgs/*/.VURINFO` + `.VURINFO` raíz + fallback parseando template; pkgname duplicado = error. Layouts: `srcpkgs/<pkg>`, alias `pkgs/<pkg>` (voiders) o flat (subdirs de nivel 1 como paquetes si no hay prefijo). Lee índices con `git show HEAD:<path>` sin materializar; solo el paquete a compilar se materializa (sparse-checkout). Copia (no symlink) las plantillas a `void-packages/srcpkgs/`. `detect_default_branch()` lee la rama por defecto del remoto (`git ls-remote --symref`); `repo add` la usa salvo `--branch` explícito.
 - `vup_index.rs` — adaptador binario Fase 1 para repos estilo VUP (index.json): descarga con curl, convierte a `VurInfo` sintéticos solo para la arch actual, decodifica la llave de `keys/*.plist`. Sin compilación desde fuente (layout `srcpkgs/<cat>/<pkg>` no soportado), sin `-Si`, sin tracking en installed.json.
 - `bootstrap.rs`/`masterdir.rs` — idempotentes: clonar void-packages → `binary-bootstrap` → escribir `/etc/xbps.d/10-vary.conf`. Builds secuenciales sobre masterdir nativo con paralelismo intra-paquete (`XBPS_MAKEJOBS`, configurable vía `[build] makejobs`, default `nproc`) y pre-fetch en paralelo de distfiles para todo el DAG previo a compilar. El bootstrap corre en flujos de instalación (`-S <pkg>`), NO en `-Syu` plano; además `xbps-src` se niega a correr como root (política de Void), así que los flujos completos requieren usuario normal + wrapper de elevación.
 - Señales y exclusión: `signal.rs` — el handler solo marca un `AtomicI32`; un hilo observador mata hijos por grupo (`kill(-pid)`, cubre SIGINT+SIGTERM) y desmonta overlays registrados; `xbps-src` corre con `setpgid` propio. `lock.rs` — `flock` exclusivo en `<cache_dir>/vary.lock` (una instancia; el mensaje cita el pid).

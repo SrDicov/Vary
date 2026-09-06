@@ -733,3 +733,18 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Fixtures existentes (sin anidados) sin cambios = sin regresión.
   - Run CI verde acumulativo.
 - **Estado:** ✅ IMPLEMENTADO Y VALIDADO
+---
+
+## Apéndice FASE 5 — Reconciliación y procedencia de validación
+
+- `git log` ↔ FIX_LOG: los 47 hallazgos + A3 + A6 mapean a subjects
+  `fix(H-###)` / `feat(A3)` / `feat(A6)` verificables con
+  `git log --oneline --grep=`. Sin huecos. H-015 queda diferido a P1-3.
+- Desvío registrado: el run CI propio de `d59eef3` (H-045/H-046) fue
+  cancelado por `concurrency` al pushear A3 encima. El run verde `34060680595`
+  (`c1f7cca`) valida acumulativamente el mismo código + A3 + A6
+  (153 passed, 4 ignored). Cierre aceptado bajo esta procedencia explícita.
+- H-017: hash citado corregido a `91e233c` (el `6571158` original no existe
+  como commit del fix).
+- H-022: cierre real `976d1af` + `302a966` (el fix original nunca pasó CI).
+- Regla vigente: ver "Regla de cierre" al inicio de este archivo.

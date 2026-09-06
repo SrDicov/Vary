@@ -1,49 +1,47 @@
 # COMPLIANCE MATRIX — Matriz de Cumplimiento Contractual (`vary`)
 
-**Fecha:** 2026-09-06
-**Evaluador:** Antigravity (Auditoría Integral y Hardening)
-**Rama / Commit:** `vary-mvp` @ `1e32f1f` (+ cambios no commiteados auditados)
+**Fecha:** 2026-09-06 (cierre de auditoría FASE 5)
+**Rama / Commit:** `vary-mvp` @ `f08b761` (+ `c1f7cca` como último commit con código; suite CI verde en `34060680595`: 153 passed, 4 ignored)
+**Historial:** matriz inicial @ `1e32f1f` (1/10 implementado). Esta revisión re-verifica cada ítem contra el código actual.
 
 ---
 
 ## 1. Resumen Ejecutivo de Cumplimiento
 
-| Total Requisitos | ✅ IMPLEMENTADO | 🟡 PARCIAL | ❌ AUSENTE | 👻 FANTASMA |
-|:---:|:---:|:---:|:---:|:---:|
-| 10 | 1 (10%) | 5 (50%) | 3 (30%) | 1 (10%) |
+| Total Requisitos | ✅ IMPLEMENTADO | 🟡 PARCIAL | ❌ AUSENTE |
+|:---:|:---:|:---:|:---:|
+| 10 | 8 (80%) | 1 (10%) | 1 (10%) |
 
-**Conclusión preliminar:** La refactorización previa fue **ampliamente incompleta o fantasma**. Las dependencias clave (`diffy`, `indicatif`) ni siquiera fueron agregadas a `Cargo.toml`, el scheduler topológico paralelo (R1) no existe (sigue siendo un bucle secuencial), la base de datos no registra `build_date` ni hace recompilación preventiva (A5), el diff interactivo no existe (A3), y el logging asíncrono no captura las salidas de subprocesos ni implementa spinners (A7).
+**Conclusión:** el contrato está ejecutado salvo R1 (diferido a P1-3 por decisión humana PC-2: exige masterdirs aislados estilo xbps-fbulk antes de paralelizar) y el trigger preventivo de A5 (requiere diseño de drift de sonames; registrado en `roadmap/STATUS.md` P2).
 
 ---
 
 ## 2. Tabla Detallada de Verificación Contractual
 
-| ID | Requisito Contractual | Estado | Archivo:Línea | Evidencia y Diagnóstico |
-|---|---|---|---|---|
-| **R1** | **Paralelismo topológico de builds**: Scheduler por niveles topológicos (`petgraph::algo::toposort`), límite configurable vía TOML/CLI (`max_concurrent_builds`), `JoinHandle` gestionados, manejo de fallos y cancelación sin hilos huérfanos. | ❌ **AUSENTE** | `src/install.rs:301-341`<br>`src/config.rs:115,203` | **Código real estrictamente secuencial:**<br>```rust\nfor item in &plan.builds {\n    ...\n    let res = md.build_pkg(&parent_pkg, &config.sudo_bin, &config.sudo_flags);\n    ...\n}\n```<br>`max_concurrent_builds` solo se lee en `config.rs` pero jamás se utiliza en el pipeline. No existe toposort por niveles, ni hilos de trabajo, ni semáforos de concurrencia. Además, existe un riesgo crítico de colisión de masterdir (SA-2). |
-| **R2** | **`.VURINFO` como caché de prioridad con fallback estructurado**: Si falta o es inválido, fallback estructurado a parser de template Bash; fallo ruidoso con contexto si no se puede resolver. | 🟡 **PARCIAL** | `src/vur_client.rs:358-377`<br>`src/vur_client.rs:418`<br>`src/vur_client.rs:674` | **Fallback presente pero con fallos silenciosos y omisión de subpaquetes:**<br>Existe `parse_template_text` en `src/vur_client.rs:358` cuando `.VURINFO` falta. Sin embargo:<br>1. Subpaquetes hardcodeados a vacío: `subpackages: vec![]` (`vur_client.rs:674`).<br>2. Errores de parseo tragados en escaneo de repos: `if let Ok(info) = parse_template_text(...)` (`vur_client.rs:418`).<br>3. Solo emite `tracing::warn!` (invisible sin `VARY_DEBUG`) en vez de advertencias ruidosas al usuario en consola. |
-| **R3 + A1** | **Batch transaction de binarios oficiales**: Todos los `Action::Install(Official)` pasados en **UNA sola** invocación de `xbps-install -S pkg1 pkg2 ...`, con **UNA sola** elevación de privilegios. Sin bucle residual escalar. | ✅ **IMPLEMENTADO** | `src/install.rs:361-408`<br>`src/xbps.rs:341-354` | **Transacción unificada en una sola llamada:**<br>Los paquetes oficiales, VUP y compilados locales se acumulan en `all_install_names` y se ejecutan en:<br>```rust\nlet code = xbps::install(&all_install_names, &extra, &config.sudo_bin, &config.sudo_flags)?;\n```<br>No hay bucle viejo invocando `elevate` por paquete binario.<br>*Nota de seguridad:* Falta el separador `--` antes de `targets` en `src/xbps.rs:352` (vulnerabilidad de argument injection). |
-| **A2** | **Shell parser fallback estricto en Rust**: Extrae `version`, `depends`, `arch` de templates Bash sin evaluar shell. Soporta comillas, multilínea, arrays. Casos no resolubles deben advertir ruidosamente. | 🟡 **PARCIAL / DEFECTUOSO** | `src/vur_client.rs:557-690` | **Parser rudimentario con bug de ciclo y sin soporte de constructos complejos:**<br>1. Bug en condición: `while quote_count % 2 == 1` (`vur_client.rs:593`) no recalcula `quote_count` dentro del cuerpo (detectado por clippy `while_immutable_condition`).<br>2. Omite por completo subpaquetes (`subpackages: vec![]`).<br>3. No maneja `case "$XBPS_TARGET_MACHINE"` ni variables compuestas (`$pkgname-$version`).<br>4. No falla ruidosamente: ante constructos no soportados simplemente devuelve lo que pudo parsear o falla silenciosamente. |
-| **A3** | **Diff pager en `src/upgrade.rs` con crate `diffy`**: Diff unificado coloreado vía `less -R`/`$PAGER`, comparando template local vs remota en updates de VUR, con consentimiento explícito. | ❌ **AUSENTE** | `src/upgrade.rs:100-111`<br>`Cargo.toml` | **No existe diff interactivo:**<br>`diffy` no está en `Cargo.toml`. En `src/upgrade.rs`, `upgrade()` únicamente imprime `println!("  {} {} -> {}", name, entry.version, cur)` y pide confirmación global con `crate::util::ask(...)`. No hay generación de diffs unificados, no hay paginador, ni comparación de templates. |
-| **A4** | **Bulk query cache en RAM (`HashSet<String>`)**: En `-Syu`, una sola ejecución de `xbps-query -Rs`, stdout en memoria, sin `/tmp`. Validaciones `official_exists` usan el caché. Sync ANTES de query. | 🟡 **PARCIAL** | `src/xbps.rs:248-291`<br>`src/install.rs:221-240` | **Caché en RAM implementado pero con sintaxis y orden defectuosos:**<br>1. `xbps::bulk_official_names()` usa `HashSet<String>` directamente en memoria RAM sin archivos en `/tmp` (mitiga TOCTOU).<br>2. **Sintaxis incorrecta:** Usa `""` (`owned.push(String::new());` en línea 275) en lugar del comodín verificado `'*'` (`xbps-query -Rs '*'`).<br>3. **Orden incorrecto:** En `src/install.rs` y `src/upgrade.rs`, `bulk_official_names()` se ejecuta antes de cualquier sincronización de repositorios oficiales (`xbps-install -S`), operando potencialmente sobre un catálogo obsoleto. |
-| **A5** | **`build_date` (timestamp ms) en DB con recompilación preventiva**: `installed.json` con timestamp ms y migración tolerante. Campo usado para lógica de recompilación preventiva ante cambios en dependencias. | ❌ **AUSENTE / DEFECTUOSO** | `src/db.rs:18-24`<br>`src/db.rs:35-37`<br>`src/db.rs:57-64` | **Base de datos no conforme, campo fantasma y riesgo de pérdida de datos:**<br>1. Se migró arbitrariamente a LMDB (`heed`) en lugar de `installed.json`.<br>2. Riesgo de pérdida de datos: Si existe un archivo `installed.json` previo en la ruta, `InstalledDb::load` ejecuta `std::fs::remove_file(&path)` sin migrar.<br>3. Solo almacena `install_date: u64` (segundos), no `build_date` en milisegundos.<br>4. `install_date` es un campo muerto: se escribe pero jamás se lee en ninguna parte del código.<br>5. Cero lógica de recompilación preventiva. |
-| **A6** | **`repo add` con descubrimiento de 3 niveles**: (1) búsqueda profunda para monorepos (`mindepth 2`), (2) raíz, (3) extracción del nombre desde dentro del archivo cuando la estructura es atípica, importando a `srcpkgs`. | 🟡 **PARCIAL** | `src/vur_client.rs:164-235`<br>`src/vur_client.rs:396-435` | **Solo 1 nivel de profundidad implementado:**<br>1. `list_packages()` solo busca en `srcpkgs/` (nivel 1), `pkgs/` (nivel 1) o directorios raíz flat. Monorepos con categorías anidadas (`category/pkg/template`) no son descubiertos.<br>2. La búsqueda atípica con lectura de `template` existe parcialmente en `project_pkg` (`vur_client.rs:408-434`), pero el listado inicial (`list_packages`) no la utiliza, haciendo que los paquetes anidados sean invisibles para vary. |
-| **A7** | **Logs asíncronos (`mpsc`, `vary.log`, spinners `indicatif`)**: Output de `xbps_src()` y `git clone` canalizado por `mpsc` a `~/.cache/vary/vary.log`; spinner/barras con `indicatif` en terminal; flush garantizado. | 👻 **FANTASMA / PARCIAL** | `src/logging.rs:1-113`<br>`src/xbps.rs:388-417`<br>`Cargo.toml` | **Logging estructural existe, pero salida de procesos no canalizada y spinners inexistentes:**<br>1. `src/logging.rs` configura `tracing_appender::non_blocking` hacia `vary.log`, pero solo recibe eventos de macros `tracing::*`.<br>2. `xbps_src` ejecuta subprocesos heredando stdio directamente hacia la consola del usuario; no hay canalización `mpsc` hacia el log.<br>3. `indicatif` no existe en `Cargo.toml`; no hay ningún spinner ni barra de progreso visual. |
-| **A8** | **Review gate antes de `Action::BuildSource`**: Muestra template al usuario con confirmación y/N; bypass con `--yes`/`--noconfirm`; degradación correcta en no-TTY (abortar con hint, nunca colgarse). | 🟡 **PARCIAL** | `src/install.rs:284-298`<br>`src/review.rs:1-71`<br>`src/util.rs:31-42` | **Review presente pero peligroso en no-TTY:**<br>1. `prompt_review` se invoca antes de construir si `!config.no_confirm`, mostrando el archivo con `bat` o `less -R`.<br>2. **Falla grave en no-TTY:** `review.rs` lanza `bat`/`less` sin comprobar `is_terminal()`. En entornos CI/pipe sin `--no-confirm`, `stdin().read_line()` en `util.rs:39` recibe EOF (`Ok(0)`), lo que hace que `t.is_empty()` evalúe a `true`, ¡auto-aprobando la instalación sin revisión! |
+| ID | Requisito Contractual | Estado | Evidencia actual |
+|---|---|---|---|
+| **R1** | **Paralelismo topológico de builds** (niveles, `max_concurrent_builds`, JoinHandle, sin huérfanos). | ❌ **AUSENTE (DIFERIDO A P1-3)** | Builds secuenciales por Opción A (decisión PC-2) + H-015. `max_concurrent_builds` forzado a 1 en `config.rs`. Hacerlo sin masterdirs aislados colisiona en `binpkgs`/repodata. Spec en `roadmap/STATUS.md` P1-3; aquí vive H-015. |
+| **R2** | **`.VURINFO` como caché de prioridad con fallback estructurado** y fallo ruidoso. | ✅ **IMPLEMENTADO** | H-008 (multilínea/comillas/arch-warning), H-017 (subpaquetes), H-018 (errores a stderr vía `eprintln!` + `skipped_index_warning()` testeado). `load_index` fusiona `.VURINFO` + raíz + template. |
+| **R3 + A1** | **Batch transaction**: una sola invocación `xbps-install` + una sola elevación. | ✅ **IMPLEMENTADO** | `all_install_names` en una llamada (`install.rs`). H-009 añadió `--` anti-inyección. |
+| **A2** | **Shell parser fallback estricto** (comillas, multilínea, arrays, aviso ruidoso). | ✅ **IMPLEMENTADO** | H-008 (`has_unclosed_quote`, sin cuelgues), H-010 (validación `pkgname`), H-017 (subpaquetes con vars aisladas), H-018 (fallo visible). |
+| **A3** | **Diff pager con `diffy`** en updates: template local vs remota + consentimiento. | ✅ **IMPLEMENTADO** | `feat(A3)`: `read_template()` pre-pull, `diffy::create_patch`, pager/`$PAGER` en TTY (plano, sin coloreado: mejora P0-3), consentimiento por paquete; no-TTY aborta salvo `--yes`. Tests: diff puro + ambas ramas no-TTY. |
+| **A4** | **Bulk query cache en RAM**, sync antes de query. | ✅ **IMPLEMENTADO** | `bulk_official_names()` (`HashSet` en RAM, sin `/tmp`). H-030: `""` verificado equivalente a `'*'` en Void real (comentario fija); orden seguro por diseño (cada miss se confirma escalar en vivo). |
+| **A5** | **`build_date` ms + recompilación preventiva**. | 🟡 **PARCIAL** | `build_date` ms existe, se puebla y migra con backfill (H-005; veredicto H-029 con evidencia). Falta el *trigger* preventivo ante drift de sonames: sin fuente ni política diseñada → P2 en `roadmap/STATUS.md`. |
+| **A6** | **Descubrimiento 3 niveles** (monorepo profundo, raíz, nombre desde dentro). | ✅ **IMPLEMENTADO** | `feat(A6)`: `con_nivel_extra()` lista `cat/pkg` (profundidad 2) vía un `ls-tree -r`; `load_index`/`project_pkg` ya resolvían el nombre real desde dentro. Límite documentado: profundidad 3+ invisible. |
+| **A7** | **Logs + spinners `indicatif`**, flush garantizado. | ✅ **IMPLEMENTADO** | H-020 (`run_logged`: pipes a hilos de bombeo → `<cache>/logs/xbps-src.log` + spinner oculto fuera de TTY; desviación justificada: hilos directos en vez de `mpsc`, equivalente sin intermediario). H-028 (niveles recargables + `shutdown()` antes de cada `exit()`). |
+| **A8** | **Review gate pre-build** (y/N, `--yes`, no-TTY aborta con hint). | ✅ **IMPLEMENTADO** | H-001 (EOF = denegación), H-019 (hint `--noconfirm` a stderr), H-033 (`--yes`), review no-TTY plano (sin paginador), más puerta A3 en upgrades. |
 
 ---
 
-## 3. Desviaciones Justificadas vs Deficiencias Críticas
+## 3. Desviaciones Justificadas (vigentes)
 
-1. **Desviación en DB (`heed` vs `installed.json`)**:
-   - *Intento del agente anterior:* Usar `heed` (LMDB) para acelerar lecturas/escrituras concurrentes y atómicas.
-   - *Deficiencia crítica:* No se implementó migración desde `installed.json` (se borra el archivo previo), no se agregaron los campos contractuales (`build_date`), y los métodos `get` y `names` quedaron como dead code generando advertencias del compilador.
-2. **`OverlayGuard` en `masterdir.rs`**:
-   - *Estado actual:* Implementado en el working tree sin commitear. Monta OverlayFS (kernel o fuse) por paquete en compilación secuencial.
-   - *Evaluación para R1:* Es un buen punto de partida para aislamiento de procesos, pero si se paraleliza sin cuidado (R1), colisionará en `lower/srcpkgs` y en la copia hacia `hostdir/binpkgs`.
+1. **R1 → P1-3:** paralelizar sin aislamiento de masterdirs corrompe `binpkgs`/repodata (análisis en `roadmap/SPIKE_MASTERDIR.md`). Decisión humana PC-2 confirmada.
+2. **A5 trigger → P2:** `build_date` almacenado; falta diseñar la fuente de drift (sonames instalados vs enlazados). Fuera del alcance de la auditoría.
+3. **A7 sin `mpsc`:** bombeo directo por hilo a handles clonados del log; mismo orden causal por stream, menos piezas móviles.
+4. **A3 sin color:** diff unificado plano (seguro en `less -R` y pipes); coloreado en P0-3 (FASE 6).
 
 ---
 
-## 4. Próximo Paso Inmediato
+## 4. Estado Final
 
-Con la matriz completada y documentada, el orquestador se detiene en el **Punto de Control PC-1** para presentar el estado al usuario antes de desplegar los subagentes especializados de la FASE 2.
+FASE 4 cerrada: 46/47 hallazgos + A3 + A6 (resta H-015, diferido). Suite CI verde en `c1f7cca` (153 passed, 4 ignored; los 4 exigen Void real y corren en FASE 5 local). Detalle por hallazgo: `audit/FIX_LOG.md` + `audit/AUDIT_REPORT.md`. Smoke en Void real: `audit/VALIDATION.md` (ejecuta el humano).
