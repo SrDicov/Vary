@@ -17,20 +17,23 @@
 //!
 //! # Recarga (H-028)
 //!
-//! Los filtros viven tras `reload::Handle`: [`init`] instala una vez y
-//! [`apply_runtime_config`] los ajusta tras parsear CLI/TOML. El worker de
-//! archivo vive en un guardián global; [`shutdown`] lo suelta (flush) antes
-//! de salidas que se saltan `Drop` (`process::exit` en señales/pipe roto).
+//! Solo la capa de consola es recargable (`reload::Handle`): es la única cuyo
+//! nivel cambia tras el parse (el archivo siempre va en DEBUG salvo RUST_LOG,
+//! así que su filtro es estático). [`init`] instala una vez y
+//! [`apply_runtime_config`] ajusta la consola tras parsear CLI/TOML. El worker
+//! de archivo vive en un guardián global; [`shutdown`] lo suelta (flush)
+//! antes de salidas que se saltan `Drop` (`process::exit` en señales/pipe
+//! roto).
+//!
+//! (Dos capas recargables no compilan: el `S` de `reload::Layer` debe ser el
+//! subscriber final, innombrable para la segunda capa. Una sola basta.)
 
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use tracing_subscriber::{fmt, layer::SubscriberExt, reload, EnvFilter, Layer, Registry};
 
-static HANDLES: OnceLock<(
-    reload::Handle<EnvFilter, Registry>,
-    reload::Handle<EnvFilter, Registry>,
-)> = OnceLock::new();
+static CONSOLE_HANDLE: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::new();
 static GUARD: Mutex<Option<LoggingGuard>> = Mutex::new(None);
 
 /// Retiene vivo el [`tracing_appender::non_blocking::WorkerGuard`] del logger.
@@ -67,22 +70,20 @@ pub fn init(cache_dir: &Path, verbose: u8) {
         .clone()
         .unwrap_or_else(|| console_default.to_owned());
     let file_spec = rust_log.unwrap_or_else(|| "debug".to_owned());
-
-    if HANDLES.get().is_some() {
+    if CONSOLE_HANDLE.get().is_some() {
         return;
     }
     let console_filter =
         EnvFilter::try_new(&console_spec).unwrap_or_else(|_| EnvFilter::new(console_default));
     let file_filter = EnvFilter::try_new(&file_spec).unwrap_or_else(|_| EnvFilter::new("debug"));
 
+    // La capa de consola va PRIMERO con `.with` sobre Registry: así el `S`
+    // del reload::Layer es Registry (nombrable). La de archivo usa filtro
+    // estático (genérico sobre cualquier S).
     let (console_filter, console_handle): (
         reload::Layer<EnvFilter, Registry>,
         reload::Handle<EnvFilter, Registry>,
     ) = reload::Layer::new(console_filter);
-    let (file_filter, file_handle): (
-        reload::Layer<EnvFilter, Registry>,
-        reload::Handle<EnvFilter, Registry>,
-    ) = reload::Layer::new(file_filter);
 
     let (log_writer, worker) =
         tracing_appender::non_blocking(tracing_appender::rolling::daily(cache_dir, "vary.log"));
@@ -101,7 +102,7 @@ pub fn init(cache_dir: &Path, verbose: u8) {
         .with(file_layer);
     let _ = tracing::subscriber::set_global_default(subscriber);
 
-    let _ = HANDLES.set((console_handle, file_handle));
+    let _ = CONSOLE_HANDLE.set(console_handle);
     if let Ok(mut guard) = GUARD.lock() {
         *guard = Some(LoggingGuard {
             _guard: Some(worker),
@@ -120,17 +121,15 @@ pub fn apply_runtime_config(verbose: u8, log_level: &str) {
         1 => "debug".to_owned(),
         _ => "trace".to_owned(),
     };
-    set_levels(&console, "debug");
+    set_console_level(&console);
 }
 
-/// Ajusta ambos filtros si el logger ya está instalado; no-op seguro si no.
-pub fn set_levels(console: &str, file: &str) {
-    if let Some((console_handle, file_handle)) = HANDLES.get() {
-        let _ = console_handle.modify(|f| {
+/// Ajusta el filtro de consola si el logger ya está instalado; no-op si no.
+pub fn set_console_level(console: &str) {
+    if let Some(handle) = CONSOLE_HANDLE.get() {
+        let _ = handle.modify(|f| {
             *f = EnvFilter::try_new(console).unwrap_or_else(|_| EnvFilter::new("info"))
         });
-        let _ = file_handle
-            .modify(|f| *f = EnvFilter::try_new(file).unwrap_or_else(|_| EnvFilter::new("debug")));
     }
 }
 
@@ -151,9 +150,9 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         init(tmp.path(), 0);
         init(tmp.path(), 2);
-        // Si llegamos aquí sin panic ni doble instalación, bien. set_levels
-        // sin init previo tampoco debe hacer nada.
-        set_levels("debug", "debug");
+        // Si llegamos aquí sin panic ni doble instalación, bien.
+        // set_console_level sin init previo tampoco debe hacer nada.
+        set_console_level("debug");
         shutdown();
         shutdown();
     }
