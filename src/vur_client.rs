@@ -20,6 +20,22 @@ pub struct VurRepo {
 /// como voiders-community/repository. "" (ausente) = repo flat.
 pub(crate) const TEMPLATE_PREFIXES: &[&str] = &["srcpkgs", "pkgs"];
 
+pub fn is_safe_git_url(url: &str) -> bool {
+    if url.contains('\n') || url.contains('\r') || url.chars().any(|c| c.is_control()) {
+        return false;
+    }
+    let u = url.trim();
+    if u.is_empty() || u.starts_with('-') {
+        return false;
+    }
+    u.starts_with("https://")
+        || u.starts_with("http://")
+        || u.starts_with("git://")
+        || u.starts_with("ssh://")
+        || u.starts_with("file://")
+        || (u.starts_with("git@") && u.contains(':'))
+}
+
 impl VurRepo {
     pub fn ensure_cloned(&self) -> Result<()> {
         if self.path.join(".git").exists() {
@@ -52,6 +68,9 @@ impl VurRepo {
     }
 
     fn clone_partial(&self) -> Result<()> {
+        if !is_safe_git_url(&self.entry.url) {
+            bail!("URL de repositorio git insegura o inválida: '{}'", self.entry.url);
+        }
         if let Some(parent) = self.path.parent() {
             if !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent)
@@ -61,11 +80,18 @@ impl VurRepo {
         let branch = self.entry.branch_or_default();
         let output = Command::new(&self.git_bin)
             .args([
+                "-c",
+                "protocol.ext.allow=never",
+                "-c",
+                "protocol.file.allow=user",
                 "clone",
                 "--filter=blob:none",
                 "--no-checkout",
-                "--depth", "1",
-                "--branch", branch,
+                "--depth",
+                "1",
+                "--branch",
+                branch,
+                "--",
             ])
             .arg(&self.entry.url)
             .arg(&self.path)
@@ -88,8 +114,21 @@ impl VurRepo {
     /// `ref: refs/heads/<rama>`. Devuelve `None` si no se puede determinar
     /// (sin red, remoto vacío o git ausente); el llamador aplica su fallback.
     pub fn detect_default_branch(git_bin: &str, url: &str) -> Option<String> {
+        if !is_safe_git_url(url) {
+            return None;
+        }
         let output = Command::new(git_bin)
-            .args(["ls-remote", "--symref", url, "HEAD"])
+            .args([
+                "-c",
+                "protocol.ext.allow=never",
+                "-c",
+                "protocol.file.allow=user",
+                "ls-remote",
+                "--symref",
+                "--",
+                url,
+                "HEAD",
+            ])
             .output()
             .ok()?;
         if !output.status.success() {
@@ -1105,5 +1144,22 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
         assert_eq!(info.pkgname, "broken");
         assert_eq!(info.version, "0.1.0");
         Ok(())
+    }
+
+    #[test]
+    fn is_safe_git_url_validates_and_rejects_dangerous_transports() {
+        assert!(is_safe_git_url("https://github.com/void-linux/void-packages.git"));
+        assert!(is_safe_git_url("http://git.example.org/repo.git"));
+        assert!(is_safe_git_url("git://example.org/repo.git"));
+        assert!(is_safe_git_url("ssh://git@example.org/repo.git"));
+        assert!(is_safe_git_url("git@github.com:user/repo.git"));
+        assert!(is_safe_git_url("file:///local/repo.git"));
+
+        assert!(!is_safe_git_url("--upload-pack=touch /tmp/pwn"));
+        assert!(!is_safe_git_url("-u"));
+        assert!(!is_safe_git_url("ext::sh -c evil%G"));
+        assert!(!is_safe_git_url("https://example.org/repo.git\n--upload-pack=evil"));
+        assert!(!is_safe_git_url(""));
+        assert!(!is_safe_git_url("   "));
     }
 }

@@ -87,9 +87,14 @@ pub fn clone_void_packages(target: &Path, git_bin: &str) -> Result<()> {
     tracing::info!("clonando void-packages (depth 1)...");
     let out = std::process::Command::new(git_bin)
         .args([
+            "-c",
+            "protocol.ext.allow=never",
+            "-c",
+            "protocol.file.allow=user",
             "clone",
             "--depth",
             "1",
+            "--",
             VOID_PACKAGES_URL,
             &target.display().to_string(),
         ])

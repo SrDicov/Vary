@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 4 ([H-009], [H-010], [H-011], [H-022]) | 12 |
+| 🟠 **High** | 16 | 5 ([H-009], [H-010], [H-011], [H-012], [H-022]) | 11 |
 | 🟡 **Medium** | 15 | 0 | 15 |
 | 🟢 **Low / Info** | 8 | 0 | 8 |
-| **TOTAL** | **47** | **12** | **35** |
+| **TOTAL** | **47** | **13** | **34** |
 
 ---
 
@@ -232,7 +232,7 @@
 - **Impacto:** Si una URL binaria de un repositorio VUP contiene saltos de línea (`\n`), puede inyectar directivas arbitrarias de configuración en los archivos generados bajo `/etc/xbps.d/`.
 - **Fix propuesto:** Validar que las URLs utilicen exclusivamente esquemas seguros (`https://` o `file://`) y no contengan caracteres de control ni saltos de línea.
 - **Validación:** Test unitario intentando registrar repositorios con URLs manipuladas.
-- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit: pendiente de commit H-011)
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `b65acb8`)
 
 ---
 
@@ -250,7 +250,7 @@
 - **Impacto:** Si `self.entry.url` comienza con `-` (ej. `--upload-pack=evil`), Git ejecuta el binario local especificado. Además, transportes maliciosos en submódulos o URLs tipo `ext::` pueden ejecutar comandos arbitrarios de shell.
 - **Fix propuesto:** Validar esquema de URL (`https://`, `git://`, `ssh://`), pasar `-c protocol.ext.allow=never -c protocol.file.allow=user`, y colocar `--` antes de `&self.entry.url`.
 - **Validación:** Test pasando URLs con flags a `git_clone` y verificando rechazo seguro.
-- **Estado:** PENDIENTE
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit: pendiente de commit H-012)
 
 ---
 

@@ -36,6 +36,10 @@ fn repo_add(
 
     crate::keys::validate_repo_name(&name)?;
 
+    if !crate::vur_client::is_safe_git_url(url) {
+        bail!("URL de repositorio git insegura o inválida: '{}'", url);
+    }
+
     // Validar repos.conf antes de cualquier operación remota o de disco
     let mut conf = ReposConf::load(config.repos_conf_path())?;
 

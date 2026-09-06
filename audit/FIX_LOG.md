@@ -214,7 +214,7 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 ### [H-011] Inyección de directivas XBPS arbitrarias por falta de sanitización de newlines y esquemas inseguros en URLs
 - **Severidad:** High
 - **Módulo:** `src/keys.rs:85-130, 190-205`
-- **Commit:** Pendiente de commit `fix(H-011): sanitize repository URLs and reject newline injection in xbps.d`
+- **Commit:** `b65acb8` (`fix(H-011): sanitize repository URLs and reject newline injection in xbps.d`)
 - **Descripción del problema:** Las URLs de repositorios binarios VUR o índices VUP se formateaban directamente en líneas `repository=<url>\n` en archivos bajo `/etc/xbps.d/`. Si una URL contenía saltos de línea (`\n`, `\r`) o esquemas no admitidos por XBPS, se podían inyectar directivas de configuración arbitrarias en el gestor de paquetes de Void Linux o inducir comportamientos inesperados.
 - **Remediación:**
   1. Se implementó `validate_repository_url(url: &str) -> Result<()>` en `src/keys.rs`, rechazando URLs vacías, con saltos de línea, caracteres de control, o esquemas distintos a `https://`, `http://` o `file://`.
@@ -226,5 +226,24 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `cargo test keys`
   - `cargo clippy --all-targets -- -D warnings`
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-012] Inyección de argumentos y ejecución arbitraria mediante transportes peligrosos en git clone y git ls-remote
+- **Severidad:** High
+- **Módulo:** `src/vur_client.rs:60-120, 1145-1165`, `src/repo.rs:37`, `src/masterdir.rs:90`
+- **Commit:** Pendiente de commit `fix(H-012): sanitize git transport protocols and prevent URL argument injection`
+- **Descripción del problema:** Invocaciones a comandos Git remotos (`git clone` y `git ls-remote`) pasaban URLs sin verificar que comiencen con flags (ej. `--upload-pack=evil`), sin separar opciones con `--`, y sin deshabilitar protocolos de transporte inseguros (como `ext::`). Esto permitía ejecución de comandos arbitrarios ante URLs manipuladas.
+- **Remediación:**
+  1. Se implementó `is_safe_git_url(url: &str) -> bool` en `src/vur_client.rs`, exigiendo esquemas admitidos (`https://`, `http://`, `git://`, `ssh://`, `git@`, `file://`), prohibiendo prefijos con guion (`-`), saltos de línea y caracteres de control.
+  2. En `clone_partial` y `detect_default_branch` (`src/vur_client.rs`) y en `clone_void_packages` (`src/masterdir.rs`), se agregaron los argumentos de configuración `-c protocol.ext.allow=never -c protocol.file.allow=user` y el separador `--` antes de las URLs.
+  3. En `repo_add` (`src/repo.rs`), se valida la URL del repositorio con `is_safe_git_url` antes de cualquier operación.
+  4. Se incorporó la prueba unitaria `is_safe_git_url_validates_and_rejects_dangerous_transports` en `vur_client::tests`.
+- **Validación:**
+  - `vur_client::tests::is_safe_git_url_validates_and_rejects_dangerous_transports`
+  - `cargo test vur_client`
+  - `cargo clippy --all-targets -- -D warnings`
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
 
 
