@@ -93,7 +93,7 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
     };
     if let Err(err) = config.parse_args(&args_owned) {
         print_error(Style::new(), err);
-        return 1;
+        return 2; // mal uso de CLI (H-035): distinto de fallo en ejecución (1)
     }
 
     if config.help {
@@ -137,7 +137,12 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
     match handle_cmd(&mut config) {
         Err(err) => {
             print_error(Style::new(), err);
-            1
+            // 127 si falta el binario (git/xbps/…), 1 para el resto (H-035).
+            if crate::xbps::is_not_found_error(&err) {
+                127
+            } else {
+                1
+            }
         }
         Ok(ret) => ret,
     }
@@ -147,6 +152,11 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
 /// La usa el observador de señales y el hook de pipe roto en `main`.
 pub fn shutdown_logging() {
     logging::shutdown();
+}
+
+/// Restaura cursor y atributos de terminal. La usa el hook de panic en `main`.
+pub fn restore_terminal() {
+    signal::restore_terminal();
 }
 
 /// H-027: el lock global solo protege operaciones que mutan estado compartido.
@@ -266,7 +276,6 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn repo_list_no_requiere_lock_add_si() {
         let mut config = Config::new().expect("config de test");
@@ -286,5 +295,12 @@ mod tests {
             .expect("parse");
         assert!(needs_lock(&config));
         crate::command_line::take_repo_cmd();
+    }
+
+    #[test]
+    fn cli_mal_usado_devuelve_2() {
+        // H-035: error de parseo (opción desconocida) => 2, no 1.
+        // run() parsea antes del lock: no toca disco compartido.
+        assert_eq!(run(&["--opcion-inexistente-xyz"]), 2);
     }
 }

@@ -13,10 +13,10 @@
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
-| 🟡 **Medium** | 15 | 11 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-031], [H-032], [H-033], [H-038], [H-039]) | 4 |
+| 🟡 **Medium** | 15 | 12 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-031], [H-032], [H-033], [H-035], [H-038], [H-039]) | 3 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **35** | **12** |
+| **TOTAL** | **47** | **36** | **11** |
 
 ---
 
@@ -552,7 +552,8 @@
 - **Título:** Falta de restauración del modo de terminal tras pánico o interrupción
 - **Evidencia:** Si el usuario interrumpe mientras corre un paginador o spinner, el cursor puede quedar oculto.
 - **Fix propuesto:** Instalar hook de pánico que restaure el cursor y modo canónico de terminal.
-- **Estado:** PENDIENTE
+- **Resolución:** `CursorGuard` RAII en builds + `restore_terminal()` en observer y hook de panic; pager descartado con razón (no es líder de grupo). Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-034)`)
 
 ---
 
@@ -561,7 +562,8 @@
 - **Título:** Inconsistencia en códigos de salida (colapso en 1, fuga de -1)
 - **Evidencia:** Errores de comando no encontrado deben retornar 127, y subprocesos terminados por señal deben mapear a `128 + sig` en lugar de -1.
 - **Fix propuesto:** Estandarizar códigos de salida POSIX consistentes.
-- **Estado:** PENDIENTE
+- **Resolución:** `exit_code_of_status` (128+sig), parse→2, NotFound→127 con fuente preservada. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-035)`)
 
 ---
 

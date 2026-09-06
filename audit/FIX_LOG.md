@@ -563,3 +563,31 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Remediación (excepción justificada, sin cambio de conducta):** Doc de la regla 5 y comentario del test alineados con código + especificación: lista vacía aceptada con warning; elementos deben ser `sha256:`/`SKIP` (vacío rechazado, ya testeado).
 - **Validación:** Tests existentes (`allows_empty_checksum_for_custom_fetch`, `rejects_checksum_elemento_vacio`) + run CI verde.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-034] Falta de restauración del modo de terminal tras pánico o interrupción
+- **Severidad:** Medium
+- **Módulo:** `src/xbps.rs`, `src/signal.rs`, `src/main.rs`, `src/lib.rs`, `src/review.rs`
+- **Commit:** `fix(H-034)` (`git log --oneline --grep="H-034"`)
+- **Descripción del problema:** `indicatif` oculta el cursor durante el spinner; un panic/`exit()` a mitad de build lo dejaba invisible. El pager tampoco estaba contemplado.
+- **Remediación (residual real, sin teatro):**
+  1. `CursorGuard` (RAII) en `run_logged`: restaura el cursor al salir del build por cualquier vía, incluido unwind. (El guardián entró con `006dc8b`; el resto aquí.)
+  2. `signal::restore_terminal()` (`\x1b[?25h\x1b[0m`, solo en TTY) invocado en `observer_cleanup_and_exit` antes de `exit()` y en el hook de panic de `main` (vía `vary::restore_terminal()`).
+  3. Pager evaluado y DESCARTADO a propósito: el observador mata por grupo (`-pid`) y el pager no es líder (comparte el frontal para recibir SIGINT); registrarlo arriesgaría matar un grupo ajeno por reutilización de pid. Comentario en `review.rs`, caso residual benigno (sin locks).
+- **Validación:** Ruta normal + cursor idempotente; cursor tras Ctrl+C y pager quedan para el smoke en Void real (FASE 5, humano). Run CI verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-035] Códigos de salida inconsistentes (colapso en 1, fuga de -1)
+- **Severidad:** Medium
+- **Módulo:** `src/xbps.rs`, `src/lib.rs`
+- **Commit:** `fix(H-035)` (`git log --oneline --grep="H-035"`)
+- **Descripción del problema:** Todo error colapsaba en 1; muerte por señal filtraba `-1` (el shell lo ve como 255, perdiendo la señal); binario ausente indistinguible.
+- **Remediación:**
+  1. `xbps::exit_code_of_status()`: código del hijo o `128+señal` en unix; reemplaza los 3 `unwrap_or(-1)` (doc actualizado).
+  2. `run()`: error de parseo → 2 (mal uso CLI); `is_not_found_error()` camina la cadena buscando `io::NotFound` → 127. `spawn_error` conserva la fuente con `.context()` para que la cadena exista.
+  3. El wrapper `restore_terminal()` de `lib.rs` (H-034) entró en este commit por compartir archivo; el hook vive en `fix(H-034)`.
+- **Validación:**
+  - `xbps::tests::exit_code_mapea_salida_normal_y_senal` (ExitStatus crudos unix), `not_found_se_detecta_en_cadena_de_error`, `lib::tests::cli_mal_usado_devuelve_2` (`run()` real con flag desconocido).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

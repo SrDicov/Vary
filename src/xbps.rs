@@ -4,7 +4,8 @@
 //! * Las funciones de consulta NO usan sudo.
 //! * `install` y `remove_recursive` delegan la elevación al binario de sudo
 //!   que el llamador indique (`sudo_bin` + `sudo_flags`) y heredan stdio para
-//!   progreso en vivo; devuelven el código de salida (-1 si muere por señal).
+//!   progreso en vivo; devuelven el código de salida POSIX
+//!   ([`exit_code_of_status`]: 128+señal si muere por señal).
 //! * Los errores usan `anyhow` con mensajes accionables: si un binario no
 //!   existe => "`<bin>` no encontrado: ¿estás en Void Linux? ¿instalaste xbps?".
 
@@ -63,11 +64,45 @@ pub fn run_capture(bin: &str, args: &[&str]) -> Result<Output> {
 }
 
 fn spawn_error(bin: &str, e: std::io::Error) -> anyhow::Error {
-    if e.kind() == ErrorKind::NotFound {
-        anyhow!("`{bin}` no encontrado: ¿estás en Void Linux? ¿instalaste xbps?")
+    // Se conserva `e` como fuente: run() mapea NotFound a 127 (H-035).
+    let io = anyhow::Error::new(e);
+    if io
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|e| e.kind() == ErrorKind::NotFound)
+    {
+        io.context(format!(
+            "`{bin}` no encontrado: ¿estás en Void Linux? ¿instalaste xbps?"
+        ))
     } else {
-        anyhow!("no se pudo ejecutar `{bin}`: {e}")
+        io.context(format!("no se pudo ejecutar `{bin}`"))
     }
+}
+
+/// Código de salida POSIX desde un `ExitStatus` (H-035): el código del hijo
+/// si terminó normal; `128+señal` si murió por señal (antes se filtraba `-1`,
+/// que el shell veía como 255 y perdía la señal).
+pub fn exit_code_of_status(status: std::process::ExitStatus) -> i32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(code) = status.code() {
+            return code;
+        }
+        return 128 + status.signal().unwrap_or(15);
+    }
+    #[cfg(not(unix))]
+    {
+        status.code().unwrap_or(1)
+    }
+}
+
+/// true si la cadena de `err` contiene un `io::Error` NotFound (binario
+/// ausente) — run() lo mapea a 127 (H-035).
+pub fn is_not_found_error(err: &anyhow::Error) -> bool {
+    err.chain().any(|e| {
+        e.downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == ErrorKind::NotFound)
+    })
 }
 
 fn stdout_text(out: &Output) -> Cow<'_, str> {
@@ -406,7 +441,7 @@ fn status_code(cmd: &mut Command) -> Result<i32> {
     // como root: el mensaje de error siempre nombra al binario que falló.
     let prog = cmd.get_program().to_string_lossy().to_string();
     let status = cmd.status().map_err(|e| spawn_error(&prog, e))?;
-    Ok(status.code().unwrap_or(-1))
+    Ok(exit_code_of_status(status))
 }
 
 /// Ejecuta `./xbps-src <args>` con `current_dir(masterdir)` heredando stdio
@@ -464,7 +499,7 @@ pub fn xbps_src(
             let pid = child.id();
             let status = child.wait().map_err(|e| spawn_error("./xbps-src", e));
             crate::signal::unregister_child(pid);
-            Ok(status?.code().unwrap_or(-1))
+            Ok(exit_code_of_status(status?))
         }
     }
 }
@@ -542,7 +577,7 @@ fn run_logged(mut cmd: Command, args: &[&str], log_path: &Path) -> Result<i32> {
     for pump in pumps {
         let _ = pump.join();
     }
-    let code = status?.code().unwrap_or(-1);
+    let code = exit_code_of_status(status?);
     if code == 0 {
         spinner.finish_and_clear();
         tracing::info!("xbps-src terminó OK (log: {})", log_path.display());
@@ -854,5 +889,26 @@ mod tests {
             content.contains("hola") && content.contains("mundo"),
             "el log debe contener la salida canalizada: {content}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exit_code_mapea_salida_normal_y_senal() {
+        // H-035: ExitStatus crudos (waitpid): exit(n) = n<<8; señal = nº.
+        use std::os::unix::process::ExitStatusExt;
+        use std::process::ExitStatus;
+        assert_eq!(exit_code_of_status(ExitStatus::from_raw(0)), 0);
+        assert_eq!(exit_code_of_status(ExitStatus::from_raw(3 << 8)), 3);
+        assert_eq!(exit_code_of_status(ExitStatus::from_raw(15)), 128 + 15);
+        assert_eq!(exit_code_of_status(ExitStatus::from_raw(2)), 128 + 2);
+    }
+
+    #[test]
+    fn not_found_se_detecta_en_cadena_de_error() {
+        // H-035: run() mapea esto a 127.
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "nope");
+        let err = anyhow::Error::new(io).context("envoltorio");
+        assert!(is_not_found_error(&err));
+        assert!(!is_not_found_error(&anyhow::anyhow!("otra cosa")));
     }
 }
