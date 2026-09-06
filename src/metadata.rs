@@ -223,8 +223,7 @@ mod tests {
 
     fn base_json(pkgname: &str, version: &str, revision: u32, archs_json: &str) -> String {
         format!(
-            r#"{{"format_version":1,"pkgname":"{}","version":"{}","revision":{},"archs":{},"checksum":["sha256:abc123"]}}"#,
-            pkgname, version, revision, archs_json
+            r#"{{"format_version":1,"pkgname":"{pkgname}","version":"{version}","revision":{revision},"archs":{archs_json},"checksum":["sha256:abc123"]}}"#
         )
     }
 
