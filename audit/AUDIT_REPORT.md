@@ -614,7 +614,8 @@
 #### [H-040] Severidad: Low
 - **Módulo:** `src/elevate.rs:60-86`
 - **Título:** Falta de sanitización de entorno en elevación de privilegios
-- **Estado:** PENDIENTE
+- **Resolución:** `sanitize_env` + wrapper en ruta absoluta verificada. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-040)`)
 
 #### [H-041] Severidad: Low
 - **Módulo:** `src/cache.rs:19`, `src/db.rs:27, 51, 68, 83`

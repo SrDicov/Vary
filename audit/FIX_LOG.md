@@ -661,3 +661,17 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Remediación:** `load_vary_conf_aplica_overrides_y_tolera_corrupto` (defaults sin archivo, overrides aplicados, corrupto conserva lo cargado sin abortar) + `expand_home_solo_expande_tilde`.
 - **Validación:** Suite verde + run CI verde.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-040] Falta de sanitización de entorno en elevación de privilegios
+- **Severidad:** Low
+- **Módulo:** `src/elevate.rs`
+- **Commit:** `fix(H-040)` (`git log --oneline --grep="H-040"`)
+- **Descripción del problema:** Los hijos elevados heredaban todo el entorno (`LD_PRELOAD`, `BASH_ENV`...) y el wrapper se resolvía tarde vía `PATH`.
+- **Remediación:**
+  1. `sanitize_env()`: quita `LD_PRELOAD/LD_LIBRARY_PATH/LD_AUDIT/BASH_ENV/ENV/ZDOTDIR/IFS` y fija `PATH=/usr/sbin:/usr/bin:/sbin:/bin` en la rama elevada (sin `env_clear` total para no romper `http_proxy`).
+  2. `resolve()` deja el wrapper en ruta absoluta verificada (con `/` debe ser ejecutable; sin `/` se resuelve contra PATH ahora, no en el exec); `detect()` igual.
+- **Validación:**
+  - Tests ajustados (`/bin/sh` en vez de `/usr/bin/doas`, que quizá no existe) + nuevos (`wrapper_inexistente_falla_en_resolve_no_en_exec`, `wrapper_relativo_se_resuelve_a_absoluto`).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
