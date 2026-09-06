@@ -617,3 +617,24 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Toda la suite ya usaba `Default` en tests: sigue verde = sin regresión.
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-041] Campos muertos y métodos sin uso en DB y caché
+- **Severidad:** Low
+- **Módulo:** `src/db.rs`
+- **Commit:** `fix(H-041, H-042)` (`git log --oneline --grep="H-041"`)
+- **Descripción del problema:** La evidencia citaba líneas viejas (era LMDB). Verificación actual: `CacheIndex::{path,entries}`, `InstalledDb::{path,entries}` y `Entry::install_date` están vivos (migración/backfill/serialización). Realmente muertos: `names()` e `is_empty()` (cero llamadas en todo el repo).
+- **Remediación:** Eliminados `names()` e `is_empty()`. Se conservan `get()`/`get_build_date()` (tests + futuro A5) con su `allow(dead_code)`.
+- **Validación:** Compilación + suite verde (el borrado lo verifica el compilador).
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-042] Hints con comandos inexactos (sin sudo ni -S)
+- **Severidad:** Low
+- **Módulo:** `src/bootstrap.rs`, `src/elevate.rs`
+- **Commit:** `fix(H-041, H-042)` (`git log --oneline --grep="H-042"`)
+- **Descripción del problema:** `xbps-install git` y `xbps-install opendoas` fallan para no-root / índice obsoleto.
+- **Remediación:** `sudo xbps-install -S git` y `sudo xbps-install -S opendoas`.
+- **Validación:** Revisión + CI verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

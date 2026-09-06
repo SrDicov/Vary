@@ -15,8 +15,8 @@
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
 | 🟡 **Medium** | 15 | 15 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-031], [H-032], [H-033], [H-034], [H-035], [H-036], [H-037], [H-038], [H-039]) | 0 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
-| 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **39** | **8** |
+| 🟢 **Low / Info** | 8 | 3 ([H-041], [H-042], [H-047]) | 5 |
+| **TOTAL** | **47** | **41** | **6** |
 
 ---
 
@@ -619,12 +619,14 @@
 #### [H-041] Severidad: Low
 - **Módulo:** `src/cache.rs:19`, `src/db.rs:27, 51, 68, 83`
 - **Título:** Campos muertos (`path`) y métodos no usados en base de datos y caché
-- **Estado:** PENDIENTE
+- **Resolución:** Líneas de la era LMDB; hoy `path`/`entries`/`install_date` viven. Eliminados `names()` e `is_empty()` (cero llamadas). Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-041, H-042)`)
 
 #### [H-042] Severidad: Low
 - **Módulo:** `src/bootstrap.rs:54-57`, `src/elevate.rs:51-55`
 - **Título:** Hints con comandos inexactos (`xbps-install git` sin sudo ni -S)
-- **Estado:** PENDIENTE
+- **Resolución:** `sudo xbps-install -S ...` en ambos hints. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-041, H-042)`)
 
 #### [H-043] Severidad: Low
 - **Módulo:** `src/command_line.rs:303-392`

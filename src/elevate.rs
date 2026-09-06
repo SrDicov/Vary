@@ -50,7 +50,7 @@ pub fn detect() -> Result<String> {
         .ok_or_else(|| {
             anyhow!(
                 "no hay herramienta de elevación de privilegios (busqué sudo, doas y run0 en PATH);\n\
-                 instala una (p. ej. `xbps-install opendoas`) o ejecuta vary como root"
+                 instala una (p. ej. `sudo xbps-install -S opendoas`) o ejecuta vary como root"
             )
         })
 }

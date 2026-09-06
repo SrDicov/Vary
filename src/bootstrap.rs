@@ -58,7 +58,7 @@ pub fn initialize_environment(
     if !git_available(git_bin) {
         bail!(
             "git es requerido por vary pero no está instalado.\n\
-             Instálalo con: xbps-install git"
+             Instálalo con: sudo xbps-install -S git"
         );
     }
 

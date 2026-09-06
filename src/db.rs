@@ -189,11 +189,6 @@ impl InstalledDb {
         self.entries.remove(name).is_some()
     }
 
-    #[allow(dead_code)]
-    pub fn names(&self) -> Vec<String> {
-        self.entries.keys().cloned().collect()
-    }
-
     pub fn retain(&mut self, pred: impl Fn(&str, &Entry) -> bool) {
         self.entries.retain(|name, entry| pred(name, entry));
     }
@@ -207,11 +202,6 @@ impl InstalledDb {
 
     pub fn len(&self) -> usize {
         self.entries.len()
-    }
-
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
     }
 }
 
