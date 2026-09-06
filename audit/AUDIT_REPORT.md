@@ -13,10 +13,10 @@
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
-| 🟡 **Medium** | 15 | 13 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-031], [H-032], [H-033], [H-034], [H-035], [H-038], [H-039]) | 2 |
+| 🟡 **Medium** | 15 | 15 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-031], [H-032], [H-033], [H-034], [H-035], [H-036], [H-037], [H-038], [H-039]) | 0 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **37** | **10** |
+| **TOTAL** | **47** | **39** | **8** |
 
 ---
 
@@ -572,7 +572,8 @@
 - **Título:** Flag CLI `--sudoflags` concatena en vez de sobrescribir flags de `vary.conf`
 - **Evidencia:** `config.sudo_flags.extend(...)` acumula flags en vez de reemplazarlas.
 - **Fix propuesto:** Reemplazar el vector de flags cuando se especifica en CLI.
-- **Estado:** PENDIENTE
+- **Resolución:** Primer `--sudoflags` reemplaza (flag `sudo_flags_from_cli`); repetir acumula. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-036, H-037)`)
 
 ---
 
@@ -581,7 +582,8 @@
 - **Título:** `Config::default()` efectúa I/O al disco del host y causa pánico si `$HOME` no existe
 - **Evidencia:** `Config::default()` invoca `Self::new().expect(...)`.
 - **Fix propuesto:** Implementar un `Default` puramente en memoria sin I/O ni pánicos.
-- **Estado:** PENDIENTE
+- **Resolución:** `in_memory_defaults()`; `new()` añade entorno encima. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-036, H-037)`)
 
 ---
 

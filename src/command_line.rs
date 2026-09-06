@@ -371,8 +371,15 @@ impl Config {
                 let Some(v) = value else {
                     bail!("la opción --sudoflags requiere un valor");
                 };
-                self.sudo_flags
-                    .extend(v.split_whitespace().map(|s| s.to_string()));
+                let flags: Vec<String> = v.split_whitespace().map(|s| s.to_string()).collect();
+                // H-036: como sudo_bin/git/curl, CLI reemplaza vary.conf (la
+                // primera vez); repetir el flag acumula sobre lo de CLI.
+                if !self.sudo_flags_from_cli {
+                    self.sudo_flags = flags;
+                    self.sudo_flags_from_cli = true;
+                } else {
+                    self.sudo_flags.extend(flags);
+                }
             }
             Arg::Long("git") => {
                 let Some(v) = value else {
@@ -686,5 +693,16 @@ mod tests {
                 "{flag} debe rechazarse explicando: {msg}"
             );
         }
+    }
+
+    #[test]
+    fn sudoflags_cli_reemplaza_conf_y_repetir_acumula() {
+        // H-036: simula vary.conf con -E; CLI lo reemplaza, no lo extiende.
+        let mut config = Config::default();
+        config.sudo_flags = vec!["-E".to_string()];
+        parse_args(&mut config, &["-S", "foo", "--sudoflags", "-A"]).expect("parse");
+        assert_eq!(config.sudo_flags, vec!["-A".to_string()]);
+        parse_args(&mut config, &["--sudoflags", "-n"]).expect("parse2");
+        assert_eq!(config.sudo_flags, vec!["-A".to_string(), "-n".to_string()]);
     }
 }

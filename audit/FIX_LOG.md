@@ -591,3 +591,29 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `xbps::tests::exit_code_mapea_salida_normal_y_senal` (ExitStatus crudos unix), `not_found_se_detecta_en_cadena_de_error`, `lib::tests::cli_mal_usado_devuelve_2` (`run()` real con flag desconocido).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-036] Flag CLI `--sudoflags` concatena en vez de sobrescribir
+- **Severidad:** Medium
+- **Módulo:** `src/command_line.rs`, `src/config.rs`, `src/help.rs`, `etc/vary.conf.example`
+- **Commit:** `fix(H-036, H-037)` (`git log --oneline --grep="H-036"`)
+- **Descripción del problema:** Único caso donde CLI extendía en vez de reemplazar (`sudo_bin`/`git`/`curl` reemplazan): imposible quitar un flag de `vary.conf` desde CLI.
+- **Remediación:** `Config.sudo_flags_from_cli`: el primer `--sudoflags` reemplaza, repetirlo acumula sobre lo dado en CLI. Help + ejemplo documentan la semántica.
+- **Validación:**
+  - `command_line::tests::sudoflags_cli_reemplaza_conf_y_repetir_acumula`.
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-037] `Config::default()` con I/O y pánico sin `$HOME`
+- **Severidad:** Medium
+- **Módulo:** `src/config.rs`
+- **Commit:** `fix(H-036, H-037)` (`git log --oneline --grep="H-037"`)
+- **Descripción del problema:** `Default` llamaba a `new().expect()`: leía `$HOME`, `vary.conf` del host, `available_parallelism` y sonda TTY; pánico sin `HOME` y contaminación de tests con la config del desarrollador.
+- **Remediación:** `Config::in_memory_defaults()` (rutas vacías, `makejobs: 1`, `Colors::default()` sin sonda); `Default` lo usa; `new()` parte de ahí y añade entorno real + `load_vary_conf()`. Conducta productiva intacta (`lib.rs` solo usa `new()`).
+- **Validación:**
+  - `config::tests::default_es_puro_sin_io_ni_host`.
+  - Toda la suite ya usaba `Default` en tests: sigue verde = sin regresión.
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

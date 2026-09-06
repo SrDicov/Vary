@@ -32,7 +32,7 @@ pub fn help() {
     println!("    --prefer-binary         Prefer binary repos when available (default)");
     println!("    --no-prefer-binary      Always build from source");
     println!("    --sudo <bin>            privilege escalation tool: sudo, doas or run0 (default: auto-detected; unused as root)");
-    println!("    --sudoflags <flags>     extra flags for the elevation tool");
+    println!("    --sudoflags <flags>     replace vary.conf flags for the elevation tool");
     println!("    --git <bin>             git binary to use");
     println!("    --curl <bin>            curl binary for remote indexes (default: curl)");
     println!();

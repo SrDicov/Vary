@@ -22,7 +22,8 @@ log_level = "info"
 # Equivalente CLI: --sudo <bin>
 #sudo_bin = ""
 
-# Flags extra que se anteponen al wrapper (equivalente CLI: --sudoflags).
+# Flags extra que se anteponen al wrapper. --sudoflags en CLI REEMPLAZA esta
+# lista la primera vez (repetir --sudoflags acumula sobre lo dado en CLI).
 #sudo_flags = []
 
 # Binario curl para descargar índices remotos estilo VUP (index.json).

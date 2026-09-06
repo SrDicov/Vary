@@ -101,6 +101,9 @@ pub struct Config {
 
     pub sudo_bin: String,
     pub sudo_flags: Vec<String>,
+    /// true tras el primer --sudoflags en CLI (H-036: CLI reemplaza vary.conf
+    /// la primera vez; repetir el flag acumula sobre lo ya dado en CLI).
+    pub sudo_flags_from_cli: bool,
     pub git_bin: String,
     /// Override de arquitectura (--arch); si es None se consulta a xbps.
     pub curl_bin: String,
@@ -125,7 +128,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self::new().expect("config defaults")
+        Self::in_memory_defaults()
     }
 }
 
@@ -194,21 +197,17 @@ fn default_dirs(home: &Path) -> (PathBuf, PathBuf, PathBuf) {
 }
 
 impl Config {
-    pub fn new() -> Result<Self> {
-        let home = dirs::home_dir().context("no se pudo determinar el directorio HOME")?;
-        let (cache_dir, data_dir, config_dir) = default_dirs(&home);
-
-        let makejobs = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1);
-
-        let mut config = Config {
+    /// Defaults puros sin I/O ni syscalls (H-037): ni `$HOME`, ni vary.conf,
+    /// ni `available_parallelism`, ni sonda de TTY. Los tests lo usan sin
+    /// contaminarse con el host; `new()` parte de aquí y añade entorno real.
+    fn in_memory_defaults() -> Self {
+        Config {
             op: Op::Default,
             help: false,
             version: false,
             targets: Vec::new(),
             args: Args::default(),
-            color: Colors::from("auto"),
+            color: Colors::default(),
             quiet: false,
             interactive: false,
             no_confirm: false,
@@ -217,21 +216,36 @@ impl Config {
             // Ver crate::elevate.
             sudo_bin: String::new(),
             sudo_flags: Vec::new(),
+            sudo_flags_from_cli: false,
             git_bin: "git".to_string(),
             curl_bin: "curl".to_string(),
             arch_override: None,
-            cache_dir,
-            data_dir,
-            config_dir,
+            cache_dir: PathBuf::new(),
+            data_dir: PathBuf::new(),
+            config_dir: PathBuf::new(),
             log_level: "info".to_string(),
             // Builds secuenciales en Opción A; paralelismo intra-paquete vía makejobs (XBPS_MAKEJOBS).
             max_concurrent_builds: 1,
-            makejobs,
+            makejobs: 1,
             force_rebuild: false,
             ttl_cache_seconds: 3600,
             force_build: false,
             prefer_binary: true,
-        };
+        }
+    }
+
+    pub fn new() -> Result<Self> {
+        let home = dirs::home_dir().context("no se pudo determinar el directorio HOME")?;
+        let (cache_dir, data_dir, config_dir) = default_dirs(&home);
+
+        let mut config = Self::in_memory_defaults();
+        config.cache_dir = cache_dir;
+        config.data_dir = data_dir;
+        config.config_dir = config_dir;
+        config.color = Colors::from("auto");
+        config.makejobs = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
         config.load_vary_conf()?;
         Ok(config)
     }
@@ -368,5 +382,18 @@ mod tests {
         } else {
             std::env::remove_var(key);
         }
+    }
+
+    #[test]
+    fn default_es_puro_sin_io_ni_host() {
+        // H-037: usable sin $HOME, sin vary.conf del host, sin TTY.
+        let c = Config::default();
+        assert!(c.cache_dir.as_os_str().is_empty());
+        assert!(c.data_dir.as_os_str().is_empty());
+        assert!(c.config_dir.as_os_str().is_empty());
+        assert_eq!(c.makejobs, 1);
+        assert!(!c.no_confirm);
+        assert!(c.sudo_flags.is_empty());
+        assert!(c.git_bin == "git");
     }
 }
