@@ -28,7 +28,7 @@ pub(crate) const TEMPLATE_PREFIXES: &[&str] = &["srcpkgs", "pkgs"];
 pub(crate) fn skipped_index_warning(
     kind: &str,
     location: &str,
-    err: impl std::fmt::Display,
+    err: &dyn std::fmt::Display,
 ) -> String {
     format!("advertencia: se ignoró {kind} en {location}: {err:#}")
 }
