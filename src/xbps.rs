@@ -14,7 +14,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 
 const XBPS_QUERY: &str = "xbps-query";
 

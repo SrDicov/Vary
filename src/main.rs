@@ -68,6 +68,9 @@ fn main() {
             vary::shutdown_logging();
             exit(0);
         }
+        // Un panic real puede dejar el cursor oculto del spinner (H-034);
+        // restaurarlo antes del backtrace habitual.
+        vary::restore_terminal();
         default_hook(info);
     }));
 

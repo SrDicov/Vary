@@ -271,8 +271,20 @@ fn observer_cleanup_and_exit(sig: i32) -> ! {
     sweep_stale_tmp_files();
     // 4. Flush de logs antes de una salida que se salta Drop (H-028).
     crate::logging::shutdown();
-    // 5. Recién ahora salir; código clásico 128+signo.
+    // 5. Restaurar terminal (H-034): el spinner de indicatif oculta el cursor
+    // y esta salida se salta su restauración normal.
+    restore_terminal();
+    // 6. Recién ahora salir; código clásico 128+signo.
     std::process::exit(128 + sig);
+}
+
+/// Muestra el cursor y resetea atributos (H-034). Idempotente; fuera de TTY
+/// no emite nada.
+pub fn restore_terminal() {
+    use std::io::{IsTerminal, Write};
+    if std::io::stderr().is_terminal() {
+        let _ = write!(std::io::stderr(), "\x1b[?25h\x1b[0m");
+    }
 }
 
 #[cfg(test)]

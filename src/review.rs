@@ -78,6 +78,13 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
         let _ = stdin.write_all(content.as_bytes());
     }
 
+    // Nota (H-034): el pager NO se registra en signal::CHILDREN a propósito.
+    // El observador mata por GRUPO (-pid) y el pager no es líder de grupo
+    // (compar­te el frontal para recibir SIGINT directo); registrarlo
+    // arriesgaría matar un grupo ajeno por reutilización de pid. El caso
+    // residual (SIGTERM solo a vary con pager abierto) es benigno: el pager
+    // no retiene locks ni estado, solo queda visible hasta que el usuario
+    // salga de él.
     let _ = pager.wait()?;
     Ok(())
 }

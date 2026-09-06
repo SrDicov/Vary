@@ -136,9 +136,11 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
 
     match handle_cmd(&mut config) {
         Err(err) => {
+            // H-035: clasificar ANTES de mover a print_error.
+            let not_found = crate::xbps::is_not_found_error(&err);
             print_error(Style::new(), err);
-            // 127 si falta el binario (git/xbps/…), 1 para el resto (H-035).
-            if crate::xbps::is_not_found_error(&err) {
+            // 127 si falta el binario (git/xbps/…), 1 para el resto.
+            if not_found {
                 127
             } else {
                 1
