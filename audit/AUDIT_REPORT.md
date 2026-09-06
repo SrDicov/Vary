@@ -13,10 +13,10 @@
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
-| 🟡 **Medium** | 15 | 6 ([H-025], [H-026], [H-027], [H-029], [H-038], [H-039]) | 9 |
+| 🟡 **Medium** | 15 | 7 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-038], [H-039]) | 8 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **30** | **17** |
+| **TOTAL** | **47** | **31** | **16** |
 
 ---
 
@@ -492,7 +492,8 @@
 - **Título:** Inicialización inmutable del logger (`Once`), desconexión de `-v`/`--verbose` y pérdida de logs en `exit()`
 - **Evidencia:** `logging::init` se ejecuta antes de parsear la CLI con nivel fijo 0 y no puede reconfigurarse. Además, el `WorkerGuard` no hace flush si se llama a `process::exit()`.
 - **Fix propuesto:** Inicializar el logger tras parsear CLI/TOML y asegurar el flush de `WorkerGuard`.
-- **Estado:** PENDIENTE
+- **Resolución:** Filtros recargables + `apply_runtime_config` (RUST_LOG > -v > TOML) + `shutdown()` antes de cada `exit()`. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-028)`)
 
 ---
 

@@ -62,12 +62,11 @@ fn print_error(color: Style, err: Error) {
 pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
     // Inicializar logging temprano (cache_dir aún no se conoce con precisión,
     // usamos dirs::home_dir fallback; Config::new() lo reconfigura)
-    let _guard = {
+    {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
         let cache = home.join(".cache").join("vary");
-        logging::init(&cache, 0)
-    };
-    let _ = &_guard;
+        logging::init(&cache, 0);
+    }
 
     if debug_enabled() {
         tracing::debug!("VARY_DEBUG activo");
@@ -108,6 +107,9 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
 
     tracing::debug!("config: {config:?}");
 
+    // Niveles finales tras CLI/TOML (H-028): RUST_LOG > -v > log_level.
+    logging::apply_runtime_config(config.verbose, &config.log_level);
+
     // Una sola instancia para lo que muta estado compartido (/etc/xbps.d,
     // masterdir, clones VUR). El guardián vive hasta el final de run().
     // Solo-lectura corre sin lock (H-027).
@@ -139,6 +141,12 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
         }
         Ok(ret) => ret,
     }
+}
+
+/// Suelta el worker de logs (flush) antes de salidas que se saltan `Drop`.
+/// La usa el observador de señales y el hook de pipe roto en `main`.
+pub fn shutdown_logging() {
+    logging::shutdown();
 }
 
 /// H-027: el lock global solo protege operaciones que mutan estado compartido.

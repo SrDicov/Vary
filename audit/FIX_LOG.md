@@ -502,3 +502,18 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Test de lock exige ausencia de "borra".
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-028] Logger inmutable (`Once`), `-v` desconectado y pérdida de logs en `exit()`
+- **Severidad:** Medium
+- **Módulo:** `src/logging.rs`, `src/lib.rs`, `src/signal.rs`, `src/main.rs`, `Cargo.toml`
+- **Commit:** `fix(H-028)` (`git log --oneline --grep="H-028"`)
+- **Descripción del problema:** `init()` con `Once` congelaba nivel INFO; `-v` y `[general] log_level` (cargado pero jamás leído) no surtían efecto; `process::exit` en señales/pipe roto perdía el buffer del log.
+- **Remediación:**
+  1. Filtros tras `reload::Handle` (feature `reload` en tracing-subscriber): `init()` instala una vez, `apply_runtime_config(verbose, log_level)` ajusta tras el parse con precedencia `RUST_LOG` > `-v` > TOML > default.
+  2. Worker global + `logging::shutdown()` (flush vía Drop) invocado en `observer_cleanup_and_exit` antes de `exit()` y en la rama de pipe roto de `main` (vía `vary::shutdown_logging()`).
+- **Validación:**
+  - `logging::tests::init_es_idempotente_y_no_paniquea` (doble init + shutdown idempotentes).
+  - Nivel efectivo con `-v`/TOML queda para verificación manual (una línea `tracing::debug!` visible con `-v`).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

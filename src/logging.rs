@@ -9,29 +9,34 @@
 //!   envuelto en `tracing_appender::non_blocking`, con nivel `DEBUG` o
 //!   superior SIEMPRE, independiente del nivel de stdout.
 //!
-//! # Precedencia de `RUST_LOG`
+//! # Precedencia de niveles
 //!
-//! Si la variable de entorno `RUST_LOG` está presente, su filtro GANA sobre
-//! ambos niveles por defecto: se aplica tal cual a la capa de stdout y a la
-//! de archivo. Sin `RUST_LOG` rigen los niveles descritos arriba.
+//! `RUST_LOG` > CLI (`-v`) > TOML (`[general] log_level`) > default (`info`).
+//! Si `RUST_LOG` está presente, gana sobre todo y las reconfiguraciones
+//! posteriores la respetan (no la pisan).
 //!
-//! [`init`] es idempotente (usa [`std::sync::Once`]): solo la primera llamada
-//! instala las capas; las siguientes no duplican capas y devuelven un
-//! [`LoggingGuard`] vacío. El `main` debe conservar el guardián devuelto por
-//! la primera llamada vivo hasta el final del proceso para garantizar el
-//! flush del archivo (el `Drop` del `WorkerGuard` lo hace).
+//! # Recarga (H-028)
+//!
+//! Los filtros viven tras `reload::Handle`: [`init`] instala una vez y
+//! [`apply_runtime_config`] los ajusta tras parsear CLI/TOML. El worker de
+//! archivo vive en un guardián global; [`shutdown`] lo suelta (flush) antes
+//! de salidas que se saltan `Drop` (`process::exit` en señales/pipe roto).
 
 use std::path::Path;
-use std::sync::Once;
+use std::sync::{Mutex, OnceLock};
 
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
+use tracing_subscriber::{fmt, layer::SubscriberExt, reload, EnvFilter, Layer, Registry};
 
-static INIT: Once = Once::new();
+static HANDLES: OnceLock<(
+    reload::Handle<EnvFilter, Registry>,
+    reload::Handle<EnvFilter, Registry>,
+)> = OnceLock::new();
+static GUARD: Mutex<Option<LoggingGuard>> = Mutex::new(None);
 
 /// Retiene vivo el [`tracing_appender::non_blocking::WorkerGuard`] del logger.
 ///
-/// Su `Drop` apaga el hilo escritor y hace flush del archivo de log; el
-/// llamador debe mantenerlo hasta el final del proceso.
+/// Su `Drop` apaga el hilo escritor y hace flush del archivo de log; vive en
+/// el global `GUARD` hasta [`shutdown`].
 #[derive(Debug)]
 pub struct LoggingGuard {
     _guard: Option<tracing_appender::non_blocking::WorkerGuard>,
@@ -45,10 +50,10 @@ pub struct LoggingGuard {
 ///   siempre registra DEBUG+).
 /// * Si `RUST_LOG` está definida, su filtro gana sobre ambos niveles.
 ///
-/// Idempotente: la primera llamada instala las capas y devuelve un
-/// [`LoggingGuard`] con el worker; las siguientes devuelven un guardián vacío
-/// y no tocan nada.
-pub fn init(cache_dir: &Path, verbose: u8) -> LoggingGuard {
+/// Idempotente: la primera llamada instala las capas y guarda el worker en el
+/// global; las siguientes no duplican nada (pero sí pueden reconfigurar
+/// niveles vía [`apply_runtime_config`]).
+pub fn init(cache_dir: &Path, verbose: u8) {
     let _ = crate::util::ensure_private_dir(cache_dir);
 
     let rust_log = std::env::var("RUST_LOG").ok();
@@ -63,35 +68,72 @@ pub fn init(cache_dir: &Path, verbose: u8) -> LoggingGuard {
         .unwrap_or_else(|| console_default.to_owned());
     let file_spec = rust_log.unwrap_or_else(|| "debug".to_owned());
 
-    let mut guard = LoggingGuard { _guard: None };
+    if HANDLES.get().is_some() {
+        return;
+    }
+    let console_filter =
+        EnvFilter::try_new(&console_spec).unwrap_or_else(|_| EnvFilter::new(console_default));
+    let file_filter = EnvFilter::try_new(&file_spec).unwrap_or_else(|_| EnvFilter::new("debug"));
 
-    INIT.call_once(|| {
-        let console_filter =
-            EnvFilter::try_new(&console_spec).unwrap_or_else(|_| EnvFilter::new(console_default));
-        let file_filter =
-            EnvFilter::try_new(&file_spec).unwrap_or_else(|_| EnvFilter::new("debug"));
+    let (console_filter, console_handle) = reload::Layer::new(console_filter);
+    let (file_filter, file_handle) = reload::Layer::new(file_filter);
 
-        let (log_writer, worker) =
-            tracing_appender::non_blocking(tracing_appender::rolling::daily(cache_dir, "vary.log"));
+    let (log_writer, worker) =
+        tracing_appender::non_blocking(tracing_appender::rolling::daily(cache_dir, "vary.log"));
 
-        let console_layer = fmt::layer()
-            .compact()
-            .without_time()
-            .with_filter(console_filter);
-        let file_layer = fmt::layer()
-            .with_ansi(false)
-            .with_writer(log_writer)
-            .with_filter(file_filter);
+    let console_layer = fmt::layer()
+        .compact()
+        .without_time()
+        .with_filter(console_filter);
+    let file_layer = fmt::layer()
+        .with_ansi(false)
+        .with_writer(log_writer)
+        .with_filter(file_filter);
 
-        let subscriber = tracing_subscriber::registry()
-            .with(console_layer)
-            .with(file_layer);
-        let _ = tracing::subscriber::set_global_default(subscriber);
+    let subscriber = tracing_subscriber::registry()
+        .with(console_layer)
+        .with(file_layer);
+    let _ = tracing::subscriber::set_global_default(subscriber);
 
-        guard._guard = Some(worker);
-    });
+    let _ = HANDLES.set((console_handle, file_handle));
+    if let Ok(mut guard) = GUARD.lock() {
+        *guard = Some(LoggingGuard {
+            _guard: Some(worker),
+        });
+    }
+}
 
-    guard
+/// Reconfigura niveles tras parsear CLI/TOML (H-028).
+/// Precedencia: `RUST_LOG` (si existe, no se toca nada) > `-v` > `log_level`.
+pub fn apply_runtime_config(verbose: u8, log_level: &str) {
+    if std::env::var("RUST_LOG").is_ok() {
+        return;
+    }
+    let console = match verbose {
+        0 => log_level.to_owned(),
+        1 => "debug".to_owned(),
+        _ => "trace".to_owned(),
+    };
+    set_levels(&console, "debug");
+}
+
+/// Ajusta ambos filtros si el logger ya está instalado; no-op seguro si no.
+pub fn set_levels(console: &str, file: &str) {
+    if let Some((console_handle, file_handle)) = HANDLES.get() {
+        let _ = console_handle.modify(|f| {
+            *f = EnvFilter::try_new(console).unwrap_or_else(|_| EnvFilter::new("info"))
+        });
+        let _ = file_handle
+            .modify(|f| *f = EnvFilter::try_new(file).unwrap_or_else(|_| EnvFilter::new("debug")));
+    }
+}
+
+/// Suelta el worker global (flush del archivo). Llamar antes de salidas que
+/// se saltan `Drop` (`process::exit` por señal o pipe roto). Idempotente.
+pub fn shutdown() {
+    if let Ok(mut guard) = GUARD.lock() {
+        drop(guard.take());
+    }
 }
 
 #[cfg(test)]
@@ -101,11 +143,12 @@ mod tests {
     #[test]
     fn init_es_idempotente_y_no_paniquea() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let _primera = init(tmp.path(), 0);
-        let segunda = init(tmp.path(), 2);
-        assert!(
-            segunda._guard.is_none(),
-            "la segunda llamada no debe instalar capas ni retener un worker propio"
-        );
+        init(tmp.path(), 0);
+        init(tmp.path(), 2);
+        // Si llegamos aquí sin panic ni doble instalación, bien. set_levels
+        // sin init previo tampoco debe hacer nada.
+        set_levels("debug", "debug");
+        shutdown();
+        shutdown();
     }
 }

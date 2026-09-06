@@ -269,7 +269,9 @@ fn observer_cleanup_and_exit(sig: i32) -> ! {
     // 3. Borrar nuestros temporales huérfanos (/tmp/vary-*): process::exit
     // abajo se salta los Drop de NamedTempFile (H-016).
     sweep_stale_tmp_files();
-    // 4. Recién ahora salir; código clásico 128+signo.
+    // 4. Flush de logs antes de una salida que se salta Drop (H-028).
+    crate::logging::shutdown();
+    // 5. Recién ahora salir; código clásico 128+signo.
     std::process::exit(128 + sig);
 }
 

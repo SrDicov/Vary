@@ -65,6 +65,7 @@ fn main() {
         };
         if is_broken_pipe {
             // The reader went away; this is expected, not an error.
+            vary::shutdown_logging();
             exit(0);
         }
         default_hook(info);
