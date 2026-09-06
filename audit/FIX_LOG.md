@@ -474,3 +474,15 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `util::tests::ensure_private_dir_crea_con_0700` (modo exacto + idempotencia).
   - Run CI verde en el commit del fix.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-026] Pánico por bandera sin valor al final de `argv`
+- **Severidad:** Medium
+- **Módulo:** `src/command_line.rs:219`
+- **Commit:** `fix(H-026)` (`git log --oneline --grep="H-026"`)
+- **Descripción del problema:** La evidencia citaba `args[i + 1].clone()` con pánico out-of-bounds. El parser actual ya usa `raw.get(idx + 1)` (nunca indexa): el defecto no existe en el árbol.
+- **Remediación:** Sin cambio productivo necesario. Se añade test de regresión que fija el comportamiento: flag trailing sin valor → error limpio "expects a value", sin panic.
+- **Validación:**
+  - `command_line::tests::flag_con_valor_al_final_sin_valor_da_error_limpio`.
+  - Run CI verde en el commit.
+- **Estado:** ✅ CERRADO POR OBSOLESCENCIA (ya resuelto en el árbol; test lo fija)

@@ -13,10 +13,10 @@
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
-| 🟡 **Medium** | 15 | 4 ([H-025], [H-029], [H-038], [H-039]) | 11 |
+| 🟡 **Medium** | 15 | 5 ([H-025], [H-026], [H-029], [H-038], [H-039]) | 10 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **28** | **19** |
+| **TOTAL** | **47** | **29** | **18** |
 
 ---
 
@@ -472,7 +472,8 @@
   ```
 - **Impacto:** `vary -S pkg --sudo` produce un crash con panic en vez de un mensaje de error elegante.
 - **Fix propuesto:** Usar `args.get(i + 1).ok_or_else(...)` con mensaje amigable.
-- **Estado:** PENDIENTE
+- **Resolución:** Obsoleto: el parser usa `raw.get(idx + 1)`; test de regresión lo fija. Ver FIX_LOG.
+- **Estado:** ✅ CERRADO POR OBSOLESCENCIA (Commit `fix(H-026)`)
 
 ---
 

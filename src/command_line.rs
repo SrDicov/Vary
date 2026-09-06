@@ -628,4 +628,18 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn flag_con_valor_al_final_sin_valor_da_error_limpio() {
+        // H-026: el parser usa .get() (nunca indexa argv): error limpio.
+        for args in [&["-S", "foo", "--sudo"] as &[&str], &["-S", "foo", "--git"]] {
+            let mut config = Config::default();
+            let err = parse_args(&mut config, args).unwrap_err();
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("expects a value"),
+                "flag trailing sin valor debe fallar limpio: {msg}"
+            );
+        }
+    }
 }
