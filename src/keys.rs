@@ -86,6 +86,23 @@ pub(crate) fn write_root_file(
     Ok(())
 }
 
+pub fn validate_repository_url(url: &str) -> Result<()> {
+    if url.contains('\n') || url.contains('\r') || url.chars().any(|c| c.is_control()) {
+        bail!("URL de repositorio inválida: contiene saltos de línea o caracteres de control");
+    }
+    let u = url.trim();
+    if u.is_empty() {
+        bail!("URL de repositorio vacía");
+    }
+    if !(u.starts_with("https://") || u.starts_with("http://") || u.starts_with("file://")) {
+        bail!(
+            "URL de repositorio inválida ('{}'): esquema no soportado (debe ser https://, http:// o file://)",
+            u
+        );
+    }
+    Ok(())
+}
+
 /// Prepara el repo binario del VUR para xbps-install: llave + conf.
 ///
 /// Si `expected_fingerprint` (de repos.conf) no coincide con el calculado,
@@ -105,6 +122,7 @@ pub fn setup_binary_repo(
             repo.name
         );
     };
+    validate_repository_url(binary_url)?;
 
     // (2) Llave pública dentro del clon git del VUR
     let Some(key_path) = repo.discover_public_key() else {
@@ -178,6 +196,7 @@ pub fn setup_vup_binary_repo(
     for u in repo_urls {
         let u = u.trim();
         if !u.is_empty() && !urls.contains(&u) {
+            validate_repository_url(u)?;
             urls.push(u);
         }
     }
@@ -357,4 +376,19 @@ mod tests {
         assert!(err_msg.contains("BLOQUEADA (fallo cerrado)"));
         assert!(err_msg.contains("vary --repo rekey repo-test"));
     }
+
+    #[test]
+    fn validate_repository_url_rejects_newlines_and_bad_schemes() {
+        assert!(validate_repository_url("https://repo.voidlinux.org/current").is_ok());
+        assert!(validate_repository_url("http://local.mirror/void").is_ok());
+        assert!(validate_repository_url("file:///var/cache/binpkgs").is_ok());
+
+        assert!(validate_repository_url("https://repo.voidlinux.org\nrepository=https://evil.org").is_err());
+        assert!(validate_repository_url("https://repo.voidlinux.org\r\n").is_err());
+        assert!(validate_repository_url("ftp://repo.voidlinux.org").is_err());
+        assert!(validate_repository_url("ext::sh").is_err());
+        assert!(validate_repository_url("").is_err());
+        assert!(validate_repository_url("   ").is_err());
+    }
 }
+

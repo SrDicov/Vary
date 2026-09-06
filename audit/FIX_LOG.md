@@ -191,7 +191,7 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 ### [H-010] Ausencia de validación con regex estricta en nombres de paquetes CLI y omisión en subpaquetes
 - **Severidad:** High
 - **Módulo:** `src/metadata.rs:105-115,195-205`, `src/install.rs:110,535`, `src/remove.rs:11`, `src/info.rs:20`
-- **Commit:** Pendiente de commit `fix(H-010): strictly validate package target names and subpackage names`
+- **Commit:** `48eb719` (`fix(H-010): strictly validate package target names and subpackage names`)
 - **Descripción del problema:** No se validaban los nombres de los targets recibidos por línea de comandos ni los nombres de subpaquetes (`subpackages[i].pkgname`) contra la especificación de nombres de paquete de Void Linux (`^[a-zA-Z0-9][a-zA-Z0-9._+-]*$`). Nombres que empezaban con punto, guion, o contenían caracteres de control, rutas (`/`) o inyección podían corromper rutas locales o provocar comportamientos erráticos.
 - **Remediación:**
   1. En `src/metadata.rs`, se hizo pública `is_valid_pkgname(n: &str) -> bool`, validando que el primer carácter sea ASCII alfanumérico y que los restantes sean alfanuméricos o `._+-`.
@@ -208,4 +208,23 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `cargo test`
   - `cargo clippy --all-targets -- -D warnings`
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-011] Inyección de directivas XBPS arbitrarias por falta de sanitización de newlines y esquemas inseguros en URLs
+- **Severidad:** High
+- **Módulo:** `src/keys.rs:85-130, 190-205`
+- **Commit:** Pendiente de commit `fix(H-011): sanitize repository URLs and reject newline injection in xbps.d`
+- **Descripción del problema:** Las URLs de repositorios binarios VUR o índices VUP se formateaban directamente en líneas `repository=<url>\n` en archivos bajo `/etc/xbps.d/`. Si una URL contenía saltos de línea (`\n`, `\r`) o esquemas no admitidos por XBPS, se podían inyectar directivas de configuración arbitrarias en el gestor de paquetes de Void Linux o inducir comportamientos inesperados.
+- **Remediación:**
+  1. Se implementó `validate_repository_url(url: &str) -> Result<()>` en `src/keys.rs`, rechazando URLs vacías, con saltos de línea, caracteres de control, o esquemas distintos a `https://`, `http://` o `file://`.
+  2. Se invocó `validate_repository_url` en `setup_binary_repo` antes de registrar la URL en `/etc/xbps.d/`.
+  3. Se invocó `validate_repository_url` en `setup_vup_binary_repo` sobre cada una de las URLs binarias recibidas.
+  4. Se agregó la prueba unitaria `validate_repository_url_rejects_newlines_and_bad_schemes` en `keys::tests`.
+- **Validación:**
+  - `keys::tests::validate_repository_url_rejects_newlines_and_bad_schemes`
+  - `cargo test keys`
+  - `cargo clippy --all-targets -- -D warnings`
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
 
