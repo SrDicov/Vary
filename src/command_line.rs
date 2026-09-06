@@ -698,8 +698,10 @@ mod tests {
     #[test]
     fn sudoflags_cli_reemplaza_conf_y_repetir_acumula() {
         // H-036: simula vary.conf con -E; CLI lo reemplaza, no lo extiende.
-        let mut config = Config::default();
-        config.sudo_flags = vec!["-E".to_string()];
+        let mut config = Config {
+            sudo_flags: vec!["-E".to_string()],
+            ..Config::default()
+        };
         parse_args(&mut config, &["-S", "foo", "--sudoflags", "-A"]).expect("parse");
         assert_eq!(config.sudo_flags, vec!["-A".to_string()]);
         parse_args(&mut config, &["--sudoflags", "-n"]).expect("parse2");
