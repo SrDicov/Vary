@@ -43,6 +43,8 @@ pub struct MountCleanup {
 
 impl MountCleanup {
     /// Constructor con binarios por defecto (`umount`, `fusermount3`).
+    /// Hoy solo lo usan tests (overlays durmientes hasta P1-3).
+    #[allow(dead_code)]
     pub fn new(
         merged: PathBuf,
         sudo_bin: String,

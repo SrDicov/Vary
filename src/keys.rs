@@ -193,6 +193,10 @@ pub fn setup_binary_repo(
 /// y la llave viene ya decodificada del plist del repo (`keys/*.plist`).
 /// Se escriben TODAS las `repository=` necesarias en el mismo conf, que es
 /// lo que xbps espera (un conf admite varias líneas `repository=`).
+/// Deuda API: 8 args (el lint permite 7). El paso correcto es agrupar
+/// elevación en un struct `ElevCtx`, pero eso reescribe ~20 call sites;
+/// queda registrado para hacerlo junto a P1-3, no en este fix.
+#[allow(clippy::too_many_arguments)]
 pub fn setup_vup_binary_repo(
     name: &str,
     repo_urls: &[String],

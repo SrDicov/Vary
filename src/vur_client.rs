@@ -261,7 +261,8 @@ impl VurRepo {
                 .filter_map(|line| line.strip_prefix(subdir.as_str()))
                 .filter(|s| !s.is_empty() && !s.starts_with('.'))
                 .map(|s| s.to_string())
-                .collect())
+                .collect::<Vec<_>>())
+            .map(|top| self.con_nivel_extra(top, prefix))
         } else {
             // Layout flat (como cnr): cada directorio de nivel 1 = paquete potencial
             // Excluir archivos sueltos (README.md, LICENSE, etc.)
@@ -286,6 +287,54 @@ impl VurRepo {
                 .map(|s| s.to_string())
                 .collect())
         }
+    }
+
+    /// Descubrimiento profundo, un nivel extra (A6): en repos con categorías
+    /// (`srcpkgs/<cat>/<pkg>`, estilo VUP/monorepo) las entradas de nivel 1
+    /// son categorías, no paquetes. Con un solo `ls-tree -r` se detectan los
+    /// subdirs con `template`/`.VURINFO` y se listan como `cat/pkg` (forma que
+    /// `load_index` ya sabe abrir). La categoría se retira solo si no trae
+    /// índice propio; sin anidados el resultado es idéntico al anterior.
+    /// Límite documentado: profundidad 2 (una categoría); más hondo sigue
+    /// invisible.
+    fn con_nivel_extra(&self, top: Vec<String>, prefix: &str) -> Vec<String> {
+        let subdir = format!("{prefix}/");
+        let output = match Command::new(&self.git_bin)
+            .arg("-C")
+            .arg(&self.path)
+            .args(["ls-tree", "-r", "--name-only", "HEAD", subdir.as_str()])
+            .output()
+        {
+            Ok(o) if o.status.success() => o,
+            _ => return top,
+        };
+        let mut con_indice: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            for marker in ["template", ".VURINFO"] {
+                if let Some(dir) = line
+                    .strip_suffix(&format!("/{marker}"))
+                    .and_then(|d| d.strip_prefix(subdir.as_str()))
+                {
+                    if !dir.split('/').any(|c| c.is_empty() || c.starts_with('.')) {
+                        con_indice.insert(dir.to_string());
+                    }
+                }
+            }
+        }
+        let mut out: Vec<String> = top
+            .into_iter()
+            .filter(|e| {
+                // Quitar la categoría solo si no es paquete por sí misma.
+                e.contains('/') || con_indice.contains(e.as_str())
+            })
+            .collect();
+        for dir in con_indice {
+            if dir.matches('/').count() == 1 && !out.contains(&dir) {
+                out.push(dir);
+            }
+        }
+        out.sort();
+        out
     }
 
     /// Detecta el prefijo de layout del repo: `srcpkgs`, su alias `pkgs`,
@@ -1581,6 +1630,49 @@ myproject-doc_package() {
             !idx.iter().any(|i| i.pkgname == "broken"),
             "el .VURINFO inválido (revision 0) debe ignorarse con aviso, no abortar"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn lista_nivel_extra_para_categorias() -> Result<()> {
+        // A6: srcpkgs/<cat>/<pkg> se descubre como "cat/pkg"; la categoría
+        // suelta no aparece como paquete fantasma.
+        let origin_tmp = tempfile::tempdir()?;
+        let origin = origin_tmp.path().join("origin");
+        std::fs::create_dir_all(origin.join("srcpkgs/cat/nested"))?;
+        std::fs::write(
+            origin.join("srcpkgs/cat/nested/template"),
+            "pkgname=nested\n",
+        )?;
+        std::fs::create_dir_all(origin.join("srcpkgs/solo"))?;
+        std::fs::write(origin.join("srcpkgs/solo/template"), "pkgname=solo\n")?;
+        run_git(&origin, &["init"])?;
+        run_git(&origin, &["config", "user.email", "test@vary.local"])?;
+        run_git(&origin, &["config", "user.name", "Vary Test"])?;
+        run_git(&origin, &["add", "."])?;
+        run_git(&origin, &["commit", "--no-gpg-sign", "-m", "init"])?;
+        run_git(&origin, &["branch", "-M", "main"])?;
+
+        let clone_tmp = tempfile::tempdir()?;
+        let repo = VurRepo {
+            name: "monorepo".into(),
+            path: clone_tmp.path().join("monorepo"),
+            entry: RepoEntry {
+                url: format!("file://{}/", origin.display()),
+                branch: Some("main".into()),
+                ..Default::default()
+            },
+            git_bin: "git".to_string(),
+        };
+        repo.ensure_cloned()?;
+        assert_eq!(
+            repo.list_packages()?,
+            vec!["cat/nested".to_string(), "solo".to_string()]
+        );
+        let (_cache_dir, mut cache) = fresh_cache()?;
+        let idx = repo.load_index(&mut cache, None)?;
+        assert!(idx.iter().any(|i| i.pkgname == "nested"));
+        assert!(idx.iter().any(|i| i.pkgname == "solo"));
         Ok(())
     }
 }
