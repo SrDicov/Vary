@@ -85,24 +85,54 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
     // marca un flag). Idempotente.
     crate::signal::init();
 
-    // Una sola instancia: protege /etc/xbps.d, la db heed y los mounts.
-    // El guardián vive hasta el final de run() y libera el flock al salir.
-    let _instance_lock = match crate::lock::acquire(&config.cache_dir) {
-        Ok(lock) => lock,
-        Err(err) => {
-            print_error(Style::new(), err);
-            return 1;
+    // Parsear args ANTES del lock (H-027): ayuda/versión y comandos de solo
+    // lectura (-Ss/-Si/--repo list) no deben bloquearse tras otra instancia.
+    let args_owned: Vec<String> = if args.is_empty() {
+        vec!["-Syu".to_string()]
+    } else {
+        args.iter().map(|s| s.as_ref().to_string()).collect()
+    };
+    if let Err(err) = config.parse_args(&args_owned) {
+        print_error(Style::new(), err);
+        return 1;
+    }
+
+    if config.help {
+        help::help();
+        return 0;
+    }
+    if config.version {
+        println!("vary {}", env!("CARGO_PKG_VERSION"));
+        return 0;
+    }
+
+    tracing::debug!("config: {config:?}");
+
+    // Una sola instancia para lo que muta estado compartido (/etc/xbps.d,
+    // masterdir, clones VUR). El guardián vive hasta el final de run().
+    // Solo-lectura corre sin lock (H-027).
+    let _instance_lock = if needs_lock(&config) {
+        match crate::lock::acquire(&config.cache_dir) {
+            Ok(lock) => Some(lock),
+            Err(err) => {
+                print_error(Style::new(), err);
+                return 1;
+            }
         }
+    } else {
+        None
     };
 
     // Barrido de temporales huérfanos de corridas interrumpidas (/tmp/vary-*,
-    // solo uid propio). Tras el lock: imposible borrarle nada a otra instancia.
-    let stale = crate::signal::sweep_stale_tmp_files();
-    if stale > 0 {
-        tracing::debug!("barridos {stale} temporales huérfanos de /tmp");
+    // solo uid propio). Solo con lock: imposible borrarle nada a otra instancia.
+    if _instance_lock.is_some() {
+        let stale = crate::signal::sweep_stale_tmp_files();
+        if stale > 0 {
+            tracing::debug!("barridos {stale} temporales huérfanos de /tmp");
+        }
     }
 
-    match run2(&mut config, args) {
+    match handle_cmd(&mut config) {
         Err(err) => {
             print_error(Style::new(), err);
             1
@@ -111,26 +141,20 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
     }
 }
 
-fn run2<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<i32> {
-    if args.is_empty() {
-        let default: Vec<String> = vec!["-Syu".to_string()];
-        config.parse_args(&default)?;
-    } else {
-        config.parse_args(args)?;
+/// H-027: el lock global solo protege operaciones que mutan estado compartido.
+/// Búsqueda, info, listado de repos, ayuda y versión corren sin lock.
+fn needs_lock(config: &Config) -> bool {
+    if let Some(cmd) = command_line::peek_repo_cmd() {
+        return !matches!(cmd, command_line::RepoCmd::List);
     }
-
-    if config.help {
-        help::help();
-        return Ok(0);
+    match config.op {
+        Op::Remove => true,
+        Op::Default => true, // `vary` pelado o solo flags => -Syu
+        Op::Sync => {
+            // -p aborta antes (H-007); -w descarga (muta caché/masterdir).
+            !(config.args.has_arg("s", "search") || config.args.has_arg("i", "info"))
+        }
     }
-    if config.version {
-        println!("vary {}", env!("CARGO_PKG_VERSION"));
-        return Ok(0);
-    }
-
-    tracing::debug!("config: {config:?}");
-
-    handle_cmd(config)
 }
 
 fn handle_cmd(config: &mut Config) -> Result<i32> {
@@ -204,3 +228,55 @@ mod install;
 mod review;
 mod search;
 mod upgrade;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn solo_lectura_no_requiere_lock_mutacion_si() {
+        // H-027: -Ss/-Si corren sin lock; -S/-Syu/-R y default sí.
+        for (argv, locked) in [
+            (vec!["-Ss", "foo"], false),
+            (vec!["-Si", "foo"], false),
+            (vec!["-S", "foo"], true),
+            (vec!["-Syu"], true),
+            (vec!["-R", "foo"], true),
+            (vec![], true),
+        ] {
+            let mut config = Config::new().expect("config de test");
+            let owned: Vec<String> = if argv.is_empty() {
+                vec!["-Syu".to_string()]
+            } else {
+                argv.iter().map(|s| s.to_string()).collect()
+            };
+            config.parse_args(&owned).expect("parse");
+            assert_eq!(
+                needs_lock(&config),
+                locked,
+                "clasificación de lock para {argv:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn repo_list_no_requiere_lock_add_si() {
+        let mut config = Config::new().expect("config de test");
+        config
+            .parse_args(&["--repo".to_string(), "list".to_string()])
+            .expect("parse");
+        assert!(!needs_lock(&config));
+        crate::command_line::take_repo_cmd();
+
+        let mut config = Config::new().expect("config de test");
+        config
+            .parse_args(&[
+                "--repo".to_string(),
+                "add".to_string(),
+                "https://example.com/v.git".to_string(),
+            ])
+            .expect("parse");
+        assert!(needs_lock(&config));
+        crate::command_line::take_repo_cmd();
+    }
+}

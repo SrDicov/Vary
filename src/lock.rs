@@ -42,13 +42,12 @@ pub fn acquire(cache_dir: &Path) -> Result<InstanceLock> {
             let _ = file.read_to_string(&mut pid);
             let pid = pid.trim();
             anyhow::bail!(
-                "otra instancia de vary está en ejecución{}; si no es así, borra {}",
+                "otra instancia de vary está en ejecución{}; espera a que termine (el lock se libera solo al salir: no borres el archivo)",
                 if pid.is_empty() {
                     String::new()
                 } else {
                     format!(" (pid {pid})")
                 },
-                path.display()
             );
         }
         Err((_, e)) => {
@@ -68,6 +67,10 @@ mod tests {
         let err = acquire(dir.path()).expect_err("segundo lock debe fallar");
         let msg = format!("{err:#}");
         assert!(msg.contains("otra instancia"), "mensaje accionable: {msg}");
+        assert!(
+            !msg.contains("borra"),
+            "nunca sugerir borrar el lock (split-brain): {msg}"
+        );
         assert!(
             msg.contains(&std::process::id().to_string()),
             "el pid ayuda a decidir: {msg}"

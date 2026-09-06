@@ -486,3 +486,19 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `command_line::tests::flag_con_valor_al_final_sin_valor_da_error_limpio`.
   - Run CI verde en el commit.
 - **Estado:** ✅ CERRADO POR OBSOLESCENCIA (ya resuelto en el árbol; test lo fija)
+---
+
+### [H-027] Lock global prematuro + mensaje que induce split-brain
+- **Severidad:** Medium
+- **Módulo:** `src/lib.rs`, `src/command_line.rs`, `src/lock.rs`
+- **Commit:** `fix(H-027)` (`git log --oneline --grep="H-027"`)
+- **Descripción del problema:** (1) `flock` se adquiría antes de parsear: `--help`, `-V`, `-Ss`, `-Si`, `--repo list` se bloqueaban tras otra instancia. (2) El mensaje sugería borrar `vary.lock`; como el flock vive en el inode, borrar+recrear permite doble ejecución (split-brain).
+- **Remediación:**
+  1. Nuevo `command_line::peek_repo_cmd()` (lectura no destructiva del thread-local).
+  2. `run()` parsea primero, atiende help/version sin lock y adquiere el lock solo si `needs_lock()`: mutantes (`-S` con targets, `-Sy/-Su/-Syu`, `-Sw`, `-R`, default, `--repo add/remove/rekey`); solo-lectura (`-Ss`, `-Si`, `--repo list`) corre sin lock. El barrido de temporales corre solo con lock.
+  3. Mensaje sin "borra": el lock se libera solo al salir; el pid orienta.
+- **Validación:**
+  - `lib::tests::solo_lectura_no_requiere_lock_mutacion_si` y `repo_list_no_requiere_lock_add_si` (con limpieza del thread-local).
+  - Test de lock exige ausencia de "borra".
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

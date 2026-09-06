@@ -61,6 +61,12 @@ pub fn take_repo_cmd() -> Option<RepoCmd> {
     REPO_CMD.with(|c| c.borrow_mut().take())
 }
 
+/// Lectura no destructiva del comando `--repo` (H-027): permite decidir si la
+/// operación necesita el lock global antes de que `handle_cmd` lo consuma.
+pub fn peek_repo_cmd() -> Option<RepoCmd> {
+    REPO_CMD.with(|c| c.borrow().clone())
+}
+
 fn set_repo_cmd(cmd: RepoCmd) {
     REPO_CMD.with(|c| *c.borrow_mut() = Some(cmd));
 }

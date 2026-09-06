@@ -13,10 +13,10 @@
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
-| 🟡 **Medium** | 15 | 5 ([H-025], [H-026], [H-029], [H-038], [H-039]) | 10 |
+| 🟡 **Medium** | 15 | 6 ([H-025], [H-026], [H-027], [H-029], [H-038], [H-039]) | 9 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **29** | **18** |
+| **TOTAL** | **47** | **30** | **17** |
 
 ---
 
@@ -482,7 +482,8 @@
 - **Título:** Lockfile adquirido prematuramente bloqueando comandos de solo lectura y mensaje inductor de split-brain
 - **Evidencia:** `lock::acquire` se llama antes de evaluar si el comando es de solo lectura (`--help`, `--version`, `-Ss`), y el mensaje sugiere borrar el lockfile manualmente (lo que destruye la semántica de `flock` e induce split-brain).
 - **Fix propuesto:** Adquirir el lockfile únicamente para operaciones mutantes (`install`, `upgrade`, `remove`, `repo add/remove`) y corregir el mensaje eliminando el consejo de borrar el archivo.
-- **Estado:** PENDIENTE
+- **Resolución:** Parse-antes-del-lock + `needs_lock()` + `peek_repo_cmd()` + mensaje sin "borra". Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-027)`)
 
 ---
 
