@@ -396,4 +396,35 @@ mod tests {
         assert!(c.sudo_flags.is_empty());
         assert!(c.git_bin == "git");
     }
+
+    #[test]
+    fn load_vary_conf_aplica_overrides_y_tolera_corrupto() {
+        // H-044: precedencia archivo→defaults y corrupto-sin-aborto.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut c = Config::default();
+        c.config_dir = dir.path().to_path_buf();
+        c.load_vary_conf().expect("sin conf: Ok con defaults");
+        assert_eq!(c.ttl_cache_seconds, 3600);
+        std::fs::write(
+            dir.path().join("vary.conf"),
+            "[general]\nlog_level = \"debug\"\n[search]\nttl_cache_seconds = 60\n[build]\nmakejobs = 4\n",
+        )
+        .expect("write");
+        c.load_vary_conf().expect("con conf");
+        assert_eq!(c.log_level, "debug");
+        assert_eq!(c.ttl_cache_seconds, 60);
+        assert_eq!(c.makejobs, 4);
+        std::fs::write(dir.path().join("vary.conf"), "esto no es toml = [").expect("write");
+        c.load_vary_conf().expect("corrupto no aborta");
+        assert_eq!(c.log_level, "debug", "lo ya cargado se conserva");
+    }
+
+    #[test]
+    fn expand_home_solo_expande_tilde() {
+        // H-044.
+        let home = dirs::home_dir().expect("home");
+        assert_eq!(expand_home("~/x"), home.join("x"));
+        assert_eq!(expand_home("/abs"), PathBuf::from("/abs"));
+        assert_eq!(expand_home("rel"), PathBuf::from("rel"));
+    }
 }

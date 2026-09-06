@@ -638,3 +638,26 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Remediación:** `sudo xbps-install -S git` y `sudo xbps-install -S opendoas`.
 - **Validación:** Revisión + CI verde.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-043] Banderas `--config`/`--cachedir` tratadas como paquetes posicionales
+- **Severidad:** Low
+- **Módulo:** `src/command_line.rs`
+- **Commit:** `fix(H-043, H-044)` (`git log --oneline --grep="H-043"`)
+- **Descripción del problema:** Flags de rutas pacman (`config/cachedir/dbpath/root/gpgdir/hookdir/logfile/sysroot`, `-b/-r`) tragaban su valor y el token siguiente caía como target a compilar/instalar.
+- **Remediación:** Brazo explícito que rechaza con `bail!` (vary usa `vary.conf` + XDG). Cubre forma `--flag valor` y `--flag=valor` (el bail va antes del check de `forced`).
+- **Validación:**
+  - `command_line::tests::flags_de_rutas_pacman_se_rechazan_no_caen_como_paquetes` (rechazo + ningún `/tmp/` en targets).
+  - Run CI verde en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-044] Cero pruebas de carga TOML y precedencia en `config.rs`
+- **Severidad:** Low
+- **Módulo:** `src/config.rs`
+- **Commit:** `fix(H-043, H-044)` (`git log --oneline --grep="H-044"`)
+- **Descripción del problema:** Solo existía el test XDG de H-021; `load_vary_conf`, `expand_home` y la tolerancia a corrupto sin cobertura.
+- **Remediación:** `load_vary_conf_aplica_overrides_y_tolera_corrupto` (defaults sin archivo, overrides aplicados, corrupto conserva lo cargado sin abortar) + `expand_home_solo_expande_tilde`.
+- **Validación:** Suite verde + run CI verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

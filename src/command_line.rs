@@ -461,6 +461,18 @@ impl Config {
                     "el flag --asdeps/--asexplicit no está soportado: vary instala siempre como explícito"
                 );
             }
+            Arg::Long(
+                "config" | "cachedir" | "dbpath" | "root" | "gpgdir" | "hookdir" | "logfile"
+                | "sysroot",
+            )
+            | Arg::Short('b' | 'r') => {
+                // H-043: estos flags de rutas pacman tragaban el valor y el
+                // token siguiente caía como paquete posicional. vary usa
+                // ~/.config/vary/vary.conf + XDG: rechazar antes que mentir.
+                bail!(
+                    "la opción {arg} no está soportada: vary usa ~/.config/vary/vary.conf y XDG (ver --help)"
+                );
+            }
             // ops
             Arg::Long("sync") | Arg::Short('S') => {
                 self.op = Op::Sync;
@@ -706,5 +718,29 @@ mod tests {
         assert_eq!(config.sudo_flags, vec!["-A".to_string()]);
         parse_args(&mut config, &["--sudoflags", "-n"]).expect("parse2");
         assert_eq!(config.sudo_flags, vec!["-A".to_string(), "-n".to_string()]);
+    }
+
+    #[test]
+    fn flags_de_rutas_pacman_se_rechazan_no_caen_como_paquetes() {
+        // H-043: ni --config ni --cachedir (ni alias con =) pueden colarse
+        // como targets.
+        for argv in [
+            vec!["-S", "foo", "--config", "/tmp/x.conf"],
+            vec!["-S", "foo", "--cachedir=/tmp/x"],
+            vec!["-S", "foo", "--dbpath", "/tmp/db"],
+        ] {
+            let mut config = Config::default();
+            let err = parse_args(&mut config, &argv).unwrap_err();
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("no está soportada"),
+                "{argv:?} debe rechazarse: {msg}"
+            );
+            assert!(
+                config.targets.iter().all(|t| !t.contains("/tmp/")),
+                "ningún valor de ruta debe caer como paquete: {:?}",
+                config.targets
+            );
+        }
     }
 }

@@ -15,8 +15,8 @@
 | 🟠 **High** | 16 | 15 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-019], [H-020], [H-021], [H-022], [H-023], [H-024]) | 1 |
 | 🟡 **Medium** | 15 | 15 ([H-025], [H-026], [H-027], [H-028], [H-029], [H-030], [H-031], [H-032], [H-033], [H-034], [H-035], [H-036], [H-037], [H-038], [H-039]) | 0 |
 | 🟡 **Medium** | 15 | 1 ([H-039]) | 14 |
-| 🟢 **Low / Info** | 8 | 3 ([H-041], [H-042], [H-047]) | 5 |
-| **TOTAL** | **47** | **41** | **6** |
+| 🟢 **Low / Info** | 8 | 5 ([H-041], [H-042], [H-043], [H-044], [H-047]) | 3 |
+| **TOTAL** | **47** | **43** | **4** |
 
 ---
 
@@ -631,12 +631,14 @@
 #### [H-043] Severidad: Low
 - **Módulo:** `src/command_line.rs:303-392`
 - **Título:** Banderas `--config` y `--cachedir` tratadas como paquetes posicionales
-- **Estado:** PENDIENTE
+- **Resolución:** Rechazo explícito con mensaje (vary.conf + XDG). Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-043, H-044)`)
 
 #### [H-044] Severidad: Low
 - **Módulo:** `src/config.rs:1-298`
 - **Título:** Cero pruebas unitarias de carga TOML y precedencia en `config.rs`
-- **Estado:** PENDIENTE
+- **Resolución:** Tests de overrides, corrupto-sin-aborto y `expand_home`. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-043, H-044)`)
 
 #### [H-045] Severidad: Low
 - **Módulo:** `src/masterdir.rs:73, 225`, `src/signal.rs:62, 65`
