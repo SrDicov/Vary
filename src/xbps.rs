@@ -88,7 +88,7 @@ pub fn exit_code_of_status(status: std::process::ExitStatus) -> i32 {
         if let Some(code) = status.code() {
             return code;
         }
-        return 128 + status.signal().unwrap_or(15);
+        128 + status.signal().unwrap_or(15)
     }
     #[cfg(not(unix))]
     {
