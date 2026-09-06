@@ -22,6 +22,11 @@ Backup base: `test/backup/2026-09-06/` + `/root/xbps.d.pre-audit` + `/tmp/vary-{
 
 ## T2 — Matriz CLI (candidata 0.3.0 salvo indicación)
 
+> INCIDENTE 19:31 — corte eléctrico con reinicio (uptime lo confirma, tmpfs vaciado: `/tmp/vary-{cache,config,data}-backup` PERDIDOS).
+> Estado en disco intacto: `/usr/bin/vary` 0.3.0, 4 repos, DB JSON migrada, `test/backup/`, `/root/xbps.d.pre-audit` ✓.
+> Lección persistencia: NO más backups gigantes en tmpfs; valen `test/backup/` + `installed.lmdb.bak` + `vary-0.2.5-bin`.
+> Disco: 2.1G libres/14G → `xbps-remove -O` (443M caché, solo obsoletos) → 2.2G. Política: `df` antes/después de cada build; `target/` (3.0G) se conserva; void-packages+masterdir (1.1G+0.5G) se reutilizan, no duplicar.
+
 | comando | contexto | resultado | tiempo | notas |
 |---|---|---|---|---|
 | `vary -S pkg-que-no-existe-xyz` | resolución | exit=1 + "no encontrado en repos oficiales ni VURs" | ~3s | OK (nota: con pipe a `tail` el `$?` es del pipe — medir sin pipes) |
