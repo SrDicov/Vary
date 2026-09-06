@@ -24,7 +24,7 @@ pub fn remove(config: &Config) -> Result<i32> {
         let mut changed = false;
         for t in &targets {
             // strip version constraints for db key
-            let name = t.split(|c| c == '<' || c == '>' || c == '=' || c == ' ').next().unwrap_or(t);
+            let name = t.split(['<', '>', '=', ' ']).next().unwrap_or(t);
             if db.remove(name) {
                 changed = true;
             }

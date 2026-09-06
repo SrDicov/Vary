@@ -376,9 +376,7 @@ mod tests {
 
     #[test]
     fn rejects_subpackage_named_as_parent() {
-        let json = format!(
-            r#"{{"format_version":1,"pkgname":"foo","version":"1.0","revision":1,"archs":["x86_64"],"checksum":["sha256:aa"],"subpackages":[{{"pkgname":"foo"}}]}}"#
-        );
+        let json = r#"{"format_version":1,"pkgname":"foo","version":"1.0","revision":1,"archs":["x86_64"],"checksum":["sha256:aa"],"subpackages":[{"pkgname":"foo"}]}"#.to_string();
         let err = parse(&json).unwrap_err();
         assert!(
             err.to_string().contains("coincide con el pkgname del padre"),
@@ -388,9 +386,7 @@ mod tests {
 
     #[test]
     fn rejects_empty_subpackage_name() {
-        let json = format!(
-            r#"{{"format_version":1,"pkgname":"foo","version":"1.0","revision":1,"archs":["x86_64"],"checksum":["sha256:aa"],"subpackages":[{{"pkgname":""}}]}}"#
-        );
+        let json = r#"{"format_version":1,"pkgname":"foo","version":"1.0","revision":1,"archs":["x86_64"],"checksum":["sha256:aa"],"subpackages":[{"pkgname":""}]}"#.to_string();
         let err = parse(&json).unwrap_err();
         assert!(
             err.to_string().contains("subpackages[0].pkgname vacío"),

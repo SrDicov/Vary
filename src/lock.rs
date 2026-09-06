@@ -25,6 +25,7 @@ pub fn acquire(cache_dir: &Path) -> Result<InstanceLock> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(&path)
         .with_context(|| format!("abriendo {}", path.display()))?;
 
@@ -34,7 +35,7 @@ pub fn acquire(cache_dir: &Path) -> Result<InstanceLock> {
             let mut file = locked;
             let _ = file.set_len(0);
             let _ = file.write_all(format!("{}\n", std::process::id()).as_bytes());
-            return Ok(InstanceLock { _locked: file });
+            Ok(InstanceLock { _locked: file })
         }
         Err((mut file, nix::errno::Errno::EWOULDBLOCK)) => {
             let mut pid = String::new();

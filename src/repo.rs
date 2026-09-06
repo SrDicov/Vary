@@ -145,7 +145,7 @@ fn repo_list(config: &Config) -> Result<i32> {
         println!("No VURs configured. Add one with: vary --repo add <url>");
         return Ok(0);
     }
-    println!("{:<20} {:<8} {:<45} {}", "NAME", "PRIO", "URL", "BINARY");
+    println!("{:<20} {:<8} {:<45} BINARY", "NAME", "PRIO", "URL");
     for (name, entry) in conf.sorted_by_priority() {
         let prio = entry.priority_or(100);
         let binary = if entry.has_binary() { "yes" } else { "no" };
@@ -215,9 +215,11 @@ mod tests {
     #[test]
     fn repo_add_fails_and_preserves_corrupt_repos_conf() {
         let tmp = tempdir().unwrap();
-        let mut config = Config::default();
-        config.config_dir = tmp.path().to_path_buf();
-        config.data_dir = tmp.path().join("data");
+        let config = Config {
+            config_dir: tmp.path().to_path_buf(),
+            data_dir: tmp.path().join("data"),
+            ..Default::default()
+        };
 
         let conf_path = config.repos_conf_path();
         let bad_content = "[vur.broken\nurl = \nnot valid toml :::";
@@ -242,8 +244,10 @@ mod tests {
     #[test]
     fn repo_remove_fails_on_corrupt_repos_conf() {
         let tmp = tempdir().unwrap();
-        let mut config = Config::default();
-        config.config_dir = tmp.path().to_path_buf();
+        let config = Config {
+            config_dir: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
 
         let conf_path = config.repos_conf_path();
         let bad_content = "[vur.broken\nurl = \nnot valid toml :::";
@@ -262,8 +266,10 @@ mod tests {
     #[test]
     fn repo_list_fails_on_corrupt_repos_conf() {
         let tmp = tempdir().unwrap();
-        let mut config = Config::default();
-        config.config_dir = tmp.path().to_path_buf();
+        let config = Config {
+            config_dir: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
 
         let conf_path = config.repos_conf_path();
         let bad_content = "[vur.broken\nurl = \nnot valid toml :::";

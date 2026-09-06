@@ -277,7 +277,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         for item in &plan.builds {
             println!("  {}/{}", item.name, item.info.pkgver());
         }
-        println!("\n{}", c.warning.paint(&format!("Builds son secuenciales (paralelismo vía XBPS_MAKEJOBS={})", config.makejobs)));
+        println!("\n{}", c.warning.paint(format!("Builds son secuenciales (paralelismo vía XBPS_MAKEJOBS={})", config.makejobs)));
     }
     println!();
 

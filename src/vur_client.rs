@@ -481,16 +481,15 @@ impl VurRepo {
         if dest.join(".vur_projection_marker").exists() {
             std::fs::remove_dir_all(&dest).with_context(|| format!("no se pudo eliminar proyección {}", dest.display()))?;
             // Restaurar template oficial si este paquete pertenece al árbol maestro
-            if master_srcpkgs.join(pkgname).symlink_metadata().is_err() {
-                if master_srcpkgs.parent().and_then(|p| p.file_name()).map(|n| n == "void-packages").unwrap_or(false)
-                    || master_srcpkgs.join("../.git").exists()
+            if master_srcpkgs.join(pkgname).symlink_metadata().is_err()
+                && (master_srcpkgs.parent().and_then(|p| p.file_name()).map(|n| n == "void-packages").unwrap_or(false)
+                    || master_srcpkgs.join("../.git").exists())
                 {
                     let _ = Command::new(&self.git_bin)
                         .args(["checkout", "--", &format!("srcpkgs/{}", pkgname)])
                         .current_dir(master_srcpkgs.parent().unwrap_or(Path::new(".")))
                         .output();
                 }
-            }
         } else if dest.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false) {
             if let Ok(target) = std::fs::read_link(&dest) {
                 let abs = if target.is_absolute() { target } else { dest.parent().unwrap().join(target) };
@@ -601,19 +600,18 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             continue;
         }
         // Detectar y advertir ruidosamente sobre constructos condicionales por arquitectura (A2)
-        if trimmed.starts_with("case ") || trimmed.starts_with("if ") || trimmed.starts_with("elif ") {
-            if trimmed.contains("XBPS_TARGET_") || trimmed.contains("XBPS_MACHINE") || trimmed.contains("XBPS_ARCH") {
+        if (trimmed.starts_with("case ") || trimmed.starts_with("if ") || trimmed.starts_with("elif "))
+            && (trimmed.contains("XBPS_TARGET_") || trimmed.contains("XBPS_MACHINE") || trimmed.contains("XBPS_ARCH")) {
                 tracing::warn!(
                     "{}: constructo condicional por arquitectura detectado ('{}'); la extracción estática puede ser incompleta",
                     debug_path, trimmed
                 );
             }
-        }
         // Ignorar definiciones de funciones y bloques shell
         if trimmed.starts_with("do_") || trimmed.starts_with("pre_") || trimmed.starts_with("post_") || trimmed.starts_with("}") || trimmed.starts_with("{") {
             // Si es inicio de función, saltar hasta }
             if trimmed.contains("()") {
-                while let Some(l) = lines.next() {
+                for l in lines.by_ref() {
                     if l.trim() == "}" { break; }
                 }
             }
@@ -659,7 +657,7 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             if let Some(hash) = val.find(" #") {
                 // Verificar que no esté dentro de comillas
                 let before = &val[..hash];
-                if before.matches('"').count() % 2 == 0 && before.matches('\'').count() % 2 == 0 {
+                if before.matches('"').count().is_multiple_of(2) && before.matches('\'').count().is_multiple_of(2) {
                     val.truncate(hash);
                     val = val.trim().to_string();
                 }
@@ -865,7 +863,8 @@ mod tests {
         assert_eq!(idx2.len(), 1, "la segunda lectura debe venir de caché");
 
         let master = fx._clone_tmp.path().join("master");
-        for name in ["hello"] {
+        {
+            let name = "hello";
             repo.materialize_pkg(name)?;
             repo.project_pkg(&master, name, false)?;
         }
@@ -886,7 +885,8 @@ mod tests {
         std::fs::create_dir_all(&externo)?;
         std::os::unix::fs::symlink(&externo, master.join("externo"))?;
 
-        for name in ["hello"] {
+        {
+            let name = "hello";
             repo.unproject_pkg(&master, name)?;
         }
         assert!(!dest.exists(), "la proyección del repo debe eliminarse");

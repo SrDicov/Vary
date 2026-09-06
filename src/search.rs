@@ -66,7 +66,7 @@ pub fn search(config: &Config) -> Result<i32> {
                     pkgver: p.pkgver.clone(),
                     desc,
                     rank: Rank::Official,
-                    repo: repo_raw.is_empty().then(|| "official".to_string()).unwrap_or(repo_raw),
+                    repo: if repo_raw.is_empty() { "official".to_string() } else { repo_raw },
                 });
             }
         }
@@ -91,10 +91,7 @@ pub fn search(config: &Config) -> Result<i32> {
             continue;
         }
         let infos = if cloned {
-            match repo.load_index(&mut cache, ttl) {
-                Ok(v) => v,
-                Err(_) => Vec::new(),
-            }
+            repo.load_index(&mut cache, ttl).unwrap_or_default()
         } else {
             Vec::new()
         };

@@ -134,7 +134,7 @@ pub fn unregister_child(pid: u32) {
 
 extern "C" fn on_signal(sig: nix::libc::c_int) {
     // Único trabajo permitido aquí: registrar la señal (atómico).
-    GOT_SIGNAL.store(sig as i32, Ordering::SeqCst);
+    GOT_SIGNAL.store(sig, Ordering::SeqCst);
 }
 
 fn install_handlers() {
