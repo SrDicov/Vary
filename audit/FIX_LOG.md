@@ -9,19 +9,6 @@
 
 ---
 
-### [H-047] Archivo residual `guia` en la raíz reubicado a `docs/CONTRATO.md`
-- **Severidad:** Info
-- **Módulo:** `guia` → `docs/CONTRATO.md`
-- **Commit:** `fix(H-047)` (`git log --oneline --grep="H-047"`)
-- **Descripción del problema:** Archivo de 29 KB en la raíz fuera de cualquier convención de layout. Contenido verificado: es el contrato original (análisis comparativo vary/vuru/vura/vouru, base de COMPLIANCE_MATRIX), por lo que se mueve, no se elimina.
-- **Remediación:**
-  1. Reubicación a `docs/CONTRATO.md`.
-  2. Actualizada la entrada H-047 en `AUDIT_REPORT.md` (módulo + resolución + estado). Sin otras referencias a la ruta vieja en el repo (verificado con grep en README, docs, src, etc.).
-- **Validación:** Commit docs-only (exento de CI por paths-ignore); verificación de ausencia de referencias rotas.
-- **Estado:** ✅ CORREGIDO Y VALIDADO
-
----
-
 Este documento registra cronológicamente cada corrección atómica realizada sobre el código de `vary`, vinculada a su hallazgo, commit y validación.
 
 ---
@@ -332,3 +319,34 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 
 
 
+---
+
+### [H-018] Supresión silenciosa de errores con `if let Ok(...)` en lectura y proyección de plantillas VUR
+- **Severidad:** High
+- **Módulo:** `src/vur_client.rs` (índice git-show + fallback en disco + `project_pkg` + `copy_dir_recursive`)
+- **Commit:** `fix(H-018)` (`git log --oneline --grep="H-018"`)
+- **Descripción del problema:** `if let Ok(...)` descartaba en silencio plantillas/.VURINFO con errores de sintaxis o I/O, reportando "paquete no existe" y ocultando la causa raíz.
+- **Remediación:**
+  1. Convertidos todos los `if let Ok` a `match` explícito con rama `Err`.
+  2. Criterio duro: el aviso por índice/plantilla inválida va a **stderr vía `eprintln!`**, no solo a tracing (la capa de consola escribe a stdout y en tests no hay subscriber: repetir `warn!` habría repetido el bug de invisibilidad).
+  3. Mensaje construido por `skipped_index_warning()` (función pura: kind + ubicación + causa), testeable sin capturar stderr.
+  4. Ausencias normales (sin `.VURINFO` donde se espera fallback) quedan en `tracing::trace!`, sin ruido al usuario.
+  5. `copy_dir_recursive`: `read_link` propaga contexto en vez de saltar symlinks en silencio.
+- **Validación:**
+  - `vur_client::tests::skipped_index_warning_mentions_kind_location_and_cause` (texto exacto que ve el usuario en stderr).
+  - `vur_client::tests::load_index_ignora_vurinfo_invalido_sin_abortar` (fixture git real: `.VURINFO` con `revision: 0` se ignora, `hello` sigue cargando).
+  - Run CI verde (fmt + clippy + test) en el commit del fix.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+---
+
+### [H-047] Archivo residual `guia` en la raíz reubicado a `docs/CONTRATO.md`
+- **Severidad:** Info
+- **Módulo:** `guia` → `docs/CONTRATO.md`
+- **Commit:** `fix(H-047)` (`git log --oneline --grep="H-047"`)
+- **Descripción del problema:** Archivo de 29 KB en la raíz fuera de cualquier convención de layout. Contenido verificado: es el contrato original (análisis comparativo vary/vuru/vura/vouru, base de COMPLIANCE_MATRIX), por lo que se mueve, no se elimina.
+- **Remediación:**
+  1. Reubicación a `docs/CONTRATO.md`.
+  2. Actualizada la entrada H-047 en `AUDIT_REPORT.md` (módulo + resolución + estado). Sin otras referencias a la ruta vieja en el repo (verificado con grep en README, docs, src, etc.).
+- **Validación:** Commit docs-only (exento de CI por paths-ignore); verificación de ausencia de referencias rotas.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

@@ -20,6 +20,19 @@ pub struct VurRepo {
 /// como voiders-community/repository. "" (ausente) = repo flat.
 pub(crate) const TEMPLATE_PREFIXES: &[&str] = &["srcpkgs", "pkgs"];
 
+/// Construye el aviso al usuario cuando un índice o plantilla VUR se descarta
+/// por inválido (H-018). Función pura para poder testear el texto exacto; los
+/// emisores usan `eprintln!` (stderr) para garantizar que llegue a la terminal
+/// aunque el subscriber de tracing no esté configurado o filtre por nivel
+/// (la capa de consola escribe a stdout y en tests no hay subscriber).
+pub(crate) fn skipped_index_warning(
+    kind: &str,
+    location: &str,
+    err: impl std::fmt::Display,
+) -> String {
+    format!("advertencia: se ignoró {kind} en {location}: {err:#}")
+}
+
 pub fn is_safe_git_url(url: &str) -> bool {
     if url.contains('\n') || url.contains('\r') || url.chars().any(|c| c.is_control()) {
         return false;
@@ -396,27 +409,41 @@ impl VurRepo {
             } else {
                 format!("{prefix}/{pkg}/.VURINFO")
             };
-            if let Ok(text) = self.git_show_file(&vurinfo_path) {
-                files_seen += 1;
-                match metadata::parse(&text) {
-                    Ok(info) => packages.push(info),
-                    Err(err) => tracing::warn!(
-                        ".VURINFO inválido ignorado en {}:{}: {err:#}",
-                        self.name,
-                        vurinfo_path
-                    ),
+            match self.git_show_file(&vurinfo_path) {
+                Ok(text) => {
+                    files_seen += 1;
+                    match metadata::parse(&text) {
+                        Ok(info) => packages.push(info),
+                        Err(err) => {
+                            let warning = skipped_index_warning(
+                                ".VURINFO",
+                                &format!("{}:{vurinfo_path}", self.name),
+                                &err,
+                            );
+                            eprintln!("{warning}");
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::trace!("sin .VURINFO en {}:{vurinfo_path}: {err:#}", self.name);
                 }
             }
         }
 
         // Intentar .VURINFO raíz (array de paquetes)
-        if let Ok(text) = self.git_show_file(".VURINFO") {
-            files_seen += 1;
-            match metadata::parse_many(&text) {
-                Ok(mut infos) => packages.append(&mut infos),
-                Err(err) => {
-                    tracing::warn!(".VURINFO raíz inválido ignorado en {}: {err:#}", self.name)
+        match self.git_show_file(".VURINFO") {
+            Ok(text) => {
+                files_seen += 1;
+                match metadata::parse_many(&text) {
+                    Ok(mut infos) => packages.append(&mut infos),
+                    Err(err) => {
+                        let warning = skipped_index_warning(".VURINFO raíz", &self.name, &err);
+                        eprintln!("{warning}");
+                    }
                 }
+            }
+            Err(err) => {
+                tracing::trace!("sin .VURINFO raíz en {}: {err:#}", self.name);
             }
         }
 
@@ -428,18 +455,29 @@ impl VurRepo {
                 } else {
                     format!("{prefix}/{pkg}/template")
                 };
-                if let Ok(text) = self.git_show_file(&tmpl_path) {
-                    files_seen += 1;
-                    match parse_template_text(&text, &format!("{}:{}", self.name, tmpl_path)) {
-                        Ok(info) => {
-                            tracing::debug!("template parseado {} -> {}", tmpl_path, info.pkgname);
-                            packages.push(info);
+                match self.git_show_file(&tmpl_path) {
+                    Ok(text) => {
+                        files_seen += 1;
+                        match parse_template_text(&text, &format!("{}:{tmpl_path}", self.name)) {
+                            Ok(info) => {
+                                tracing::debug!(
+                                    "template parseado {tmpl_path} -> {}",
+                                    info.pkgname
+                                );
+                                packages.push(info);
+                            }
+                            Err(err) => {
+                                let warning = skipped_index_warning(
+                                    "template",
+                                    &format!("{}:{tmpl_path}", self.name),
+                                    &err,
+                                );
+                                eprintln!("{warning}");
+                            }
                         }
-                        Err(err) => tracing::warn!(
-                            "template inválido ignorado en {}:{}: {err:#}",
-                            self.name,
-                            tmpl_path
-                        ),
+                    }
+                    Err(err) => {
+                        tracing::trace!("sin template en {}:{tmpl_path}: {err:#}", self.name);
                     }
                 }
             }
@@ -483,29 +521,59 @@ impl VurRepo {
                     .map(|p| self.path.join(p))
                     .chain(std::iter::once(self.path.clone()))
                 {
-                    if let Ok(entries) = std::fs::read_dir(&base) {
-                        for entry in entries.flatten() {
-                            let p = entry.path();
-                            if p.is_dir() {
-                                if let Ok(text) = std::fs::read_to_string(p.join("template")) {
-                                    if let Ok(info) = parse_template_text(
-                                        &text,
-                                        p.join("template").to_string_lossy().as_ref(),
-                                    ) {
-                                        if info.pkgname == pkgname
-                                            || info.subpackages.iter().any(|s| s.pkgname == pkgname)
-                                        {
-                                            found = Some(p);
-                                            break;
+                    match std::fs::read_dir(&base) {
+                        Ok(entries) => {
+                            for entry in entries.flatten() {
+                                let p = entry.path();
+                                if p.is_dir() {
+                                    let tmpl = p.join("template");
+                                    if tmpl.is_file() {
+                                        match std::fs::read_to_string(&tmpl) {
+                                            Ok(text) => match parse_template_text(
+                                                &text,
+                                                &tmpl.to_string_lossy(),
+                                            ) {
+                                                Ok(info) => {
+                                                    if info.pkgname == pkgname
+                                                        || info
+                                                            .subpackages
+                                                            .iter()
+                                                            .any(|s| s.pkgname == pkgname)
+                                                    {
+                                                        found = Some(p);
+                                                        break;
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    let warning = skipped_index_warning(
+                                                        "plantilla",
+                                                        &tmpl.display().to_string(),
+                                                        &err,
+                                                    );
+                                                    eprintln!("{warning}");
+                                                }
+                                            },
+                                            Err(err) => {
+                                                let warning = skipped_index_warning(
+                                                    "plantilla ilegible",
+                                                    &tmpl.display().to_string(),
+                                                    &err,
+                                                );
+                                                eprintln!("{warning}");
+                                            }
                                         }
                                     }
-                                }
-                                if p.file_name().and_then(|n| n.to_str()) == Some(pkgname) {
-                                    found = Some(p);
-                                    break;
+                                    if p.file_name().and_then(|n| n.to_str()) == Some(pkgname) {
+                                        found = Some(p);
+                                        break;
+                                    }
                                 }
                             }
                         }
+                        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+                            tracing::warn!("error al leer directorio {}: {err:#}", base.display());
+                        }
+                        _ => {}
                     }
                     if found.is_some() {
                         break;
@@ -621,10 +689,10 @@ impl VurRepo {
             if ft.is_dir() {
                 Self::copy_dir_recursive(&src_path, &dest_path)?;
             } else if ft.is_symlink() {
-                if let Ok(target) = std::fs::read_link(&src_path) {
-                    std::os::unix::fs::symlink(target, &dest_path)
-                        .with_context(|| format!("symlink {}", dest_path.display()))?;
-                }
+                let target = std::fs::read_link(&src_path)
+                    .with_context(|| format!("leyendo symlink {}", src_path.display()))?;
+                std::os::unix::fs::symlink(target, &dest_path)
+                    .with_context(|| format!("creando symlink {}", dest_path.display()))?;
             } else {
                 std::fs::copy(&src_path, &dest_path).with_context(|| {
                     format!("copiando {} -> {}", src_path.display(), dest_path.display())
@@ -1452,6 +1520,52 @@ myproject-doc_package() {
         assert_eq!(doc.short_desc.as_deref(), Some("My awesome documentation"));
         assert!(doc.depends.is_empty());
 
+        Ok(())
+    }
+
+    #[test]
+    fn skipped_index_warning_mentions_kind_location_and_cause() {
+        let msg = skipped_index_warning(
+            "template",
+            "mi-repo:srcpkgs/foo/template",
+            &anyhow::anyhow!("pkgname ausente"),
+        );
+        assert!(
+            msg.contains("template"),
+            "el aviso debe nombrar qué se ignoró: {msg}"
+        );
+        assert!(
+            msg.contains("mi-repo:srcpkgs/foo/template"),
+            "el aviso debe ubicar el origen: {msg}"
+        );
+        assert!(
+            msg.contains("pkgname ausente"),
+            "el aviso debe explicar la causa: {msg}"
+        );
+    }
+
+    const BROKEN_VURINFO: &str = r#"{"format_version":1,"pkgname":"broken","version":"1.0","revision":0,"archs":["x86_64"]}"#;
+
+    #[test]
+    fn load_index_ignora_vurinfo_invalido_sin_abortar() -> Result<()> {
+        let fx = setup_repo(&[])?;
+        let broken_dir = fx.origin.join("srcpkgs/broken");
+        std::fs::create_dir_all(&broken_dir)?;
+        std::fs::write(broken_dir.join(".VURINFO"), BROKEN_VURINFO)?;
+        run_git(&fx.origin, &["add", "."])?;
+        run_git(&fx.origin, &["commit", "--no-gpg-sign", "-m", "broken"])?;
+
+        fx.repo.ensure_cloned()?;
+        let (_cache_dir, mut cache) = fresh_cache()?;
+        let idx = fx.repo.load_index(&mut cache, None)?;
+        assert!(
+            idx.iter().any(|i| i.pkgname == "hello"),
+            "el paquete válido debe seguir cargando"
+        );
+        assert!(
+            !idx.iter().any(|i| i.pkgname == "broken"),
+            "el .VURINFO inválido (revision 0) debe ignorarse con aviso, no abortar"
+        );
         Ok(())
     }
 }

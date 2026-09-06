@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 8 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-017], [H-022]) | 8 |
+| 🟠 **High** | 16 | 9 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-017], [H-018], [H-022]) | 7 |
 | 🟡 **Medium** | 15 | 0 | 15 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **17** | **30** |
+| **TOTAL** | **47** | **18** | **29** |
 
 ---
 
@@ -350,7 +350,8 @@
 - **Impacto:** Si una plantilla tiene un error de sintaxis o formato, el sistema lo descarta en silencio y reporta que el paquete "no existe en el repositorio", ocultando la causa raíz del fallo al usuario.
 - **Fix propuesto:** Reportar advertencias descriptivas visibles en consola cuando una plantilla falle en parsear.
 - **Validación:** Test con template con sintaxis rota verificando que emite un warning claro.
-- **Estado:** PENDIENTE
+- **Resolución:** `match` explícito en todas las lecturas; aviso a stderr vía `eprintln!` con texto construido por `skipped_index_warning()` (testeado); ausencias normales en `trace!`; `read_link` con contexto. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-018)`)
 
 ---
 
