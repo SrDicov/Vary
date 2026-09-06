@@ -13,18 +13,52 @@ use crate::reposconf::RepoEntry;
 use crate::util::confirm;
 use crate::vur_client::VurRepo;
 use anyhow::{bail, Context, Result};
+use sha2::{Digest, Sha256};
 
 
 pub fn keys_dir() -> &'static str {
     "/etc/xbps.d/keys"
 }
 
-pub fn repo_conf_path(name: &str) -> String {
-    format!("/etc/xbps.d/20-vur-{}.conf", name)
+/// Valida estrictamente el nombre de un repositorio para prevenir path traversal
+/// o sobreescritura de archivos de configuración de sistema oficiales.
+pub fn validate_repo_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        bail!("el nombre del repositorio no puede estar vacío");
+    }
+    let first = name.chars().next().unwrap();
+    if !first.is_ascii_alphanumeric() {
+        bail!(
+            "el nombre del repositorio '{}' debe comenzar con un carácter alfanumérico",
+            name
+        );
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-') {
+        bail!(
+            "el nombre del repositorio '{}' contiene caracteres inválidos (solo a-z, 0-9, ., _, -)",
+            name
+        );
+    }
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        bail!(
+            "intento de path traversal detectado en el nombre del repositorio '{}'",
+            name
+        );
+    }
+    if name.starts_with("00-") || name == "keys" {
+        bail!("nombre de repositorio reservado o no permitido: '{}'", name);
+    }
+    Ok(())
 }
 
-pub fn key_dest_path(name: &str) -> String {
-    format!("{}/vary-vur-{}.pem", keys_dir(), name)
+pub fn repo_conf_path(name: &str) -> Result<String> {
+    validate_repo_name(name)?;
+    Ok(format!("/etc/xbps.d/20-vur-{}.conf", name))
+}
+
+pub fn key_dest_path(name: &str) -> Result<String> {
+    validate_repo_name(name)?;
+    Ok(format!("{}/vary-vur-{}.pem", keys_dir(), name))
 }
 
 pub(crate) fn write_root_file(
@@ -110,13 +144,14 @@ pub fn setup_binary_repo(
     // (4) Copiar llave a /etc/xbps.d/keys/
     let pem = std::fs::read_to_string(&key_path)
         .with_context(|| format!("leyendo {}", key_path.display()))?;
-    let dest_key = key_dest_path(&repo.name);
+    let dest_key = key_dest_path(&repo.name)?;
     write_root_file(&pem, &dest_key, "644", sudo_bin, sudo_flags)?;
 
     // (5) Registrar el repositorio binario
     let conf = format!("repository={}\n", binary_url);
-    write_root_file(&conf, &repo_conf_path(&repo.name), "644", sudo_bin, sudo_flags)?;
-    tracing::info!("repositorio binario '{}' registrado en {}", repo.name, repo_conf_path(&repo.name));
+    let conf_path = repo_conf_path(&repo.name)?;
+    write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
+    tracing::info!("repositorio binario '{}' registrado en {}", repo.name, conf_path);
     Ok(())
 }
 
@@ -150,44 +185,55 @@ pub fn setup_vup_binary_repo(
         );
     }
 
-    // Fingerprint sobre un temporal (reutiliza el cálculo estándar PEM→SHA256).
-    let tmp = tempfile::NamedTempFile::new().context("creando temporal para la llave")?;
-    std::fs::write(tmp.path(), key_pem).context("escribiendo llave temporal")?;
-    let fp = VurRepo::fingerprint_sha256(tmp.path())?;
+    // (1) Fingerprint de la llave recibida
+    let der = crate::vur_client::decode_pem_body(key_pem)?;
+    let digest = Sha256::digest(&der);
+    let fp = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(":");
 
     if let Some(expected) = entry.key_fingerprint.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        if expected.to_lowercase() != fp.to_lowercase() {
+        let expected_norm = expected.to_lowercase();
+        let fp_norm = fp.to_lowercase();
+        if expected_norm != fp_norm {
             bail!(
-                "fingerprint de llave del repo '{}' NO coincide:\n  esperado (repos.conf): {}\n  recibido:              {}\n\
+                "fingerprint de llave del repo VUP '{}' NO coincide:\n  esperado (repos.conf): {}\n  recibido:              {}\n\
                  Si el mantenedor rotó la llave legítimamente, ejecuta: vary --repo rekey {}",
                 name, expected, fp, name
             );
         }
     } else {
         tracing::warn!(
-            "el repo '{}' no declara key_fingerprint en repos.conf; verifica visualmente",
+            "el repo VUP '{}' no declara key_fingerprint en repos.conf; verifica visualmente",
             name
         );
     }
-    println!("Repo VUP '{}': llave pública verificada", name);
+
+    println!("Repo VUP '{}': llave pública del índice", name);
     println!("  SHA256: {}", fp);
+    println!("  binary repos ({} urls):", urls.len());
     for u in &urls {
-        println!("  binary repo: {}", u);
+        println!("    {}", u);
     }
     if !confirm("¿Confiás en esta llave y deseas registrar estos repositorios binarios?", no_confirm)?
     {
-        bail!("registro de repositorio binario cancelado por el usuario");
+        bail!("registro de repositorios binarios cancelado por el usuario");
     }
 
-    let dest_key = key_dest_path(name);
+    // (2) Copiar llave a /etc/xbps.d/keys/
+    let dest_key = key_dest_path(name)?;
     write_root_file(key_pem, &dest_key, "644", sudo_bin, sudo_flags)?;
 
+    // (3) Registrar el conf con todas las URLs
     let mut conf = String::new();
-    for u in &urls {
-        conf.push_str(&format!("repository={}\n", u));
+    for url in urls {
+        conf.push_str(&format!("repository={}\n", url));
     }
-    write_root_file(&conf, &repo_conf_path(name), "644", sudo_bin, sudo_flags)?;
-    tracing::info!("repositorios binarios '{}' registrados en {}", name, repo_conf_path(name));
+    let conf_path = repo_conf_path(name)?;
+    write_root_file(&conf, &conf_path, "644", sudo_bin, sudo_flags)?;
+    tracing::info!("repositorios binarios '{}' registrados en {}", name, conf_path);
     Ok(())
 }
 
@@ -197,7 +243,10 @@ pub fn teardown_binary_repo(
     sudo_bin: &str,
     sudo_flags: &[String],
 ) -> Result<()> {
-    for dest in [key_dest_path(name), repo_conf_path(name)] {
+    validate_repo_name(name)?;
+    let key_dest = key_dest_path(name)?;
+    let conf_dest = repo_conf_path(name)?;
+    for dest in [key_dest, conf_dest] {
         match std::fs::metadata(&dest) {
             Ok(_) => {
                 let status = crate::elevate::elevate(sudo_bin, sudo_flags, "rm")?
@@ -222,8 +271,19 @@ mod tests {
 
     #[test]
     fn rutas_derivadas_son_correctas() {
-        assert_eq!(repo_conf_path("mi-repo"), "/etc/xbps.d/20-vur-mi-repo.conf");
-        assert_eq!(key_dest_path("mi-repo"), "/etc/xbps.d/keys/vary-vur-mi-repo.pem");
+        assert_eq!(repo_conf_path("mi-repo").unwrap(), "/etc/xbps.d/20-vur-mi-repo.conf");
+        assert_eq!(key_dest_path("mi-repo").unwrap(), "/etc/xbps.d/keys/vary-vur-mi-repo.pem");
+    }
+
+    #[test]
+    fn rechaza_path_traversal_en_nombres_de_repo() {
+        assert!(validate_repo_name("../evil").is_err());
+        assert!(validate_repo_name("foo/bar").is_err());
+        assert!(validate_repo_name("..").is_err());
+        assert!(validate_repo_name("00-repository-main").is_err());
+        assert!(validate_repo_name("-bad").is_err());
+        assert!(validate_repo_name("").is_err());
+        assert!(validate_repo_name("good_repo-1.0").is_ok());
     }
 
     #[test]

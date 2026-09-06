@@ -689,7 +689,7 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     Ok(info)
 }
 
-fn decode_pem_body(pem: &str) -> Result<Vec<u8>> {
+pub(crate) fn decode_pem_body(pem: &str) -> Result<Vec<u8>> {
     let mut body = String::new();
     let mut inside = false;
     for raw_line in pem.lines() {

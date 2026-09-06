@@ -34,9 +34,7 @@ fn repo_add(
         .map(|s| s.to_string())
         .unwrap_or_else(|| derive_name_from_url(url));
 
-    if name.is_empty() {
-        bail!("could not derive repo name from url; please provide a name");
-    }
+    crate::keys::validate_repo_name(&name)?;
 
     // Rama: flag explícita > autodetección del remoto > "main".
     // (z-packages y otros repos clásicos viven en `master`.)
@@ -156,6 +154,7 @@ fn repo_list(config: &Config) -> Result<i32> {
 }
 
 fn repo_remove(config: &Config, name: &str, purge: bool) -> Result<i32> {
+    crate::keys::validate_repo_name(name)?;
     let mut conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
     let in_conf = conf.vur.contains_key(name);
     let clone_path = config.vurs_dir().join(name);
@@ -193,6 +192,7 @@ fn repo_remove(config: &Config, name: &str, purge: bool) -> Result<i32> {
 }
 
 fn repo_rekey(config: &Config, name: &str) -> Result<i32> {
+    crate::keys::validate_repo_name(name)?;
     let conf = ReposConf::load(config.repos_conf_path()).unwrap_or_default();
     let entry = conf.vur.get(name).ok_or_else(|| anyhow::anyhow!("VUR '{}' not found", name))?;
 
