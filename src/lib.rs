@@ -95,6 +95,13 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
         }
     };
 
+    // Barrido de temporales huérfanos de corridas interrumpidas (/tmp/vary-*,
+    // solo uid propio). Tras el lock: imposible borrarle nada a otra instancia.
+    let stale = crate::signal::sweep_stale_tmp_files();
+    if stale > 0 {
+        tracing::debug!("barridos {stale} temporales huérfanos de /tmp");
+    }
+
     match run2(&mut config, args) {
         Err(err) => {
             print_error(Style::new(), err);

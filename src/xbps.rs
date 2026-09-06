@@ -412,7 +412,8 @@ fn status_code(cmd: &mut Command) -> Result<i32> {
 ///
 /// El hijo corre en su **propio grupo de proceso** (`setpgid` en `pre_exec`)
 /// para que el hilo observador de señales pueda matarlo con `kill(-pid)` sin
-/// tocar a vary; su pid se registra durante la espera. Los builds cortos e
+/// tocar a vary; spawn+registro corren con SIGINT/SIGTERM bloqueados para que
+/// el observador nunca salga sin conocer al hijo (H-016). Los builds cortos e
 /// interactivos (`install`/`remove_recursive`) quedan en el grupo de vary.
 ///
 /// Error claro si `masterdir/xbps-src` no existe.
@@ -444,9 +445,24 @@ pub fn xbps_src(masterdir: &Path, args: &[&str], makejobs: Option<usize>) -> Res
                 .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
         });
     }
+    // Bloquear SIGINT/SIGTERM durante spawn+registro (H-016): con la máscara
+    // puesta el handler no corre, así que el observador no puede salir sin
+    // conocer a este hijo. Soltar ANTES del wait() largo o Ctrl+C no llegaría.
+    let sig_guard = crate::signal::block_term_signals();
     let mut child = cmd.spawn().map_err(|e| spawn_error("./xbps-src", e))?;
     let pid = child.id();
     crate::signal::register_child(pid);
+    let shutting_down = crate::signal::is_shutting_down();
+    drop(sig_guard);
+    if shutting_down {
+        // La señal llegó antes del registro (o durante el spawn bloqueado):
+        // el observador podría no conocer a este hijo; matarlo ya mismo por
+        // grupo en vez de esperar al poll (H-016).
+        crate::signal::kill_child_group(pid);
+        crate::signal::unregister_child(pid);
+        let _ = child.wait();
+        anyhow::bail!("interrumpido por señal antes de esperar a xbps-src");
+    }
     let status = child.wait().map_err(|e| spawn_error("./xbps-src", e));
     crate::signal::unregister_child(pid);
     Ok(status?.code().unwrap_or(-1))

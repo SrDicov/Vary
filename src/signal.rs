@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Mutex, Once};
 
-use nix::sys::signal::{kill, SigHandler, Signal};
+use nix::sys::signal::{kill, sigprocmask, SigHandler, SigSet, SigmaskHow, Signal};
 use nix::unistd::Pid;
 
 /// Limpieza pendiente de un overlay montado por
@@ -145,6 +145,75 @@ pub fn unregister_child(pid: u32) {
     }
 }
 
+/// Mata el grupo del hijo (`-pid`) con SIGTERM sin salir del proceso.
+/// Lo usa el padre justo tras el spawn si la señal llegó antes del registro
+/// (H-016): el observador podría no conocer aún ese pid.
+pub fn kill_child_group(pid: u32) {
+    let _ = kill(Pid::from_raw(-(pid as i32)), Signal::SIGTERM);
+}
+
+/// Guardia RAII que bloquea SIGINT/SIGTERM hasta su `Drop` (H-016).
+/// Cierra la ventana spawn→`register_child`: con las señales bloqueadas el
+/// handler no corre hasta el desbloqueo, así que ningún observador puede
+/// salir sin conocer al hijo recién creado.
+pub(crate) struct SignalBlockGuard {
+    old: SigSet,
+}
+
+impl Drop for SignalBlockGuard {
+    fn drop(&mut self) {
+        let _ = sigprocmask(SigmaskHow::SIG_SETMASK, Some(&self.old), None);
+    }
+}
+
+/// Bloquea SIGINT/SIGTERM y devuelve el guardián que restaura la máscara.
+/// Uso: envolver solo spawn+registro, soltar ANTES de esperas largas (con la
+/// máscara puesta el observador jamás recibiría la señal).
+pub(crate) fn block_term_signals() -> SignalBlockGuard {
+    let mut set = SigSet::empty();
+    set.add(Signal::SIGINT);
+    set.add(Signal::SIGTERM);
+    let mut old = SigSet::empty();
+    let _ = sigprocmask(SigmaskHow::SIG_BLOCK, Some(&set), Some(&mut old));
+    SignalBlockGuard { old }
+}
+
+/// Borra restos `vary-*` en `dir` propiedad de nuestro uid (H-016).
+/// Solo archivos/symlinks con el prefijo y uid propio: nunca toca nada ajeno
+/// aunque el temporal sea compartido. Devuelve cuántos borró.
+pub fn sweep_stale_tmp_files_in(dir: &Path, prefix: &str) -> usize {
+    use std::os::unix::fs::MetadataExt;
+    let uid = nix::unistd::getuid().as_raw();
+    let mut removed = 0;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with(prefix) {
+            continue;
+        }
+        let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        if meta.uid() != uid || (!meta.is_file() && !meta.is_symlink()) {
+            continue;
+        }
+        if std::fs::remove_file(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+/// Barrido en el temporal del sistema al arrancar y al salir por señal.
+pub fn sweep_stale_tmp_files() -> usize {
+    sweep_stale_tmp_files_in(&std::env::temp_dir(), "vary-")
+}
+
 extern "C" fn on_signal(sig: nix::libc::c_int) {
     // Único trabajo permitido aquí: registrar la señal (atómico).
     GOT_SIGNAL.store(sig, Ordering::SeqCst);
@@ -197,7 +266,10 @@ fn observer_cleanup_and_exit(sig: i32) -> ! {
     for c in &pending {
         c.run();
     }
-    // 3. Recién ahora salir; código clásico 128+signo.
+    // 3. Borrar nuestros temporales huérfanos (/tmp/vary-*): process::exit
+    // abajo se salta los Drop de NamedTempFile (H-016).
+    sweep_stale_tmp_files();
+    // 4. Recién ahora salir; código clásico 128+signo.
     std::process::exit(128 + sig);
 }
 
@@ -237,6 +309,34 @@ mod tests {
         assert!(CHILDREN.lock().unwrap().contains(&424242));
         unregister_child(424242);
         assert!(!CHILDREN.lock().unwrap().contains(&424242));
+    }
+
+    #[test]
+    fn sweep_borra_solo_prefijo_propio() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("vary-stale-123"), b"x").expect("write");
+        std::fs::write(dir.path().join("otro-123"), b"x").expect("write");
+        let n = sweep_stale_tmp_files_in(dir.path(), "vary-");
+        assert_eq!(n, 1, "solo el resto vary-* propio debe borrarse");
+        assert!(!dir.path().join("vary-stale-123").exists());
+        assert!(dir.path().join("otro-123").exists());
+    }
+
+    #[test]
+    fn bloqueo_de_senales_se_restaura_con_drop() {
+        {
+            let _guard = block_term_signals();
+            let mut cur = SigSet::empty();
+            sigprocmask(SigmaskHow::SIG_BLOCK, None, Some(&mut cur)).expect("mask");
+            assert!(cur.contains(Signal::SIGINT));
+            assert!(cur.contains(Signal::SIGTERM));
+        }
+        let mut cur = SigSet::empty();
+        sigprocmask(SigmaskHow::SIG_BLOCK, None, Some(&mut cur)).expect("mask");
+        assert!(
+            !cur.contains(Signal::SIGINT),
+            "el Drop del guardián debe restaurar la máscara"
+        );
     }
 
     #[test]

@@ -12,10 +12,10 @@
 | Severidad | Total Detectados | Corregidos | Pendientes |
 |---|:---:|:---:|:---:|
 | 🔴 **Critical** | 8 | 8 ([H-001], [H-002], [H-003], [H-004], [H-005], [H-006], [H-007], [H-008]) | 0 |
-| 🟠 **High** | 16 | 9 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-017], [H-018], [H-022]) | 7 |
+| 🟠 **High** | 16 | 10 ([H-009], [H-010], [H-011], [H-012], [H-013], [H-014], [H-016], [H-017], [H-018], [H-022]) | 6 |
 | 🟡 **Medium** | 15 | 0 | 15 |
 | 🟢 **Low / Info** | 8 | 1 ([H-047]) | 7 |
-| **TOTAL** | **47** | **18** | **29** |
+| **TOTAL** | **47** | **19** | **28** |
 
 ---
 
@@ -320,7 +320,8 @@
 - **Impacto:** Si el proceso recibe `SIGINT` inmediatamente después del `spawn`, el hijo queda en su propio Process Group huérfano sin ser terminado. Además, `exit()` aborta el proceso sin ejecutar destructores RAII, acumulando basura en `/tmp`.
 - **Fix propuesto:** Registrar el Process Group de forma atómica o usar una máscara de señales durante el spawn. Asegurar la limpieza de los `TempDir` en el manejador de salida.
 - **Validación:** Simular SIGINT concurrente al spawn y verificar que no queden procesos ni directorios residuales.
-- **Estado:** PENDIENTE
+- **Resolución:** Máscara SIGINT/SIGTERM (guardia RAII) en spawn+registro + kill inmediato del grupo si la señal ya llegó; barrido uid-filtrado de `/tmp/vary-*` al arrancar y al salir por señal. Ver FIX_LOG.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-016)`)
 
 ---
 

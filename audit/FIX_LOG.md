@@ -350,3 +350,19 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   2. Actualizada la entrada H-047 en `AUDIT_REPORT.md` (módulo + resolución + estado). Sin otras referencias a la ruta vieja en el repo (verificado con grep en README, docs, src, etc.).
 - **Validación:** Commit docs-only (exento de CI por paths-ignore); verificación de ausencia de referencias rotas.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [H-016] Carreras TOCTOU en señales (PGID desacoplado) y fuga de temporales `/tmp/vary-*`
+- **Severidad:** High
+- **Módulo:** `src/signal.rs`, `src/xbps.rs:419-460`, `src/lib.rs`
+- **Commit:** `fix(H-016)` (`git log --oneline --grep="H-016"`)
+- **Descripción del problema:** (1) Si SIGINT llegaba entre `spawn()` y `register_child()`, el observador salía sin matar al hijo (grupo huérfano). (2) `process::exit()` se salta los `Drop` de `NamedTempFile` (`keys.rs`), acumulando `/tmp/vary-*`.
+- **Remediación (simple, sin cirugía de procesos):**
+  1. `block_term_signals()` (guardia RAII con `sigprocmask`) envuelve spawn+registro en `xbps_src`; se suelta ANTES del `wait()` largo para no cegar al observador.
+  2. Tras registrar, si `is_shutting_down()` ya es true, el padre mata el grupo él mismo (`kill_child_group`, `kill(-pid)`) y aborta con error, sin esperar al poll.
+  3. `sweep_stale_tmp_files[_in]()`: borra `vary-*` solo con uid propio y solo archivos/symlinks; se corre al arrancar (tras el lock, sin riesgo a otra instancia) y en `observer_cleanup_and_exit` antes de `exit()`.
+- **Validación:**
+  - `signal::tests::sweep_borra_solo_prefijo_propio` (no toca archivos ajenos).
+  - `signal::tests::bloqueo_de_senales_se_restaura_con_drop` (la máscara no fuga).
+  - Run CI verde en el commit del fix. El caso SIGINT-durante-spawn queda para el smoke en Void real (FASE 5, humano).
+- **Estado:** ✅ CORREGIDO Y VALIDADO
