@@ -81,4 +81,18 @@ Backup base: `test/backup/2026-09-06/` + `/root/xbps.d.pre-audit` + `/tmp/vary-{
 | 2 | `VARY_DEBUG=1 vary -Syu </dev/null` (0.2.5) | OK-sync; exit=0 | sync oficial + refresh VURs (`cnr 1b4eaa33`, `z-packages 43031639`) sin errores; warnings H-031 (spotify, xbps-triggers) visibles; xbps abortó upgrades en EOF ("Aborting!") pero vary devolvió 0 — OBSERVACIÓN: upgrade abortado enmascarado como éxito en 0.2.5; verificar en candidata (posible T-###) |
 | 5-baseline | doble instancia con 0.2.5 (lock vía fifo bloqueado en confirm de `vary -S cowsay`) | lecturas serializan (search=0, version=0 tras espera); 2º `-S` NO es rechazado: espera el lock y procede | baseline pre-H-027: flock bloqueante global, sin mensaje "otra instancia"; first=1 tras `n`; H-001 EN VIVO: el 2º `-S nano` aprobó el confirm con EOF y lanzó `xbps-install` sin consentimiento (inocuo aquí: `ERROR: Package 'nano' already installed`, preinstalado 2026-08-26; second=0 pese al error de xbps — otro enmascaramiento de exit en 0.2.5). T2 repite contra 0.3.0 |
 | 3,4 | — | DIFERIDOS a T3 (requieren build VUR real) | review-EOF e INT-mid-build se prueban contra 0.3.0 con paquete fuente pequeño |
-| 6 | migración LMDB→JSON + legacy-v1 (candidata 0.3.0) | OK (con nota) | `vary -R vary-noexiste-xyz` migró LMDB real: 2 entradas (hytale-installer/cnr, librewolf/z-packages, schema 2, build_date backfill) + `installed.lmdb.bak`; legacy-v1 con fixture CORRECTO (`"source"` minúsculas) migra (`migradas 1 entradas`, sin corrupt-backup). NOTA-DOC: el fixture de VALIDATION.md usa `"Source"` capitalizado → cae en ruta corrupt-con-respaldo (conducta correcta del código; enmendar VALIDATION). La migración es load-time en memoria; `-R` no re-persiste el archivo (diseño: sin pérdida hasta mutación real) |
+| 6 | migración LMDB→JSON + legacy-v1 (candidata 0.3.0) | OK (con nota) | `vary -R vary-noexiste-xyz` migró LMDB real: 2 entradas (hytale-installer/cnr, librewolf/z-packages, schema 2, build_date backfill) + `installed.lmdb.bak`; legacy-v1 con fixture CORRECTO (`"source"` minúsculas) migra (`migradas 1 entradas`, sin corrupt-backup). NOTA-DOC: el fixture de VALIDATION.md usa `"Source"` capitalizado → cae en ruta corrupt-con-respaldo (conducta correcta del código; enmendado). La migración es load-time en memoria; `-R` no re-persiste el archivo (diseño: sin pérdida hasta mutación real) |
+| `-Si` ×8 | librewolf/mdevd/ydotool/libudev-zero/font-inter/python3-inputs/bazaar/svc | OK | sombreados→official; bazaar/svc→`vur:repository` con deps + `Subpackages: bazaar-devel` (metadata subpaquetes en vivo; install sin cobertura: sombras/toolchain) |
+
+## T4 — Estrés
+
+| prueba | resultado | tiempo | notas |
+|---|---|---|---|
+| `vary -Syu </dev/null` completo | sync OK, exit=1 (EOF-deny) | 16.8s | 4 VURs + official; solo librewolf pendiente (154.0.2_1 real, rebuild vetado: horas+disco); official 4 pkgs abortan en xbps (EOF) |
+| `vary -Ss ""` | exit=1 "no search pattern specified" | instant | NO es regresión H-030 (ese era el bulk interno, ejercitado en cada `-S`); UX explícito correcto |
+| `vary -Ss lib` masivo | exit=0, 7268 líneas | 4.8s | A4 OK |
+| consistencia post-fallos | DB válida (schema 2, 11 pkgs), sin temporales/overlays | — | fallos opencode/ENOSPC/INT dejaron cero estado corrupto |
+
+## T5 — Reporte
+
+Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-012 → 0.3.1)**. Tag humano pendiente.

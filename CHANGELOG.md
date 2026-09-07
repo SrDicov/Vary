@@ -33,6 +33,23 @@ a P1-3 por decisión PC-2). Detalle: `audit/FIX_LOG.md`.
   con mensaje en vez de ignorarse en silencio.
 - Sanitización de entorno en elevación + wrapper en ruta absoluta.
 
+### Test intensivo 0.3.0 en Void real (2026-09-07, `test/REPORT.md`)
+
+- Llave VUP leída vía git (clones sparse), `install -D` crea `keys/`,
+  `archs=all/noarch` aceptados en install, TOFU fail-closed con llave
+  ilegible, DB solo para Build/VulBinary, `--color never` sin estilos.
+- Verificados en vivo: 19 installs (8 binarios VUP con TOFU, 9 fuentes,
+  spotify, hytale), migración LMDB→JSON, Ctrl+C sin huérfanos (130),
+  lock con PID, upgrade-detect, ciclo remove/reinstall, lifecycle de repos.
+
+### Known issues (hito 0.3.1)
+
+- `-v`/`-vv` sin efecto en consola (usar `RUST_LOG=debug`) — T-002.
+- `--prefer-binary`/`--force-build` no cambian de repo ni evitan el
+  bucket official — T-010.
+- Primer install VUP no-interactivo muere en el prompt de import de
+  xbps (fail-closed; interactivo OK) — T-012.
+
 ## 0.2.5 - 2026-09-05
 
 ### Added

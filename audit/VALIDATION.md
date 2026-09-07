@@ -91,7 +91,7 @@ wait
 
 ```sh
 cp ~/.cache/vary/installed.json /tmp/installed.json.new
-echo '{"hello-vur":{"version":"1.0","vur":"x","install_date":1700000000,"install_type":"Source"}}' > ~/.cache/vary/installed.json
+echo '{"hello-vur":{"version":"1.0","vur":"x","install_date":1700000000,"install_type":"source"}}' > ~/.cache/vary/installed.json
 vary -Syu 2>&1 | tail -3         # no debe perder la entrada ni abortar
 python3 -c "import json; print(json.load(open('$HOME/.cache/vary/installed.json'))['hello-vur'])"
 # ESPERADO: build_date == 1700000000000 (backfill), schema_version 2
