@@ -89,82 +89,42 @@ impl PackageSource for VurSource {
     }
 }
 
-fn official_exists_remote(name: &str, exclude: &str) -> bool {
-    // Consultar la propiedad `repository`: si solo existe en el repo local de
-    // vary (hostdir/binpkgs) NO cuenta como oficial.
-    let out = std::process::Command::new("xbps-query")
-        .args(["-R", "--property=repository", "--", name])
-        .output();
-    match out {
-        Ok(o) if o.status.success() && !o.stdout.is_empty() => {
-            let text = String::from_utf8_lossy(&o.stdout);
-            let mut non_local = false;
-            for line in text.lines() {
-                let l = line.trim();
-                if l.is_empty() {
-                    continue;
-                }
-                // Repositorio local de vary: ruta absoluta al hostdir/binpkgs
-                if l.contains("hostdir/binpkgs") || (!exclude.is_empty() && l == exclude) {
-                    continue;
-                }
-                non_local = true;
-            }
-            non_local
-        }
-        _ => false,
+/// Mapas del índice fusionado (paso 4 de install/print; ver
+/// [`load_source_maps`]).
+struct SourceMaps {
+    vur_map: HashMap<String, (String, VurInfo)>,
+    vur_all: HashMap<String, Vec<(String, VurInfo)>>,
+    provides_map: HashMap<String, Vec<(String, VurInfo)>>,
+    binary_check: HashMap<String, bool>,
+    priority_map: HashMap<String, i64>,
+    vup_binary_urls: HashMap<String, String>,
+}
+
+/// Construye un [`VurRepo`] sin tocar red ni disco (el ensure/fetch lo hace
+/// cada flujo por separado: install con red, print nunca).
+fn make_repo(name: &str, entry: &crate::reposconf::RepoEntry, config: &Config) -> VurRepo {
+    VurRepo {
+        name: name.to_string(),
+        path: config.vurs_dir().join(name),
+        entry: entry.clone(),
+        git_bin: config.git_bin.clone(),
     }
 }
 
-pub fn install(config: &mut Config) -> Result<i32> {
-    let targets = config.targets.clone();
-    if targets.is_empty() {
-        bail!("no targets specified");
-    }
-    for target in &targets {
-        if !crate::metadata::is_valid_pkgname(target) {
-            bail!("nombre de paquete inválido: '{target}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)");
-        }
-    }
-
-    // 1. Bootstrap
-    let md = bootstrap::initialize_environment(
-        &config.void_packages_dir(),
-        &config.sudo_bin,
-        &config.sudo_flags,
-        &config.tools_install_bin,
-        &config.git_bin,
-    )?;
-
-    // 2. Load repos
-    let repos_conf = ReposConf::load(config.repos_conf_path())?;
-    let sorted = repos_conf.sorted_by_priority();
-    let mut repos: Vec<VurRepo> = Vec::new();
-    for (name, entry) in sorted {
-        let path = config.vurs_dir().join(&name);
-        let repo = VurRepo {
-            name: name.clone(),
-            path: path.clone(),
-            entry: entry.clone(),
-            git_bin: config.git_bin.clone(),
-        };
-        match repo.ensure_cloned() {
-            Ok(_) => repos.push(repo),
-            Err(e) => tracing::warn!("failed to ensure VUR '{name}': {e}"),
-        }
-    }
-
-    // 3. Arquitectura (antes de los índices: el adaptador VUP filtra por arch).
-    let arch = config.arch();
-    // Try xbps-query architecture if not overridden
-    let arch = if config.arch_override.is_none() {
-        xbps::query_architecture().unwrap_or(arch)
-    } else {
-        arch
-    };
-
-    // 4. Load indexes
-    let mut cache = CacheIndex::load(config.cache_index_path())?;
+/// Carga los índices de `repos` en memoria (paso 4, compartido por install y
+/// print; movido verbatim salvo el gate VUP).
+///
+/// Con `allow_network == false` (P0-4 `--print`) no se descarga nada: un
+/// índice VUP caducado o ausente es error accionable en vez de fetch (con
+/// caché vigente `fetch_index` no toca la red en ningún flujo).
+fn load_source_maps(
+    repos: &[VurRepo],
+    repos_conf: &ReposConf,
+    cache: &mut CacheIndex,
+    arch: &str,
+    config: &Config,
+    allow_network: bool,
+) -> Result<SourceMaps> {
     let mut vur_map: HashMap<String, (String, VurInfo)> = HashMap::new();
     // T-010: multi-mapa con todos los candidatos (el resolver ordena).
     let mut vur_all: HashMap<String, Vec<(String, VurInfo)>> = HashMap::new();
@@ -174,13 +134,13 @@ pub fn install(config: &mut Config) -> Result<i32> {
     // URL binaria por paquete para repos con índice VUP ("repo:pkg" -> URL).
     let mut vup_binary_urls: HashMap<String, String> = HashMap::new();
 
-    for repo in &repos {
+    for repo in repos {
         let entry = repos_conf.vur.get(&repo.name).ok_or_else(|| {
             anyhow::anyhow!("repositorio '{}' sin entrada en repos.conf", repo.name)
         })?;
         priority_map.insert(repo.name.clone(), entry.priority_or(100));
         let has_binary = entry.has_binary();
-        let infos = match repo.load_index(&mut cache, None) {
+        let infos = match repo.load_index(cache, None) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("failed to load index for '{}': {}", repo.name, e);
@@ -236,6 +196,16 @@ pub fn install(config: &mut Config) -> Result<i32> {
                     "vup-index-{}.json",
                     crate::vup_index::sanitize_repo_name(&repo.name)
                 ));
+                // P0-4: sin red el índice debe estar vigente en caché.
+                if !allow_network
+                    && !crate::vup_index::cache_is_fresh(&cache_path, config.ttl_cache_seconds)
+                {
+                    anyhow::bail!(
+                        "índice VUP de '{}' caducado o ausente y --print no descarga: \
+                         corre `vary -Sy` (con red) primero",
+                        repo.name
+                    );
+                }
                 match crate::vup_index::fetch_index(
                     &config.curl_bin,
                     index_url,
@@ -245,7 +215,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                     Ok(idx) => {
                         for (pkgname, vpkg) in &idx.packages {
                             let Some((info, repo_url)) =
-                                crate::vup_index::to_vur_info(pkgname, vpkg, &arch)
+                                crate::vup_index::to_vur_info(pkgname, vpkg, arch)
                             else {
                                 continue;
                             };
@@ -268,10 +238,25 @@ pub fn install(config: &mut Config) -> Result<i32> {
             }
         }
     }
-    let _ = cache.save();
 
-    // 5. Build source
+    Ok(SourceMaps {
+        vur_map,
+        vur_all,
+        provides_map,
+        binary_check,
+        priority_map,
+        vup_binary_urls,
+    })
+}
 
+/// Ensambla `VurSource` + `ResolveOptions` (paso 5, compartido por install y
+/// print; movido verbatim).
+fn assemble_source(
+    maps: SourceMaps,
+    arch: &str,
+    binpkgs_root: &str,
+    config: &Config,
+) -> (VurSource, ResolveOptions) {
     // E2 fast-path: snapshot de oficiales al inicio del sync en UNA sola
     // consulta masiva. Se invalida al terminar (se dropea con esta función)
     // y no refleja deps instaladas durante la transacción. Miss => la
@@ -283,7 +268,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
         Some(s) => tracing::debug!("bulk oficial: {} paquetes", s.len()),
         None => tracing::debug!("bulk oficial no disponible; path escalar"),
     }
-    let binpkgs_root = md.hostdir_binpkgs_root().display().to_string();
+    let binpkgs_root = binpkgs_root.to_string();
     let source = VurSource {
         official_exists_fn: Box::new(move |n| {
             if bulk.as_ref().is_some_and(|s| s.contains(n)) {
@@ -291,12 +276,12 @@ pub fn install(config: &mut Config) -> Result<i32> {
             }
             official_exists_remote(n, &binpkgs_root)
         }),
-        vur_map,
-        vur_all,
-        provides_map,
-        binary_check,
-        arch: arch.clone(),
-        priority: priority_map,
+        vur_map: maps.vur_map,
+        vur_all: maps.vur_all,
+        provides_map: maps.provides_map,
+        binary_check: maps.binary_check,
+        arch: arch.to_string(),
+        priority: maps.priority_map,
     };
 
     let opts = ResolveOptions {
@@ -310,6 +295,255 @@ pub fn install(config: &mut Config) -> Result<i32> {
             config.candidate_order
         },
     };
+    (source, opts)
+}
+
+/// P0-4: `vary -Sp <pkg>` — resuelve e imprime el plan SIN mutar nada.
+///
+/// Congelado: sin bootstrap (el `binpkgs_root` es ruta pura), sin
+/// ensure/fetch de clones (se usan tal cual; clon ausente = error
+/// accionable), sin guardar caché, sin lock (ver `needs_lock`), sin
+/// review/materialize, sin confirm, sin installs/builds, sin DB y —sobre
+/// todo— sin elevación. Solo lecturas: repos.conf, clones, cachés vigentes,
+/// xbps-db. "No toca disco/red" = cero escrituras, cero red, cero
+/// elevación (las lecturas son inevitables para resolver).
+pub fn print_plan(config: &Config) -> Result<i32> {
+    // Forma válida: -S con targets y sin banderas que cambien el significado
+    // (search/info/downloadonly/upgrade); ver handle_sync.
+    for (short, long) in [
+        ("u", "sysupgrade"),
+        ("s", "search"),
+        ("i", "info"),
+        ("w", "downloadonly"),
+    ] {
+        if config.args.has_arg(short, long) {
+            anyhow::bail!("--print no se combina con -{short} (solo `-Sp <pkg>`)");
+        }
+    }
+    let targets = config.targets.clone();
+    if targets.is_empty() {
+        anyhow::bail!("--print solo soporta `-Sp <pkg>` con targets (para upgrades no hay plan imprimible aún)");
+    }
+    for target in &targets {
+        if !crate::metadata::is_valid_pkgname(target) {
+            anyhow::bail!("nombre de paquete inválido: '{target}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)");
+        }
+    }
+
+    // 2'. Repos tal cual están (sin ensure: clon ausente = error accionable,
+    // nunca fetch silencioso).
+    let repos_conf = ReposConf::load(config.repos_conf_path())?;
+    let mut repos: Vec<VurRepo> = Vec::new();
+    for (name, entry) in repos_conf.sorted_by_priority() {
+        let repo = make_repo(&name, &entry, config);
+        if !repo.path.join(".git").exists() {
+            anyhow::bail!(
+                "el repo '{name}' no está clonado y --print no descarga: \
+                 corre `vary --repo add` o `vary -Sy` (con red) primero"
+            );
+        }
+        repos.push(repo);
+    }
+
+    // 3'. Arquitectura (igual que install; solo lecturas).
+    let arch = config.arch();
+    // Try xbps-query architecture if not overridden
+    let arch = if config.arch_override.is_none() {
+        xbps::query_architecture().unwrap_or(arch)
+    } else {
+        arch
+    };
+
+    // 4'. Índices congelados (sin guardar caché) + fuente (binpkgs_root como
+    // ruta pura: sin bootstrap no hay masterdir que consultar).
+    let mut cache = CacheIndex::load(config.cache_index_path())?;
+    let maps = load_source_maps(&repos, &repos_conf, &mut cache, &arch, config, false)?;
+    let binpkgs_root = config
+        .void_packages_dir()
+        .join("hostdir")
+        .join("binpkgs")
+        .display()
+        .to_string();
+    let (source, opts) = assemble_source(maps, &arch, &binpkgs_root, config);
+
+    let plan = crate::resolver::resolve(&targets, &source, &opts)?;
+    print_stable_plan(&targets, &plan);
+    Ok(0)
+}
+
+/// P0-4: imprime el plan en formato estable sin color (para scripts).
+/// Reutiliza las formas de línea del display de `-S` para que lo que hoy
+/// parsea `-S` siga valiendo.
+fn print_stable_plan(targets: &[String], plan: &crate::resolver::Plan) {
+    println!(
+        ":: PRINT-ONLY plan for: {} (no changes will be made)",
+        targets.join(" ")
+    );
+    println!("installs [single binary transaction]:");
+    if plan.installs.is_empty() {
+        println!("  (none)");
+    }
+    for item in &plan.installs {
+        let src = match &item.action {
+            Action::Install(BinarySource::Official) => "official",
+            Action::Install(BinarySource::VulBinary { repo }) => repo.as_str(),
+            _ => "?",
+        };
+        // H-046: lo operativo es siempre `info.pkgname`.
+        let real = &item.info.pkgname;
+        // T-009: sin versión => solo repo/nombre (xbps resuelve la versión).
+        if item.info.version.is_empty() {
+            println!("  {src}/{real}");
+            continue;
+        }
+        if real == &item.name {
+            println!(
+                "  {src}/{real}-{} [{}]",
+                item.info.version,
+                item.info.pkgver()
+            );
+        } else {
+            println!(
+                "  {src}/{real}-{} [{}] (pedido como {})",
+                item.info.version,
+                item.info.pkgver(),
+                item.name
+            );
+        }
+    }
+    println!("builds [topological levels]:");
+    let levels = crate::resolver::build_levels(plan);
+    if levels.is_empty() {
+        println!("  (none)");
+    }
+    for (n, level) in levels.iter().enumerate() {
+        println!("  level {n}:");
+        for item in level {
+            let real = &item.info.pkgname;
+            if real == &item.name {
+                println!("    {real}/{}", item.info.pkgver());
+            } else {
+                println!(
+                    "    {real}/{} (pedido como {})",
+                    item.info.pkgver(),
+                    item.name
+                );
+            }
+        }
+    }
+    let (setups, transaction) = elevation_estimate(plan);
+    println!("elevations [estimated total: {}]:", setups + transaction);
+    println!("  repo-setup: {setups}");
+    println!("  install-transaction: {transaction}");
+    for w in &plan.warnings {
+        println!("warning: {w}");
+    }
+}
+
+/// P0-4: elevaciones que el plan implicaría si se ejecutara: registros
+/// binarios pendientes (conf o llave ausentes en /etc) + 1 transacción de
+/// instalación si hay trabajo. Regla honesta y estable (típicamente 1 en
+/// régimen: solo la transacción). Asume corrida no-root estándar.
+fn elevation_estimate(plan: &crate::resolver::Plan) -> (usize, usize) {
+    use std::collections::HashSet;
+    let mut repos = HashSet::new();
+    for item in &plan.installs {
+        if let Action::Install(BinarySource::VulBinary { repo }) = &item.action {
+            repos.insert(repo.clone());
+        }
+    }
+    let mut setups = 0;
+    for repo in &repos {
+        let conf_ok =
+            crate::keys::repo_conf_path(repo).is_ok_and(|p| std::path::Path::new(&p).exists());
+        let key_ok =
+            crate::keys::key_dest_path(repo).is_ok_and(|p| std::path::Path::new(&p).exists());
+        if !(conf_ok && key_ok) {
+            setups += 1;
+        }
+    }
+    let transaction = usize::from(!plan.installs.is_empty() || !plan.builds.is_empty());
+    (setups, transaction)
+}
+
+fn official_exists_remote(name: &str, exclude: &str) -> bool {
+    // Consultar la propiedad `repository`: si solo existe en el repo local de
+    // vary (hostdir/binpkgs) NO cuenta como oficial.
+    let out = std::process::Command::new("xbps-query")
+        .args(["-R", "--property=repository", "--", name])
+        .output();
+    match out {
+        Ok(o) if o.status.success() && !o.stdout.is_empty() => {
+            let text = String::from_utf8_lossy(&o.stdout);
+            let mut non_local = false;
+            for line in text.lines() {
+                let l = line.trim();
+                if l.is_empty() {
+                    continue;
+                }
+                // Repositorio local de vary: ruta absoluta al hostdir/binpkgs
+                if l.contains("hostdir/binpkgs") || (!exclude.is_empty() && l == exclude) {
+                    continue;
+                }
+                non_local = true;
+            }
+            non_local
+        }
+        _ => false,
+    }
+}
+
+pub fn install(config: &mut Config) -> Result<i32> {
+    let targets = config.targets.clone();
+    if targets.is_empty() {
+        bail!("no targets specified");
+    }
+    for target in &targets {
+        if !crate::metadata::is_valid_pkgname(target) {
+            bail!("nombre de paquete inválido: '{target}' (debe coincidir con ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$)");
+        }
+    }
+
+    // 1. Bootstrap
+    let md = bootstrap::initialize_environment(
+        &config.void_packages_dir(),
+        &config.sudo_bin,
+        &config.sudo_flags,
+        &config.tools_install_bin,
+        &config.git_bin,
+    )?;
+
+    // 2. Load repos
+    let repos_conf = ReposConf::load(config.repos_conf_path())?;
+    let sorted = repos_conf.sorted_by_priority();
+    let mut repos: Vec<VurRepo> = Vec::new();
+    for (name, entry) in sorted {
+        let repo = make_repo(&name, &entry, config);
+        match repo.ensure_cloned() {
+            Ok(_) => repos.push(repo),
+            Err(e) => tracing::warn!("failed to ensure VUR '{name}': {e}"),
+        }
+    }
+
+    // 3. Arquitectura (antes de los índices: el adaptador VUP filtra por arch).
+    let arch = config.arch();
+    // Try xbps-query architecture if not overridden
+    let arch = if config.arch_override.is_none() {
+        xbps::query_architecture().unwrap_or(arch)
+    } else {
+        arch
+    };
+
+    // 4. Load indexes (ver load_source_maps: install permite red, print no).
+    let mut cache = CacheIndex::load(config.cache_index_path())?;
+    let maps = load_source_maps(&repos, &repos_conf, &mut cache, &arch, config, true)?;
+    // URLs binarias VUP por paquete (sección 8 las necesita tras mover maps).
+    let vup_binary_urls = maps.vup_binary_urls.clone();
+    let _ = cache.save();
+
+    // 5. Build source
+    let binpkgs_root = md.hostdir_binpkgs_root().display().to_string();
+    let (source, opts) = assemble_source(maps, &arch, &binpkgs_root, config);
 
     let plan = crate::resolver::resolve(&targets, &source, &opts)?;
 

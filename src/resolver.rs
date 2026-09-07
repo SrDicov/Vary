@@ -501,6 +501,46 @@ pub fn resolve(
     ctx.finish()
 }
 
+/// P0-4: agrupa los builds del plan por nivel topológico (0 = sin
+/// dependencias a compilar). Una dep cuenta para el nivel solo si ella
+/// misma se compila (por `name` o `pkgname` real, cubriendo virtuales de
+/// `provides`); las que van a installs están pre-satisfechas y no suben
+/// nivel. `builds` ya viene en orden topológico: una pasada basta.
+pub fn build_levels(plan: &Plan) -> Vec<Vec<&PlanItem>> {
+    if plan.builds.is_empty() {
+        return Vec::new();
+    }
+    let mut index: HashMap<&str, usize> = HashMap::new();
+    for (i, item) in plan.builds.iter().enumerate() {
+        index.insert(item.name.as_str(), i);
+        index.insert(item.info.pkgname.as_str(), i);
+    }
+    let mut level_of = vec![0usize; plan.builds.len()];
+    for (i, item) in plan.builds.iter().enumerate() {
+        let mut level = 0;
+        for dep in item
+            .info
+            .hostmakedepends
+            .iter()
+            .chain(&item.info.makedepends)
+            .chain(&item.info.depends)
+        {
+            if let Some(&j) = index.get(dep_name(dep)) {
+                if j != i {
+                    level = level.max(level_of[j] + 1);
+                }
+            }
+        }
+        level_of[i] = level;
+    }
+    let depth = level_of.iter().copied().max().unwrap_or(0);
+    let mut levels: Vec<Vec<&PlanItem>> = vec![Vec::new(); depth + 1];
+    for (item, level) in plan.builds.iter().zip(level_of) {
+        levels[level].push(item);
+    }
+    levels
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1103,5 +1143,97 @@ mod tests {
         assert_eq!(cmp_pkgver("1.0", 2, "1.0", 1), Ordering::Greater);
         assert_eq!(cmp_pkgver("1.0", 1, "1.0", 1), Ordering::Equal);
         assert_eq!(cmp_pkgver("1.0", 1, "1.0.1", 1), Ordering::Less);
+    }
+
+    // --- P0-4: niveles topológicos del plan para --print ---
+
+    fn level_names<'a>(levels: &[Vec<&'a PlanItem>]) -> Vec<Vec<&'a str>> {
+        levels
+            .iter()
+            .map(|l| l.iter().map(|i| i.name.as_str()).collect())
+            .collect()
+    }
+
+    /// Cadena a->b->c: niveles [[c],[b],[a]] (hojas primero).
+    #[test]
+    fn niveles_cadena_en_orden_inverso() {
+        let mut a = vur_info("a", &["x86_64"]);
+        a.depends = strs(&["b"]);
+        let mut b = vur_info("b", &["x86_64"]);
+        b.depends = strs(&["c"]);
+        let c = vur_info("c", &["x86_64"]);
+        let src = MockSource {
+            vur: [
+                ("a", ("vur-main", a)),
+                ("b", ("vur-main", b)),
+                ("c", ("vur-main", c)),
+            ]
+            .into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(&targets(&["a"]), &src, &ResolveOptions::default()).unwrap();
+        assert_eq!(
+            level_names(&build_levels(&plan)),
+            vec![vec!["c"], vec!["b"], vec!["a"]]
+        );
+    }
+
+    /// Diamante + dep a installs: z (compartida) nivel 0, x/y nivel 1, root
+    /// nivel 2; la dep official (curl) no sube nivel a nadie.
+    #[test]
+    fn niveles_diamante_ignora_installs() {
+        let mut root = vur_info("root", &["x86_64"]);
+        root.depends = strs(&["x", "y", "curl"]);
+        let mut x = vur_info("x", &["x86_64"]);
+        x.makedepends = strs(&["z"]);
+        let mut y = vur_info("y", &["x86_64"]);
+        y.hostmakedepends = strs(&["z"]);
+        let z = vur_info("z", &["x86_64"]);
+        let src = MockSource {
+            official: ["curl"].into(),
+            vur: [
+                ("root", ("vur-main", root)),
+                ("x", ("vur-main", x)),
+                ("y", ("vur-main", y)),
+                ("z", ("vur-main", z)),
+            ]
+            .into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(&targets(&["root"]), &src, &ResolveOptions::default()).unwrap();
+        let levels = build_levels(&plan);
+        assert_eq!(levels.len(), 3);
+        assert_eq!(level_names(&levels)[0], vec!["z"]);
+        assert_eq!(level_names(&levels)[2], vec!["root"]);
+        let mid: Vec<&str> = levels[1].iter().map(|i| i.name.as_str()).collect();
+        assert!(mid.contains(&"x") && mid.contains(&"y"));
+    }
+
+    /// Dep virtual resuelta vía provides: el nivel sigue al nombre pedido.
+    #[test]
+    fn niveles_siguen_nombre_pedido_virtual() {
+        let mut app = vur_info("app", &["x86_64"]);
+        app.depends = strs(&["libfoo.so.1"]);
+        let src = MockSource {
+            vur: [("app", ("vur-main", app))].into(),
+            provides: [("libfoo.so.1", ("vur-main", vur_info("foo", &["x86_64"])))].into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(&targets(&["app"]), &src, &ResolveOptions::default()).unwrap();
+        assert_eq!(
+            level_names(&build_levels(&plan)),
+            vec![vec!["libfoo.so.1"], vec!["app"]]
+        );
+    }
+
+    /// Plan sin builds: cero niveles (la sección se imprime como `(none)`).
+    #[test]
+    fn niveles_plan_sin_builds_es_vacio() {
+        let src = MockSource {
+            official: ["git"].into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(&targets(&["git"]), &src, &ResolveOptions::default()).unwrap();
+        assert!(build_levels(&plan).is_empty());
     }
 }

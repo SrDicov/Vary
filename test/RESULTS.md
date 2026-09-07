@@ -133,3 +133,10 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - uchroot a 0755: `error: xbps-uchroot en /usr/bin/xbps-uchroot con modo 755 (se exige 4750...); corrige con: doas chmod 4750...`, exit 1; modo restaurado a 4750 y verificado, run posterior exit 0 ✅.
 - Resto de la matriz (OCI, chroot degradado, fallback `/usr/libexec`, ausente/ilegible) en unit tests (`preflight::tests`, tabla de 6).
 - **Fix-forward:** el abort-root tumbó los builds XBPS (los contenedores CI son root en docker: `vary -V` del packaging moría exit 1). Excepción: root + OCI detectado avisa y sigue (daño contenido); root fuera de contenedor sigue abortando. Verificado en pipeline real (build+verify verdes) + test `root_en_contenedor_avisa_y_sigue`. Limitación conocida: solo se detecta docker (`/.dockerenv`, cgroup `docker|kubepods`), no podman (`/run/.containerenv`).
+
+## P0-4 en vivo — `vary -Sp` (plan-then-mutate, H-007 superado)
+
+- `-Sp curl` → `official/curl`, sin builds, `elevations: 1`, exit 0; `-Sp python-pywalfox` → installs oficiales + `level 0: python-pywalfox-2.7.4_2`; `-p curl` (sin -S) también imprime.
+- Errores honestos: sin targets (exit 1), `--print-format=json` (exit 2), `-p` pelado, `-Ss -p`, paquete inexistente (`no encontrado`, exit 1).
+- **Cero mutación:** `cache.json` mismo mtime antes/después, sin ficheros nuevos, sin lock, sin elevación (congelado: sin bootstrap/ensure/fetch/save/review/DB).
+- **Regresión ruta normal:** `vary -S lavat` (fuente repository) compiló+instaló OK tras la extracción (exit 0); DB exacta (`repository/source/3.0.0_2`); `vary -R lavat` limpió binario+DB (quedan brave+librewolf).

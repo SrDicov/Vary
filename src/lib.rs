@@ -185,8 +185,10 @@ fn needs_lock(config: &Config) -> bool {
         Op::Remove => true,
         Op::Default => true, // `vary` pelado o solo flags => -Syu
         Op::Sync => {
-            // -p aborta antes (H-007); -w descarga (muta caché/masterdir).
-            !(config.args.has_arg("s", "search") || config.args.has_arg("i", "info"))
+            // -p no muta: sin lock (H-027); -w descarga (muta caché/masterdir).
+            !(config.args.has_arg("s", "search")
+                || config.args.has_arg("i", "info")
+                || config.args.has_arg("p", "print"))
         }
     }
 }
@@ -207,8 +209,10 @@ fn handle_cmd(config: &mut Config) -> Result<i32> {
 }
 
 fn handle_sync(config: &mut Config) -> Result<i32> {
+    // P0-4: -p imprime el plan congelado sin mutar (ver install::print_plan,
+    // que valida su propia forma). Domina sobre el resto de consultas sync.
     if config.args.has_arg("p", "print") {
-        bail!("el flag --print / -p no está soportado (reservado para Roadmap P0-4). Para instalar use vary -S <pkg>");
+        return install::print_plan(config);
     }
 
     let has_search = config.args.has_arg("s", "search");
@@ -249,7 +253,12 @@ fn handle_sync(config: &mut Config) -> Result<i32> {
 
 fn handle_default(config: &mut Config) -> Result<i32> {
     if !config.targets.is_empty() {
+        // `vary -p foo` cae aquí (sin -S explícito): handle_sync lo imprime.
         return handle_sync(config);
+    }
+    // P0-4: -p pelado no tiene plan que imprimir (no caer al -Syu).
+    if config.args.has_arg("p", "print") {
+        bail!("--print requiere -S con targets: usa `vary -Sp <pkg>`");
     }
     // Sin operación ni objetivos: comportamiento documentado de `vary` => -Syu
     // (igual que invocar vary sin argumentos, p. ej. `vary --noconfirm`).
@@ -273,6 +282,8 @@ mod tests {
         for (argv, locked) in [
             (vec!["-Ss", "foo"], false),
             (vec!["-Si", "foo"], false),
+            (vec!["-Sp", "foo"], false),
+            (vec!["-S", "--print", "foo"], false),
             (vec!["-S", "foo"], true),
             (vec!["-Syu"], true),
             (vec!["-R", "foo"], true),

@@ -17,6 +17,7 @@ pub fn help() {
     println!("    -y --refresh            Refresh VUR git repositories");
     println!("    -u --sysupgrade         Upgrade all packages");
     println!("    -w --downloadonly       Download sources only");
+    println!("    -p --print              Print the install plan without changing anything");
     println!();
     println!("General options:");
     println!("    --noconfirm             Do not ask for confirmation");

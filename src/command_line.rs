@@ -406,8 +406,18 @@ impl Config {
                 self.candidate_order = crate::resolver::CandidateOrder::PreferSource;
             }
             Arg::Long("interactive") => self.interactive = true,
-            Arg::Long("print") | Arg::Short('p') | Arg::Long("print-format") => {
-                bail!("el flag --print / -p no está soportado (reservado para Roadmap P0-4). Para instalar use vary -S <pkg>");
+            Arg::Long("print") | Arg::Short('p') => {
+                // P0-4: plan imprimible sin mutar (ver install::print_plan).
+                // El registro en args es automático (is_pacman_arg); aquí no
+                // se duplica ni se actúa: el dispatch vive en handle_sync.
+            }
+            Arg::Long("print-format") => {
+                // Solo se soporta el formato estable de texto; cualquier otro
+                // valor miente sobre la salida y se rechaza (precedente H-007).
+                let fmt = value.unwrap_or("text");
+                if fmt != "text" {
+                    bail!("--print-format solo soporta 'text' (pedido: '{fmt}')");
+                }
             }
             // Generic pacman-style flags that we just record in args
             Arg::Long("search") | Arg::Short('s') => {
@@ -524,6 +534,7 @@ fn takes_value(arg: Arg) -> TakesValue {
         Arg::Long("curl") => TakesValue::Required,
         Arg::Long("arch") => TakesValue::Required,
         Arg::Long("color") => TakesValue::Required,
+        Arg::Long("print-format") => TakesValue::Required,
         _ => TakesValue::No,
     }
 }
@@ -631,16 +642,31 @@ mod tests {
     }
 
     #[test]
-    fn print_flag_is_disabled_with_informative_error() {
+    fn print_flag_se_acepta_y_formato_se_valida() {
+        // P0-4: H-007 queda superado; -p/--print registran sin actuar y
+        // --print-format solo admite 'text' (con = o con valor separado).
         let mut config = Config::default();
-        let err1 = parse_args(&mut config, &["-Sp", "foo"]).unwrap_err();
-        assert!(format!("{err1:#}").contains("Roadmap P0-4"));
+        parse_args(&mut config, &["-Sp", "foo"]).expect("-Sp debe parsear");
+        assert!(config.args.has_arg("p", "print"));
 
-        let err2 = parse_args(&mut config, &["-S", "--print", "foo"]).unwrap_err();
-        assert!(format!("{err2:#}").contains("Roadmap P0-4"));
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "--print", "foo"]).expect("--print debe parsear");
+        assert!(config.args.has_arg("p", "print"));
 
-        let err3 = parse_args(&mut config, &["--print-format", "%n"]).unwrap_err();
-        assert!(format!("{err3:#}").contains("Roadmap P0-4"));
+        let mut config = Config::default();
+        parse_args(&mut config, &["-Sp", "--print-format=text", "foo"]).expect("=text ok");
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["-Sp", "--print-format", "text", "foo"])
+            .expect("valor separado ok");
+
+        let mut config = Config::default();
+        let err = parse_args(&mut config, &["-Sp", "--print-format=json", "foo"]).unwrap_err();
+        assert!(format!("{err:#}").contains("solo soporta 'text'"));
+
+        let mut config = Config::default();
+        let err = parse_args(&mut config, &["-Sp", "--print-format"]).unwrap_err();
+        assert!(format!("{err:#}").contains("expects a value"));
     }
 
     #[test]
