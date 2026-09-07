@@ -666,7 +666,8 @@ pub fn install(config: &mut Config) -> Result<i32> {
             {
                 if let Some(repo) = repos.iter().find(|r| r.name == repo_name) {
                     let _ = repo.materialize_pkg(real);
-                    let _ = crate::review::prompt_review(real, &repo.path, &config.git_bin);
+                    let _ =
+                        crate::review::prompt_review(real, &repo.name, &repo.path, &config.git_bin);
                 }
             }
         }

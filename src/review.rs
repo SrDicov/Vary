@@ -24,7 +24,12 @@ pub(crate) fn pager_cmd() -> (String, Vec<String>) {
     )
 }
 
-pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<()> {
+pub fn prompt_review(
+    pkg_name: &str,
+    repo_name: &str,
+    clone_dir: &Path,
+    git_bin: &str,
+) -> Result<()> {
     use std::io::Write;
 
     println!(
@@ -76,6 +81,16 @@ pub fn prompt_review(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> Result<
         return Ok(());
     }
 
+    // P0-3: hallazgos sobre el template (consultivos; el gate decide igual).
+    let header = crate::template_audit::format_findings(
+        pkg_name,
+        repo_name,
+        &crate::template_audit::audit_template(&content),
+    );
+    if !header.is_empty() {
+        print!("{header}");
+    }
+
     use std::io::IsTerminal;
     if !std::io::stdout().is_terminal() {
         // En entornos no interactivos (CI, pipes), imprimir plano directamente
@@ -123,13 +138,13 @@ mod tests {
         let pkgdir = dir.path().join("srcpkgs").join("foo");
         std::fs::create_dir_all(&pkgdir).expect("mkdir");
         std::fs::write(pkgdir.join("template"), "pkgname=foo\n").expect("write");
-        assert!(prompt_review("foo", dir.path(), "git").is_ok());
+        assert!(prompt_review("foo", "mi-repo", dir.path(), "git").is_ok());
     }
 
     #[test]
     fn prompt_review_sin_template_es_ok_silencioso() {
         let dir = tempfile::tempdir().expect("tempdir");
-        assert!(prompt_review("inexistente", dir.path(), "git").is_ok());
+        assert!(prompt_review("inexistente", "mi-repo", dir.path(), "git").is_ok());
     }
 
     #[test]

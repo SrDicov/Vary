@@ -17,6 +17,7 @@ mod repo;
 mod reposconf;
 mod resolver;
 mod signal;
+mod template_audit;
 mod util;
 mod vup_index;
 mod vur_client;

@@ -156,3 +156,10 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - Drift simulado (repo_commit tampered + `--force-build`): avisa `drift de procedencia: 'lavat-3.0.0_2' reinstalado desde otro commit (tampered0000 -> 4530c62d7ba6)` y calla el artefacto (mismo caso: rebuild normal) ✅.
 - **Gap VUP-DB cerrado:** `vary -S basilk` (binario vup) deja rastro (`vup/binary`, commit del índice, artifact del caché xbps verificado) y `vary -R basilk` lo elimina limpiando la DB ✅ (antes quedaba huérfano).
 - Limpieza: `-R` lavat + `xbps-remove` nvm (official, nunca rastreado por diseño); DB de vuelta a brave+librewolf; caché de build podada.
+
+## P0-3 en vivo — auditoría de templates (`template_audit.rs`)
+
+- `vary -S spotify </dev/null` (sin `--noconfirm`): el review muestra `:: AUDIT template spotify (repo cnr): 3 HIGH, 0 MEDIUM` SOBRE el template (checksum-ausente + 2× descarga-en-build con las líneas curl reales) y aborta en el confirm (exit 1, nada instalado, nada descargado) ✅.
+- Reglas calibradas para no fatigar: en contenido completo solo checksum+descargas (URLs/hooks serían ruido: todo es "nuevo"); en diffs, checksum solo si regresa (lo tenía y lo pierde) + añadidas (descargas HIGH, URLs/hooks MEDIUM).
+- Hallazgos siempre consultivos (el gate decide igual; no-TTY sin `--yes` ya abortaba por A3). Sin flags nuevos (sin cambios en help); sin sección README (el review nunca se documentó ahí).
+- Cobertura: corpus en CI (veredicto por regla) + wiring del gate con findings en test + demo viva del install-review. El display del upgrade-diff comparte helper y tests; sin update pendiente real para demo viva de esa rama (documentado).

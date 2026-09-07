@@ -11,6 +11,8 @@ struct TemplateDiff {
     pkg: String,
     repo: String,
     patch: String,
+    /// P0-3: hallazgos sobre el diff (califican, no bloquean).
+    findings: Vec<crate::template_audit::AuditFinding>,
 }
 
 /// Patch unificado viejo→nuevo con diffy; `None` si son idénticos.
@@ -56,6 +58,11 @@ fn review_template_diffs(config: &Config, diffs: &[TemplateDiff]) -> Result<Vec<
     let tty = std::io::stdout().is_terminal();
     let mut approved = Vec::new();
     for d in diffs {
+        // P0-3: hallazgos SOBRE el diff (consultivos; el gate decide igual).
+        let header = crate::template_audit::format_findings(&d.pkg, &d.repo, &d.findings);
+        if !header.is_empty() {
+            print!("{header}");
+        }
         println!("--- template {} (repo {}) ---", d.pkg, d.repo);
         show_patch(&d.patch)?;
         if tty {
@@ -269,10 +276,13 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         };
         if let Some(new) = repo.read_template(&parent) {
             if let Some(patch) = template_diff_text(&old, &new) {
+                // P0-3: calificar el diff (regresión de checksum + añadidas).
+                let findings = crate::template_audit::audit_template_diff(&old, &new, &patch);
                 diffs.push(TemplateDiff {
                     pkg: name.clone(),
                     repo: repo_name.clone(),
                     patch,
+                    findings,
                 });
             }
         }
@@ -318,6 +328,7 @@ mod tests {
             pkg: "foo".to_string(),
             repo: "mi-repo".to_string(),
             patch: "--- viejo\n+++ nuevo\n".to_string(),
+            findings: Vec::new(),
         }]
     }
 
@@ -337,6 +348,31 @@ mod tests {
         };
         assert_eq!(
             review_template_diffs(&config, &un_diff()).unwrap(),
+            vec!["foo".to_string()]
+        );
+    }
+
+    #[test]
+    fn review_con_hallazgos_atraviesa_el_gate() {
+        // P0-3: diffs con findings no rompen el gate (califican, no
+        // bloquean). En CI (no TTY) con --yes: aprueba e imprime el bloque.
+        use crate::template_audit::{AuditFinding, Severity};
+        let diffs = vec![TemplateDiff {
+            pkg: "foo".to_string(),
+            repo: "mi-repo".to_string(),
+            patch: "--- viejo\n+++ nuevo\n".to_string(),
+            findings: vec![AuditFinding {
+                severity: Severity::High,
+                rule: "checksum-ausente",
+                detail: "d".to_string(),
+            }],
+        }];
+        let config = Config {
+            no_confirm: true,
+            ..Config::default()
+        };
+        assert_eq!(
+            review_template_diffs(&config, &diffs).unwrap(),
             vec!["foo".to_string()]
         );
     }
