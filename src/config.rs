@@ -54,6 +54,8 @@ impl From<&str> for Colors {
 
 impl Default for Colors {
     fn default() -> Self {
+        // T-001: el modo sin color (never / no-TTY) no aplica NADA, ni bold:
+        // antes ss_name conservaba bold y `--color never` mentía.
         Colors {
             enabled: false,
             error: Style::new(),
@@ -61,7 +63,7 @@ impl Default for Colors {
             bold: Style::new(),
             action: Style::new(),
             sl_repo: Style::new(),
-            ss_name: Style::new().bold(),
+            ss_name: Style::new(),
             ss_ver: Style::new(),
         }
     }
@@ -410,6 +412,15 @@ mod tests {
         assert!(c.sudo_flags.is_empty());
         assert!(c.git_bin == "git");
         assert!(c.tools_install_bin == "install");
+    }
+
+    #[test]
+    fn never_no_aplica_ni_bold() {
+        // T-001: `--color never` (y el default no-TTY) no estiliza nada.
+        let n = Colors::from("never");
+        assert_eq!(n.ss_name, ansiterm::Style::new());
+        assert_eq!(n.bold, ansiterm::Style::new());
+        assert_eq!(n.ss_ver, ansiterm::Style::new());
     }
 
     #[test]

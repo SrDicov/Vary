@@ -294,6 +294,12 @@ pub fn install(config: &mut Config) -> Result<i32> {
             // H-046: `name` es lo pedido (puede ser virtual de `provides`);
             // lo operativo es siempre `info.pkgname`.
             let real = &item.info.pkgname;
+            // T-009: los oficiales llevan placeholder sin versión; no imprimir
+            // ficción (`name- [_0]`), solo el nombre (xbps resuelve la versión).
+            if item.info.version.is_empty() {
+                println!("  {src}/{real}");
+                continue;
+            }
             if real == &item.name {
                 println!(
                     "  {src}/{real}-{} [{}]",

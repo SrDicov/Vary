@@ -827,3 +827,23 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `keys::tests::verify_key_tofu_falla_cerrado_con_llave_ilegible`.
   - Suite local 162+1 en verde + run CI verde.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [T-001] `--color never` conservaba negrita en nombres (`-Ss`)
+- **Severidad:** Low
+- **Módulo:** `src/config.rs:Colors::default`
+- **Commit:** `fix(T-001, T-009)` (`git log --oneline --grep="T-001"`)
+- **Descripción:** El modo sin color (`never` y auto no-TTY) dejaba `ss_name: bold`; la salida "sin color" contenía `^[[1m`. Detectado en T2 (`cat -v`).
+- **Remediación:** `Default` sin estilos; test `never_no_aplica_ni_bold`.
+- **Validación:** Suite local 163+1 + run CI verde + verificación en vivo (`--color never` sin escapes).
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [T-009] Plan mostraba versiones ficción para oficiales (`name- [_0]`)
+- **Severidad:** Low
+- **Módulo:** `src/install.rs` (impresión del plan)
+- **Commit:** `fix(T-001, T-009)`
+- **Descripción:** Los items oficiales llevan placeholder sin versión; el plan imprimía `official/hytale-installer- [hytale-installer-_0]`. Misma raíz cosmética que T-005 (ya fijado el lado DB).
+- **Remediación:** Sin versión → solo `repo/nombre` (xbps resuelve la versión).
+- **Validación:** Suite + CI verde + verificación en vivo.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
