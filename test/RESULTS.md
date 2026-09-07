@@ -185,3 +185,9 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - `vary --why librewolf`: gestionado (`librewolf-153.0.4.1_1 [z-packages] (Source)`), sin revdeps ni declarantes ✅.
 - `vary --log` vacío → `sin historial...`; tras install+remove lavat: `... INSTALL lavat lavat-3.0.0_2 repository` + `... REMOVE lavat` (2 líneas exactas; un susto de "duplicado" fue error de lectura de pipes intercalados, verificado con `wc -l`) ✅.
 - Nota: el diario conserva esas 2 líneas (historial legítimo; borrar con `rm ~/.local/share/vary/operations.log` si se quiere pristine).
+
+## P2 restante evaluado (no implementado; decisión humana requerida)
+
+- **404 distfiles (mirrors + backoff): NO en vary.** El fetch lo ejecuta `xbps-src` (`md.fetch_pkg`), que ya trae sus propios reintentos y soporta mirrors vía su configuración; el pre-fetch de vary es warm-up best-effort (`let _`). Duplicar reintentos en vary no aporta y los "mirrors alternos" no existen en el modelo de datos (requeriría formato VUR nuevo). Capa equivocada.
+- **Soname drift trigger: NO sin decisión de política.** Requiere (1) fuente de sonames + (2) grabar baseline por build (schema v4) + (3) política: ¿avisar o recompilar solo? Recompilar sin consentimiento explícito es peligroso; avisar es útil pero cambia `-Syu`. Propuesta si se aprueba: pin `shlibs_requires` al instalar + aviso en upgrade (nunca auto-rebuild sin flag).
+- **P1-3 (masterdirs aislados): NO tocado** — la spec exige decisión humana expresa (riesgo de corrupción del repo local).
