@@ -10,9 +10,9 @@ Esta máquina SÍ es Void real con `vary` instalado: ejecutar aquí, PC enchufad
 
 ```sh
 sudo cp -a /etc/xbps.d /root/xbps.d.pre-audit
-cp -a ~/.cache/vary /tmp/vary-cache-backup 2>/dev/null
-cp -a ~/.config/vary /tmp/vary-config-backup 2>/dev/null
-cp -a ~/.local/share/vary /tmp/vary-data-backup 2>/dev/null
+cp -a ~/.cache/vary test/backup/pre-paso-0-cache 2>/dev/null
+cp -a ~/.config/vary test/backup/pre-paso-0-config 2>/dev/null
+cp -a ~/.local/share/vary test/backup/pre-paso-0-data 2>/dev/null
 vary -V
 git -C ~/.../Vary status --short   # el árbol debe estar limpio en f08b761
 ```
@@ -37,10 +37,10 @@ Si alguno falla, anotar salida exacta: es regresión contra xbps real.
 
 ```sh
 VARY_DEBUG=1 vary -Syu 2>&1 | tail -20
-vary -v -Ss foo 2>&1 | head -5   # H-028: con -v debe haber líneas debug
+vary -v -Ss foo 2>&1 | head -5   # T-002: -v sin efecto actualmente, usar RUST_LOG=debug; re-verificar tras 0.3.1
 ```
 
-Esperado: sync oficial + refresh VURs sin errores; `-v` muestra más que sin él.
+Esperado: sync oficial + refresh VURs sin errores; `-v` no cambia la salida (T-002 conocido).
 
 ---
 
