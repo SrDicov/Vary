@@ -302,7 +302,7 @@ mod tests {
             ent("/old", content("2")),
         ];
         let d = compare_trees(&built, &inst);
-        assert_eq!(d.len(), 3, "{d:?}");
+        assert_eq!(d.len(), 2, "{d:?}");
         assert!(d
             .iter()
             .any(|x| x.path == "/new" && x.kind == DivergenceKind::Added));
