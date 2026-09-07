@@ -96,3 +96,11 @@ Backup base: `test/backup/2026-09-06/` + `/root/xbps.d.pre-audit` + `/tmp/vary-{
 ## T5 — Reporte
 
 Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-012 → 0.3.1)**. Tag humano pendiente.
+
+## Paso 9 — Post-tag v0.3.0 (binario release)
+
+- Workflows del tag: CI verde + XBPS verde (build musl/glibc, verify en contenedores frescos, rolling repo, release). Release `v0.3.0` publicado con `vary-0.3.0_1.x86_64{,-musl}.xbps` + `sha256sums.txt`.
+- Artefacto: glibc descargado a `/tmp/vary-rel`, `sha256sum -c` OK.
+- Instalación: `doas xbps-install --repository=/tmp/vary-rel -S vary` → upgrade 0.2.5→0.3.0_1 exit=0 (`/usr/bin/vary` 3.2MB root; rollback: `vary-0.2.5-bin` o debug en `target/`).
+- Smoke release: `-V`=0.3.0; `-Ss lavat` 3.7s (`vur-source:repository`); `-Si lavat` exit=0 (resuelve `official` — lavat entró a repos oficiales); `-R lavat` exit=0 (xbps+DB limpios); `-S lavat` exit=0 (binpkgs local, 0 descargas); DB exacta (`repository/source/3.0.0_2`).
+- Estado final: release en producción, sin rollback necesario.
