@@ -11,9 +11,9 @@
 
 | Total Requisitos | ✅ IMPLEMENTADO | 🟡 PARCIAL | ❌ AUSENTE |
 |:---:|:---:|:---:|:---:|
-| 11 | 10 (R2,R3,A1,A2,A3,A4,A5,A6,A7,A8) | 0 | 1 (R1) |
+| 11 | 11 (R1,R2,R3,A1,A2,A3,A4,A5,A6,A7,A8) | 0 | 0 |
 
-**Conclusión:** el contrato está ejecutado salvo R1 (diferido a P1-3 por decisión humana PC-2: exige masterdirs aislados estilo xbps-fbulk antes de paralelizar; único ítem de 0.5.0). El trigger preventivo de A5 se cerró en 0.4.0 con alcance consultivo aprobado (P2-soname: pin + aviso, nunca auto-rebuild).
+**Conclusión 0.4.1:** contrato 11/11 ejecutado. R1 se cumplió con workers con overlay por nivel (tras `--experimental` + capacidad); la decisión PC-2 quedó satisfecha con la orden expresa de incluir P1-3 en 0.4.1. El trigger preventivo de A5 se cerró en 0.4.0 con alcance consultivo aprobado (P2-soname: pin + aviso, nunca auto-rebuild).
 
 ---
 
@@ -21,7 +21,7 @@
 
 | ID | Requisito Contractual | Estado | Evidencia actual |
 |---|---|---|---|
-| **R1** | **Paralelismo topológico de builds** (niveles, `max_concurrent_builds`, JoinHandle, sin huérfanos). | ❌ **AUSENTE (DIFERIDO A P1-3)** | Builds secuenciales por Opción A (decisión PC-2) + H-015. `max_concurrent_builds` forzado a 1 en `config.rs`. Hacerlo sin masterdirs aislados colisiona en `binpkgs`/repodata. Spec en `roadmap/STATUS.md` P1-3; aquí vive H-015. |
+| **R1** | **Paralelismo topológico de builds** (niveles, `max_concurrent_builds`, JoinHandle, sin huérfanos). | ✅ **IMPLEMENTADO (0.4.1)** | Scheduler por niveles (`build_levels`) + workers con overlay por slot + índice único en main thread (`src/masterdir.rs`/`src/install.rs`, P1-3). `max_concurrent_builds > 1` solo con `--experimental` + capacidad; sin ellas, loop histórico verbatim. Vivo: 2 pkgs mismo nivel sin colisiones + repodata íntegro. H-015 cerrado. |
 | **R2** | **`.VURINFO` como caché de prioridad con fallback estructurado** y fallo ruidoso. | ✅ **IMPLEMENTADO** | H-008 (multilínea/comillas/arch-warning), H-017 (subpaquetes), H-018 (errores a stderr vía `eprintln!` + `skipped_index_warning()` testeado). `load_index` fusiona `.VURINFO` + raíz + template. |
 | **R3 + A1** | **Batch transaction**: una sola invocación `xbps-install` + una sola elevación. | ✅ **IMPLEMENTADO** | `all_install_names` en una llamada (`install.rs`). H-009 añadió `--` anti-inyección. |
 | **A2** | **Shell parser fallback estricto** (comillas, multilínea, arrays, aviso ruidoso). | ✅ **IMPLEMENTADO** | H-008 (`has_unclosed_quote`, sin cuelgues), H-010 (validación `pkgname`), H-017 (subpaquetes con vars aisladas), H-018 (fallo visible). |
@@ -36,7 +36,7 @@
 
 ## 3. Desviaciones Justificadas (vigentes)
 
-1. **R1 → P1-3:** paralelizar sin aislamiento de masterdirs corrompe `binpkgs`/repodata (análisis en `roadmap/SPIKE_MASTERDIR.md`). Decisión humana PC-2 confirmada.
+1. **R1 → P1-3 (cerrado 0.4.1):** el análisis del spike sigue vigente (sin aislamiento colisiona); se implementó el aislamiento (overlay por slot + índice serializado). Decisión humana PC-2 satisfecha con orden expresa.
 2. **A5 trigger → P2-soname (cerrado 0.4.0):** `build_date` almacenado + pin de sonames al instalar + aviso consultivo en upgrade; auto-rebuild descartado por peligroso (decisión aprobada). Fuera de alcance restante: nada.
 3. **A7 sin `mpsc`:** bombeo directo por hilo a handles clonados del log; mismo orden causal por stream, menos piezas móviles.
 4. **A3 sin color:** diff unificado plano (seguro en `less -R` y pipes); coloreado en P0-3 (FASE 6).
@@ -47,4 +47,4 @@
 
 FASE 4 cerrada: 46/47 hallazgos + A3 + A6 (resta H-015, diferido). Suite CI verde en `c1f7cca` (153 passed, 4 ignored; los 4 exigen Void real y corren en FASE 5 local). Detalle por hallazgo: `audit/FIX_LOG.md` + `audit/AUDIT_REPORT.md`. Smoke en Void real: `audit/VALIDATION.md` (ejecuta el humano).
 
-**Revisión 0.4.0 (2026-09-07):** roadmap P0-1, P0-4, P0-2, P0-5, P0-3, P1-1, P1-2, P2-why, P2-log, P2-soname cerrados (cada uno con CI+XBPS verde en su commit); P2-404 no-ítem por decisión de diseño; P1-3/H-015 único ítem de 0.5.0. Mini-auditoría pre-tag (0 mayores, 7 menores → 6 fixes + 2 gaps aceptados) + smoke en Void real con evidencia (`test/SMOKE-0.4.0.md`, 1 incidente registrado y limpio). Suite CI verde en `fc98fe8` (235 passed, 0 failed, 4 ignored). Estado contractual final: **10/11** (solo R1 ausente, diferido).
+**Revisión 0.4.1 (2026-09-07):** P1-3/H-015 (R1) + pulido A–D cerrados; estado contractual final **11/11**; 0.5.0 por definir. (Revisión 0.4.0: P0–P2 cerrados salvo R1; ver historial.)

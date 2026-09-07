@@ -213,3 +213,17 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
   `/lib/ld-musl-x86_64.so.1`, ausente en este host glibc) → no ejecutable
   aquí. Sin defecto: el job `verify musl` del workflow (verde) ya lo ejecutó
   en contenedor musl. El sistema queda con glibc por orden.
+
+## P1-3 en vivo — workers con overlay (0.4.1, sim par1/par2)
+
+- 2 slots con overlay, logs nacidos con 1 ms de diferencia (concurrencia
+  probada), `fusionados 2 artefactos; índice único`, install OK, repodata
+  con ambos, ficheros correctos por paquete, workers/ vacío + 0 mounts,
+  DB con rastros source. Secuencial sin experimental intacto.
+- Incidentes del camino (todos cerrados en el código): `-m` al legacy
+  provocaba bootstrap por worker (GBs; w1 murió) → sin `-m`; subdir de arch
+  inexistente → layout plano; diff antes/después ciego a rebuilds →
+  artefactos esperados deterministas; prefetch con index.lock → materialize
+  serializado; materialize no refrescaba a HEAD → checkout explícito del
+  path (+aviso ante ediciones locales); uppers root-owned → `rm -rf`
+  elevado validado + reset con bail.

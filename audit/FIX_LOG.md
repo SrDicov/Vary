@@ -1070,3 +1070,89 @@ el código (excepción explícita del mantenedor en la orden de cierre).
   audit con --yes, -v/-vv) con UN incidente registrado y limpio (challenge
   librewolf compilaba de verdad; kill+limpieza verificada).
 - **Estado:** ✅ AUDITADO, VERDE Y CON EVIDENCIA
+
+### [H-015] Scheduler secuencial + `max_concurrent_builds` fantasma (R1 CUMPLIDO en 0.4.1)
+- **Módulo:** `src/masterdir.rs` (E1/E2: capacidad + `WorkerSandbox`),
+  `src/install.rs` (E3 niveles + E4 índice único), `src/vur_client.rs`
+  (materialize refresca HEAD), `etc/vary.conf.example`
+- **Commit:** `feat(P1-3)` + `fix(P1-3)` (`git log --oneline --grep="P1-3"`)
+- **Descripción:** R1 exigía paralelismo topológico; el scheduler era
+  secuencial puro y `max_concurrent_builds` no hacía nada.
+- **Remediación:** workers aislados estilo xbps-fbulk: overlayfs de kernel
+  por slot sobre el checkout (elevación; upper/work/merged en
+  `<cache>/workers/w<N>`), `srcpkgs` compartido read-only en la práctica,
+  masterdir base heredado por lowerdir (SIN re-bootstrap por worker),
+  binpkgs privado por worker, fusión de artefactos + `xbps-rindex -a` ÚNICO
+  en el hilo principal. Puertas: `>1 slot` SOLO con `--experimental`
+  (0.4.1, como P1-2) + capacidad (overlayfs + 1 GiB libre); sin ellas,
+  loop HISTÓRICO VERBATIM (paridad 0.4.0). Fallos degradan a secuencial.
+  Limpieza en dos niveles (`destroy` explícito + `Drop` + registro en
+  `signal.rs` + barrido de residuales; `rm -rf` elevado VALIDADO a
+  `workers/w<N>` con tests de rechazo). Fixes de la auditoría E (1 mayor +
+  8 menores): cola FIFO + primer-error-real (M1), índice también en fallo
+  (m2), reset de upper con bail (m3), unproject siempre (m4), rama histórica
+  (m5), mensaje de plan condicional (m6), aviso ante ediciones locales (m7),
+  slot() sin pánicos (m8), barrido primero (m9). Hallazgos del vivo
+  integrados: sin `-m` (el legacy provocaba bootstrap por worker), layout
+  plano de binpkgs, E4 determinista por artefactos esperados (el diff no ve
+  rebuilds bit-reproducibles), prefetch materialize serializado (index.lock),
+  materialize refresca path a HEAD (apruebo-nuevo/construyo-viejo).
+- **Validación:**
+  - Unit (CI): capacidad/slots/prereqs puros, nombres de slot, E4
+    determinista (vía diseño), rechazo de borrado, `worker_log_file`,
+    `elevation_*` intactos; suite 235+ nuevos en verde.
+  - En vivo (sim local par1/par2, mismo nivel, sleep 20 s): 2 slots con
+    overlay, logs nacidos con 1 ms de diferencia, `fusionados 2 artefactos;
+    índice único`, install OK de ambos, repodata con ambos, ficheros sin
+    colisiones, workers/ vacío + 0 mounts residuales, DB con rastros.
+    Secuencial sin experimental intacto (lavat). Fallback validado
+    (upper sucio, sandbox no montable → secuencial con aviso).
+  - Mini-auditoría del diff por subagente (1 mayor + 8 menores, todos
+    cerrados) + clippy local en verde (desviación registrada por CI caído).
+  - Run CI+XBPS verde en el commit de cierre.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (R1 cumplido; H-015 cerrado)
+
+### [0.4.1-A] `challenge` compilaba sin avisar (incidente smoke librewolf)
+- **Módulo:** `src/challenge.rs`, `src/help.rs`
+- **Commit:** `feat(0.4.1)` (`git log --oneline --grep="0.4.1"`)
+- **Descripción:** el smoke 0.4.0 demostró que `challenge` arranca un build
+  de horas sin confirmación (se asumió que un VUP no tenía template).
+- **Remediación:** `ask()` con defecto No antes de cualquier mutación; con
+  `--yes` se procede (triple opt-in); sin TTY aborta con hint (H-001).
+- **Validación:** conducta de `ask` cubierta (H-001); orden de guards
+  razonado (sin test barato: exige Config+DB+repos+stdin); vivo pendiente
+  del smoke 0.4.1. Run CI+XBPS verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+### [0.4.1-B] Diario asimétrico (REMOVE sin INSTALL en oficiales)
+- **Módulo:** `src/remove.rs`
+- **Commit:** `feat(0.4.1)`
+- **Descripción:** `remove` anotaba REMOVE para paquetes nunca rastreados
+  (oficiales, excluidos por T-005 en install).
+- **Remediación:** solo se anota si la DB tenía entrada (`was_tracked`
+  antes de `db.remove`); best-effort intacto; flujo con `code != 0`
+  inalterado. Riesgo anotado: DBs antiguas pierden esa señal (deseado por
+  simetría).
+- **Validación:** sin test barato (requiere xbps real; extraer predicado
+  sería identidad trivial); paridad razonada + CI verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+### [0.4.1-C] Artefacto musl dinámico sin documentar
+- **Módulos:** `CHANGELOG.md`, `README.md`, `README.es.md`
+- **Commit:** `feat(0.4.1)`
+- **Descripción:** el `.xbps` musl exige sistema musl; en glibc no ejecuta
+  (intérprete ausente). Hacerlo estático es inviable sin rustup en el
+  contenedor (decisión: documentar).
+- **Remediación:** nota bilingüe + CHANGELOG.
+- **Estado:** ✅ DOCUMENTADO
+
+### [0.4.1-D] `verify_if_pinned` sin tests
+- **Módulo:** `src/lockfile.rs` (solo tests)
+- **Commit:** `feat(0.4.1)`
+- **Descripción:** la regla solo-avisa del lock no tenía cobertura directa.
+- **Remediación:** 2 tests herméticos (match/mismatch/nuevo + lock
+  ilegible) con lock temporal y `repos=&[]` (sin git/xbps//etc). Quedan
+  como gaps documentados: divergencia de commits vía wrapper (git real) y
+  `generate`/`regenerate` (env-dependientes).
+- **Validación:** CI verde.
+- **Estado:** ✅ CUBIERTO (parcial documentado)

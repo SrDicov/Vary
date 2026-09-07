@@ -6,7 +6,7 @@ P2-soname **implementados y cerrados con CI+XBPS verdes**; P2-404 **no se
 implementa** (decisión de diseño, ver abajo). Cada ítem restante es SPEC con
 criterios de aceptación.
 
-## 0.5.0 — ÚNICO ítem: P1-3 · Masterdirs aislados estilo xbps-fbulk (+H-015)
+## 0.5.0 — POR DEFINIR (P1-3/H-015 se cerró en 0.4.1; no hay ítems pendientes del roadmap)
 
 ---
 
@@ -63,14 +63,14 @@ criterios de aceptación.
 - Tras `--experimental` hasta ganar confianza estadística.
 - Aceptación: divergencia inyectada (timestamp, flag) detectada y reportada.
 
-## P1-3 · Masterdirs aislados estilo xbps-fbulk (+H-015)
+## P1-3 · Masterdirs aislados estilo xbps-fbulk (+H-015) ✅ CERRADO 0.4.1 (`feat/fix P1-3`; R1 cumplido, H-015 cerrado)
 
-- Aquí vive H-015: un masterdir por worker, `xbps-uchroot`, indexación
-  serializada de `binpkgs`. Implementar SOLO tras decisión humana expresa
-  (riesgo de corrupción de repo local).
-- Precondición: P0-1 (detección de uchroot/setgid).
-- Aceptación: builds concurrentes de ramas independientes sin colisiones +
-  repodata íntegro (ver `roadmap/SPIKE_MASTERDIR.md`).
+- Implementado con overlayfs de kernel por slot (no uchroot: el `-m` al
+  legacy provocaba bootstraps; sin `-m` se hereda el marker por lowerdir).
+  `>1 slot` solo con `--experimental` + capacidad (overlayfs + 1 GiB);
+  sin ellas, loop histórico verbatim. Índice único en main thread.
+- Precondición P0-1 cumplida. Aceptación viva: par1/par2 mismo nivel sin
+  colisiones + repodata íntegro + limpieza total (ver FIX_LOG H-015).
 
 ## P2 · Miscelánea
 

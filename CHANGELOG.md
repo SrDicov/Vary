@@ -2,6 +2,19 @@
 
 All notable changes to vary will be documented in this file.
 
+## 0.4.1 (2026-09-07) — P1-3 + pulido (pendiente tag)
+
+- **R1 cumplido / H-015 cerrado:** builds paralelos por niveles con overlay
+  por slot (estilo xbps-fbulk); `>1 slot` solo con `--experimental` +
+  capacidad; índice único en main thread; degradación fail-safe a
+  secuencial. Sin experimental, bit-idéntico a 0.4.0.
+- `challenge` pide confirmación (defecto No; `--yes` procede).
+- Diario simétrico (REMOVE solo si hubo rastreo); musl dinámico
+  documentado; tests de `verify_if_pinned`.
+- Fixes del vivo: materialize refresca path a HEAD (no más builds con
+  plantilla vieja); prefetch materialize serializado (index.lock).
+- Deuda restante tras 0.4.1: ninguna del roadmap (0.5.0 por definir).
+
 ## 0.4.0 (2026-09-07) — cierre del roadmap post-auditoría
 
 10/11 requisitos contractuales (solo R1 ausente, diferido a P1-3/0.5.0).
