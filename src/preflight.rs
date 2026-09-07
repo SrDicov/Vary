@@ -2,9 +2,12 @@
 //!
 //! Se ejecutan al inicio de `run()`, antes de tocar estado compartido:
 //!
-//! 1. **root directo** (`euid == 0`) => ABORTO. Tras `drop_privileges()` en
-//!    `main`, euid 0 solo llega sin wrapper (login root/su directo): vary
-//!    nunca opera como root (además `xbps-src` se niega a correr como root).
+//! 1. **root directo** (`euid == 0`) => ABORTO, SALVO en contenedor OCI
+//!    detectado (los builds/verifies de CI son root en docker: ahí se avisa
+//!    y se sigue; el daño está contenido). Tras `drop_privileges()` en
+//!    `main`, euid 0 fuera de contenedor solo llega sin wrapper (login
+//!    root/su directo): vary nunca opera así como root (además `xbps-src`
+//!    se niega a correr como root).
 //! 2. **chroot degradado** (proot/bwrap) => AVISO crítico, seguir.
 //!    Heurística documentada: flatpak expone `/.flatpak-info` (+ `$FLATPAK_ID`);
 //!    proot no deja marcador estándar y se detecta por `$PROOT_TMP_DIR`.
@@ -76,8 +79,17 @@ impl Io for RealIo {
 pub fn check(io: &dyn Io) -> Report {
     let mut report = Report::default();
 
-    // 1. root directo: abortar (ver doc del módulo).
-    if io.euid() == 0 {
+    // Detección OCI primero: los contenedores corren legítimamente como root
+    // (los builds/verifies de CI son root en docker) y ahí el aborto de root
+    // se degrada a aviso (el daño está contenido; fuera de contenedores el
+    // root directo sigue abortando).
+    let cgroup_hit = io
+        .proc1_cgroup()
+        .is_some_and(|c| c.contains("docker") || c.contains("kubepods"));
+    let oci = io.file_exists(Path::new("/.dockerenv")) || cgroup_hit;
+
+    // 1. root directo: abortar, salvo en contenedor (ver arriba).
+    if io.euid() == 0 && !oci {
         report.abort = Some(
             "vary no debe ejecutarse como root directo (euid 0): usa tu usuario \
              normal (la elevación puntual la gestiona vary vía --sudo/doas/run0); \
@@ -85,6 +97,13 @@ pub fn check(io: &dyn Io) -> Report {
                 .to_string(),
         );
         return report;
+    }
+    if io.euid() == 0 {
+        report.warnings.push(
+            "root en contenedor detectado: se sigue con aviso (los contenedores \
+             son raíz legítima; fuera de ellos vary aborta como root)"
+                .to_string(),
+        );
     }
 
     // 2. chroot degradado: aviso crítico, seguir.
@@ -123,11 +142,9 @@ pub fn check(io: &dyn Io) -> Report {
         }
     }
 
-    // 4. OCI: aviso leve, seguir.
-    let cgroup_hit = io
-        .proc1_cgroup()
-        .is_some_and(|c| c.contains("docker") || c.contains("kubepods"));
-    if io.file_exists(Path::new("/.dockerenv")) || cgroup_hit {
+    // 4. OCI: aviso leve, seguir — salvo que ya se avisó por
+    // root-en-contenedor (mismo entorno, no duplicar).
+    if oci && io.euid() != 0 {
         report.warnings.push(
             "entorno OCI/contenedor detectado: algunas operaciones privilegiadas \
              (chroot, montajes) pueden fallar; los installs binarios no se ven afectados"
@@ -202,17 +219,37 @@ mod tests {
         assert_ok(&check(&FakeIo::normal()));
     }
 
-    /// P0-1: root directo aborta aunque todo lo demás esté mal.
+    /// P0-1: root directo (sin marcadores de contenedor) aborta.
     #[test]
     fn root_directo_aborta() {
+        let mut io = FakeIo::normal();
+        io.euid = 0;
+        let r = check(&io);
+        let abort = r.abort.as_ref().expect("root debe abortar");
+        assert!(abort.contains("root directo"), "{abort}");
+        assert!(r.warnings.is_empty(), "el aborto corta avisos: {r:?}");
+    }
+
+    /// P0-1: root en contenedor (CI docker) avisa UNA vez y sigue — sin
+    /// este caso los builds XBPS (root en contenedor) abortarían.
+    #[test]
+    fn root_en_contenedor_avisa_y_sigue() {
         let mut io = FakeIo::normal();
         io.euid = 0;
         io.files
             .insert(PathBuf::from("/.dockerenv"), (true, Some(0o644)));
         let r = check(&io);
-        let abort = r.abort.as_ref().expect("root debe abortar");
-        assert!(abort.contains("root directo"), "{abort}");
-        assert!(r.warnings.is_empty(), "el aborto corta avisos: {r:?}");
+        assert!(r.abort.is_none(), "{r:?}");
+        assert_eq!(r.warnings.len(), 1, "{r:?}");
+        assert!(r.warnings[0].contains("contenedor"), "{r:?}");
+
+        // Vía cgroup en vez de /.dockerenv: mismo resultado.
+        let mut io = FakeIo::normal();
+        io.euid = 0;
+        io.cgroup = Some("11:devices:/docker/ab12\n".to_string());
+        let r = check(&io);
+        assert!(r.abort.is_none(), "{r:?}");
+        assert_eq!(r.warnings.len(), 1, "{r:?}");
     }
 
     /// P0-1: chroot degradado avisa (crítico) y sigue, por cada marcador.
