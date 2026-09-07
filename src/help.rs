@@ -31,7 +31,7 @@ pub fn help() {
         "    --lock                  (Re)generate ~/.config/vary/vary.lock from current state"
     );
     println!(
-        "    --challenge <pkg>       Rebuild and compare against installed (needs --experimental)"
+        "    --challenge <pkg>       Rebuild and compare against installed (needs --experimental; asks confirmation)"
     );
     println!("    vary --why <pkg>            Explain what pulls a package");
     println!("    vary --log [pkg]            Show operation history");

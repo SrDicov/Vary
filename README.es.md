@@ -100,7 +100,7 @@ sudo xbps-install -S        # acepta la huella RSA cuando pregunte
 sudo xbps-install vary      # luego: sudo xbps-install -Su lo mantiene al día
 ```
 
-Se sirven glibc y musl desde esa única URL (`x86_64` / `x86_64-musl`). La clave pública de firma está publicada en [`keys/vary-repo.pub.pem`](./keys/vary-repo.pub.pem).
+Se sirven glibc y musl desde esa única URL (`x86_64` / `x86_64-musl`). El artefacto musl (`vary-*_1.x86_64-musl.xbps`) es dinámico (intérprete `/lib/ld-musl-x86_64.so.1`) y exige un sistema Void musl para ejecutarse; en glibc no corre (verificado por el job `verify musl` del workflow en contenedor musl). La clave pública de firma está publicada en [`keys/vary-repo.pub.pem`](./keys/vary-repo.pub.pem).
 
 ## Arquitectura
 

@@ -207,6 +207,22 @@ pub fn challenge(config: &crate::config::Config, pkg: &str) -> Result<i32> {
         git_bin: config.git_bin.clone(),
     };
 
+    // P1-2: confirmación previa a mutar nada (el rebuild compila de verdad
+    // y puede tardar horas). Con --yes se procede sin preguntar (triple
+    // opt-in explícito: --challenge + --experimental + --yes); en TTY se
+    // pregunta con defecto No; sin TTY ask() deniega con hint (H-001).
+    if !config.no_confirm
+        && !crate::util::ask(
+            config,
+            &format!("Recompilar {pkg} con xbps-src (compila de verdad, puede tardar horas)?"),
+            false,
+        )
+    {
+        anyhow::bail!(
+            "challenge cancelado por el operador (usa --yes para proceder sin preguntar)"
+        );
+    }
+
     // Reconstruir (mismo flujo que install: materializar→proyectar→build).
     let md = crate::bootstrap::initialize_environment(
         &config.void_packages_dir(),

@@ -48,12 +48,17 @@ pub fn remove(config: &Config) -> Result<i32> {
         for t in &targets {
             // strip version constraints for db key
             let name = t.split(['<', '>', '=', ' ']).next().unwrap_or(t);
+            // T-005: los oficiales nunca se rastrean en install, así que solo
+            // se anota REMOVE si el paquete estaba rastreado (simetría INSTALL/REMOVE).
+            let was_tracked = db.get(name).is_some();
             if db.remove(name) {
                 changed = true;
             }
             // P2: diario (best-effort: nunca aborta un remove válido).
-            if let Err(e) = crate::journal::append(&config.data_dir, "REMOVE", name, "") {
-                tracing::warn!("no se pudo anotar el diario: {e:#}");
+            if was_tracked {
+                if let Err(e) = crate::journal::append(&config.data_dir, "REMOVE", name, "") {
+                    tracing::warn!("no se pudo anotar el diario: {e:#}");
+                }
             }
         }
         if changed {

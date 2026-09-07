@@ -99,7 +99,7 @@ sudo xbps-install -S        # accept the RSA fingerprint when prompted
 sudo xbps-install vary      # later: sudo xbps-install -Su keeps it current
 ```
 
-Both glibc and musl are served from that single URL (`x86_64` / `x86_64-musl`). The signing public key is published as [`keys/vary-repo.pub.pem`](./keys/vary-repo.pub.pem).
+Both glibc and musl are served from that single URL (`x86_64` / `x86_64-musl`). The musl artifact (`vary-*_1.x86_64-musl.xbps`) is dynamically linked (interpreter `/lib/ld-musl-x86_64.so.1`) and requires a Void musl system to run; it does not run on glibc (verified by the `verify musl` workflow job in a musl container). The signing public key is published as [`keys/vary-repo.pub.pem`](./keys/vary-repo.pub.pem).
 
 ## Architecture
 

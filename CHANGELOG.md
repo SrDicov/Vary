@@ -33,6 +33,9 @@ Evidencia: `audit/FIX_LOG.md` (Apéndice 0.3.1/0.4.0), `test/RESULTS.md`,
 - Resiliencia 404 en distfiles: no implementada (capa equivocada; el fetch
   con reintentos/mirrors lo ejecuta `xbps-src`).
 - P1-3 (masterdirs aislados + H-015): único ítem de 0.5.0.
+- Artefacto musl (`vary-*_1.x86_64-musl.xbps`) dinámico (intérprete
+  `/lib/ld-musl-x86_64.so.1`): exige Void musl para ejecutarse, en glibc no
+  corre (verificado por el job `verify musl` en contenedor musl).
 
 ## Unreleased (auditoría FASE 4–5, 2026-09-06)
 

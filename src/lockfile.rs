@@ -302,4 +302,61 @@ mod tests {
         );
         assert!(w.is_empty(), "{w:?}");
     }
+
+    #[test]
+    fn verify_if_pinned_match_mismatch_y_nuevo() {
+        // D1: `verify_if_pinned` contra lock temporal; `repos` vacío para no
+        // invocar git real (el camino de commits lo cubre `verify_plan`).
+        let dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config {
+            config_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        // Sin lock: silencio total.
+        let w = verify_if_pinned(
+            &config,
+            &[],
+            &[("app".to_string(), "app-1.0_1".to_string())],
+        );
+        assert!(w.is_empty(), "{w:?}");
+        sample_lock().save(&config.lock_path()).unwrap();
+        // Match pineado: silencio.
+        let w = verify_if_pinned(
+            &config,
+            &[],
+            &[("app".to_string(), "app-1.0_1".to_string())],
+        );
+        assert!(w.is_empty(), "{w:?}");
+        // Mismatch de versión: avisa citando paquete y versiones.
+        let w = verify_if_pinned(
+            &config,
+            &[],
+            &[("app".to_string(), "app-2.0_1".to_string())],
+        );
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("'app'"), "{w:?}");
+        assert!(w[0].contains("app-2.0_1"), "{w:?}");
+        assert!(w[0].contains("app-1.0_1"), "{w:?}");
+        // Paquete nuevo no pineado: silencio anti-fatiga.
+        let w = verify_if_pinned(
+            &config,
+            &[],
+            &[("nuevo".to_string(), "nuevo-1.0_1".to_string())],
+        );
+        assert!(w.is_empty(), "{w:?}");
+    }
+
+    #[test]
+    fn verify_if_pinned_lock_ilegible_avisa() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config {
+            config_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        std::fs::write(config.lock_path(), "esto no es = [toml").unwrap();
+        let w = verify_if_pinned(&config, &[], &[]);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("ilegible"), "{w:?}");
+        assert!(w[0].contains("vary --lock"), "{w:?}");
+    }
 }
