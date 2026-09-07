@@ -8,6 +8,19 @@ pub fn remove(config: &Config) -> Result<i32> {
     if config.args.has_arg("lock", "lock") {
         anyhow::bail!("--lock no se combina con -R (usa `vary --lock` tras los cambios)");
     }
+    // P1-2: challenge tiene su propia vía.
+    if config.args.has_arg("challenge", "challenge") {
+        anyhow::bail!(
+            "--challenge no se combina con -R: usa `vary --challenge <pkg> --experimental`"
+        );
+    }
+    // P2: why/log tienen su propia vía.
+    if config.args.has_arg("why", "why") {
+        anyhow::bail!("--why no se combina con -R: usa `vary --why <pkg>`");
+    }
+    if config.args.has_arg("log", "log") {
+        anyhow::bail!("--log no se combina con -R: usa `vary --log [pkg]`");
+    }
     if config.targets.is_empty() {
         anyhow::bail!("no targets specified (use -h for help)");
     }
@@ -37,6 +50,10 @@ pub fn remove(config: &Config) -> Result<i32> {
             let name = t.split(['<', '>', '=', ' ']).next().unwrap_or(t);
             if db.remove(name) {
                 changed = true;
+            }
+            // P2: diario (best-effort: nunca aborta un remove válido).
+            if let Err(e) = crate::journal::append(&config.data_dir, "REMOVE", name, "") {
+                tracing::warn!("no se pudo anotar el diario: {e:#}");
             }
         }
         if changed {

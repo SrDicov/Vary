@@ -178,3 +178,10 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - Instalado lavat (fuente) → challenge: rebuild + `sin divergencias (2 ficheros comparados)` (el rebuild es bit-reproducible aquí) ✅.
 - Divergencia inyectada (template del clon + fichero nuevo en `do_install`, restaurado con `git checkout` después): `challenge lavat: 1 divergencias: [falta-en-disco] /usr/share/lavat/INYECTADO` ✅. Los kinds `Changed`/`Added` restantes van en tabla unitaria CI (el `.xbps` se lee por streaming `ruzstd`+`tar` puro Rust: `tar` del sistema no lee zstd aquí; miembros de metadata `props/files.plist` se excluyen).
 - Limpieza: `-R` lavat + poda de binpkgs/sources; DB de vuelta a brave+librewolf; clon repository limpio (`status` vacío).
+
+## P2 en vivo — `vary --why` + `vary --log` (diario)
+
+- `vary --why curl`: no gestionado por vary; requerido por `xtools-0.70_1` (xbps -X); declarado en `cnr/hytale-installer`, `cnr/mullvad-vpn` ✅.
+- `vary --why librewolf`: gestionado (`librewolf-153.0.4.1_1 [z-packages] (Source)`), sin revdeps ni declarantes ✅.
+- `vary --log` vacío → `sin historial...`; tras install+remove lavat: `... INSTALL lavat lavat-3.0.0_2 repository` + `... REMOVE lavat` (2 líneas exactas; un susto de "duplicado" fue error de lectura de pipes intercalados, verificado con `wc -l`) ✅.
+- Nota: el diario conserva esas 2 líneas (historial legítimo; borrar con `rm ~/.local/share/vary/operations.log` si se quiere pristine).

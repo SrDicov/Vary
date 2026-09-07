@@ -990,6 +990,15 @@ pub fn install(config: &mut Config) -> Result<i32> {
             repo_commit.clone(),
             artifact_sha256.clone(),
         );
+        // P2: diario (best-effort: nunca aborta un install válido).
+        if let Err(e) = crate::journal::append(
+            &config.data_dir,
+            "INSTALL",
+            real,
+            &format!("{version} {repo_name}"),
+        ) {
+            tracing::warn!("no se pudo anotar el diario: {e:#}");
+        }
         for sub in &item.info.subpackages {
             // Los subpaquetes comparten commit pero su artefacto propio no se
             // rastrea (None honesto en vez de ficción).

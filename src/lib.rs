@@ -23,6 +23,7 @@ mod template_audit;
 mod util;
 mod vup_index;
 mod vur_client;
+mod why;
 mod xbps;
 
 use crate::config::{Config, Op};
@@ -187,9 +188,12 @@ fn needs_lock(config: &Config) -> bool {
     match config.op {
         Op::Remove => true,
         // P1-1: `vary --lock` pelado solo escribe ~/.config (sin lock);
-        // `-p` no muta (P0-4). Resto del Default (-Syu implícito): con lock.
+        // `-p`/`--why`/`--log` no mutan (P0-4/P2). Resto del Default (-Syu
+        // implícito): con lock.
         Op::Default => {
             !(config.args.has_arg("p", "print")
+                || config.args.has_arg("why", "why")
+                || config.args.has_arg("log", "log")
                 || (config.args.has_arg("lock", "lock") && config.targets.is_empty()))
         }
         Op::Sync => {
@@ -220,6 +224,13 @@ fn handle_sync(config: &mut Config) -> Result<i32> {
     // P1-2: challenge no se combina con -S (tiene su propia vía).
     if config.args.has_arg("challenge", "challenge") {
         bail!("--challenge no se combina con -S: usa `vary --challenge <pkg> --experimental`");
+    }
+    // P2: why/log son comandos del modo Default (no se combinan con -S).
+    if config.args.has_arg("why", "why") {
+        bail!("--why no se combina con -S: usa `vary --why <pkg>`");
+    }
+    if config.args.has_arg("log", "log") {
+        bail!("--log no se combina con -S: usa `vary --log [pkg]`");
     }
     // P0-4: -p imprime el plan congelado sin mutar (ver install::print_plan,
     // que valida su propia forma). Domina sobre el resto de consultas sync.
@@ -272,6 +283,21 @@ fn handle_default(config: &mut Config) -> Result<i32> {
         let pkg = config.targets[0].clone();
         return crate::challenge::challenge(config, &pkg);
     }
+    // P2: `vary --why <pkg>` (un paquete) y `vary --log [pkg]` (filtro).
+    if config.args.has_arg("why", "why") {
+        if config.targets.len() != 1 {
+            bail!("--why requiere exactamente un paquete: `vary --why <pkg>`");
+        }
+        let pkg = config.targets[0].clone();
+        return crate::why::explain(config, &pkg);
+    }
+    if config.args.has_arg("log", "log") {
+        if config.targets.len() > 1 {
+            bail!("--log admite como máximo un filtro: `vary --log [pkg]`");
+        }
+        let filter = config.targets.first().cloned();
+        return crate::journal::show(&config.data_dir, filter.as_deref());
+    }
     // P1-1: `vary --lock` pelado regenera desde el estado actual.
     if config.targets.is_empty() && config.args.has_arg("lock", "lock") {
         return crate::lockfile::regenerate(config);
@@ -292,6 +318,7 @@ fn handle_default(config: &mut Config) -> Result<i32> {
 mod info;
 mod init;
 mod install;
+mod journal;
 mod review;
 mod search;
 mod upgrade;
@@ -312,6 +339,9 @@ mod tests {
             (vec!["-S", "foo", "--lock"], true),
             (vec!["-Syu", "--lock"], true),
             (vec!["--challenge", "foo", "--experimental"], true),
+            (vec!["--why", "foo"], false),
+            (vec!["--log"], false),
+            (vec!["--log", "foo"], false),
             (vec!["-S", "foo"], true),
             (vec!["-Syu"], true),
             (vec!["-R", "foo"], true),

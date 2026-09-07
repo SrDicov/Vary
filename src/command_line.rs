@@ -443,6 +443,22 @@ impl Config {
                     value: None,
                 });
             }
+
+            Arg::Long("why") => {
+                // P2: `vary --why <pkg>`. Flag propio (no pacman): manual.
+                self.args.args.push(crate::args::Arg {
+                    key: "why".to_string(),
+                    value: None,
+                });
+            }
+
+            Arg::Long("log") => {
+                // P2: `vary --log [pkg]`. Flag propio (no pacman): manual.
+                self.args.args.push(crate::args::Arg {
+                    key: "log".to_string(),
+                    value: None,
+                });
+            }
             Arg::Long("print-format") => {
                 // Solo se soporta el formato estable de texto; cualquier otro
                 // valor miente sobre la salida y se rechaza (precedente H-007).
@@ -660,6 +676,22 @@ mod tests {
             .expect("challenge debe parsear");
         assert!(config.args.has_arg("challenge", "challenge"));
         assert!(config.experimental);
+    }
+
+    #[test]
+    fn why_y_log_se_registran() {
+        // P2: comandos de consulta.
+        let mut config = Config::default();
+        parse_args(&mut config, &["--why", "foo"]).expect("--why debe parsear");
+        assert!(config.args.has_arg("why", "why"));
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["--log"]).expect("--log debe parsear");
+        assert!(config.args.has_arg("log", "log"));
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["--log", "foo"]).expect("--log con filtro debe parsear");
+        assert!(config.args.has_arg("log", "log"));
     }
 
     #[test]

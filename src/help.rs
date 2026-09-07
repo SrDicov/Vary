@@ -33,6 +33,8 @@ pub fn help() {
     println!(
         "    --challenge <pkg>       Rebuild and compare against installed (needs --experimental)"
     );
+    println!("    vary --why <pkg>            Explain what pulls a package");
+    println!("    vary --log [pkg]            Show operation history");
     println!();
     println!("Vary options:");
     println!("    --force-build           Force build from source even if binary exists");
