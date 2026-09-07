@@ -365,10 +365,14 @@ mod tests {
     }
 
     fn vur_info(pkgname: &str, archs: &[&str]) -> VurInfo {
+        vur_info_ver(pkgname, "1.0", archs)
+    }
+
+    fn vur_info_ver(pkgname: &str, version: &str, archs: &[&str]) -> VurInfo {
         VurInfo {
             format_version: 1,
             pkgname: pkgname.to_string(),
-            version: "1.0".to_string(),
+            version: version.to_string(),
             revision: 1,
             archs: strs(archs),
             subpackages: Vec::new(),
@@ -678,5 +682,88 @@ mod tests {
             Action::Install(BinarySource::Official)
         );
         assert_eq!(build_names(&plan), vec!["libdata", "svc"]);
+    }
+
+    // --- T-010: red de seguridad (caracterización del comportamiento ACTUAL
+    // sin flags). Deben seguir en verde tras el rediseño: "sin flags,
+    // comportamiento actual inalterado". El arbitraje de versiones entre
+    // repos vive en el merge (install.rs: or_insert por prioridad); el
+    // resolver solo ve el candidato fusionado: estos tests fijan qué hace
+    // con él cuando hay otras vías (binario en otro repo, template VUR
+    // frente a official) SIN preferencia explícita.
+
+    /// T-010 (hyfetch real: repository-fuente 2.1.0 fusionada, binario vup
+    /// 2.0.5 en OTRO repo): sin flags se compila la fuente; el binario de
+    /// otro repo es invisible (vul_binary_available solo se consulta para
+    /// el repo del candidato).
+    #[test]
+    fn t010_hyfetch_sin_flags_compila_fuente_aunque_haya_binario_en_otro_repo() {
+        let src = MockSource {
+            vur: [(
+                "hyfetch",
+                ("repository", vur_info_ver("hyfetch", "2.1.0", &["x86_64"])),
+            )]
+            .into(),
+            binaries: [("vup", "hyfetch")].into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(&targets(&["hyfetch"]), &src, &ResolveOptions::default()).unwrap();
+        assert!(plan.installs.is_empty());
+        assert_eq!(build_names(&plan), vec!["hyfetch"]);
+        assert_eq!(plan.builds[0].info.version, "2.1.0");
+    }
+
+    /// T-010 (hytale-installer real: binario official + template cnr): sin
+    /// flags el bucket official gana y el template VUR ni se mira.
+    #[test]
+    fn t010_hytale_sin_flags_oficial_gana_a_template_vur() {
+        let src = MockSource {
+            official: ["hytale-installer"].into(),
+            vur: [(
+                "hytale-installer",
+                (
+                    "cnr",
+                    vur_info_ver("hytale-installer", "2.0.0", &["x86_64"]),
+                ),
+            )]
+            .into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(
+            &targets(&["hytale-installer"]),
+            &src,
+            &ResolveOptions::default(),
+        )
+        .unwrap();
+        assert!(plan.builds.is_empty());
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
+    }
+
+    /// T-010 (triple vía sintética: official + binario vup + fuente cnr):
+    /// sin flags el orden es official > VUR fusionado, sin importar que
+    /// exista binario firmado disponible en otro repo.
+    #[test]
+    fn t010_triple_via_sin_flags_oficial_gana() {
+        let src = MockSource {
+            official: ["triapp"].into(),
+            vur: [(
+                "triapp",
+                ("cnr", vur_info_ver("triapp", "3.0.0", &["x86_64"])),
+            )]
+            .into(),
+            binaries: [("vup", "triapp")].into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(&targets(&["triapp"]), &src, &ResolveOptions::default()).unwrap();
+        assert!(plan.builds.is_empty());
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
     }
 }
