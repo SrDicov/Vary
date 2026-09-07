@@ -223,10 +223,15 @@ impl InstalledDb {
     }
 }
 
-/// P0-5: avisos de drift al reinstalar la MISMA versión con pins distintos:
-/// el commit pineado cambió bajo la versión (plantilla/índice movido =
-/// señal supply-chain) o el artefacto ya no coincide. Subir versión no es
-/// drift (es upgrade esperado); pins ausentes no afirman nada.
+/// P0-5: avisos de drift al reinstalar la MISMA versión con pins distintos.
+/// Regla de señal más fuerte disponible (sin redundancia ni ruido):
+/// - commit en ambos lados y distinto => avisa (plantilla/índice movido
+///   bajo la versión: señal supply-chain);
+/// - sin commit en algún lado + artefacto en ambos y distinto => avisa (es
+///   la única señal disponible, típico de entradas pre-v3);
+/// - commit igual (rebuild no reproducible bit-a-bit) => silencio;
+/// - subir versión => silencio (upgrade esperado, no drift);
+/// - sin pins comparables => silencio.
 pub fn drift_warnings(
     old: Option<&Entry>,
     version: &str,
@@ -242,17 +247,20 @@ pub fn drift_warnings(
     let mut warnings = Vec::new();
     match (&old.repo_commit, repo_commit) {
         (Some(a), Some(b)) if a != b => warnings.push(format!(
-            "drift de procedencia: '{v}' reinstalado desde otro commit ({a:.12} -> {b:.12}); \
-             la plantilla/índice cambió bajo la misma versión",
-            v = version
+            "drift de procedencia: '{version}' reinstalado desde otro commit ({a:.12} -> {b:.12}); \
+             la plantilla/índice cambió bajo la misma versión"
         )),
-        _ => {}
-    }
-    match (&old.artifact_sha256, artifact_sha256) {
-        (Some(a), Some(b)) if a != b => warnings.push(format!(
-            "drift de artefacto: '{version}' reinstalado con distinto binario que el pineado"
-        )),
-        _ => {}
+        // Commits iguales: rebuild no reproducible bit-a-bit (timestamps) es
+        // normal => silencio total (ni siquiera se mira el artefacto).
+        (Some(_), Some(_)) => {}
+        // Sin commit en algún lado: el artefacto es la única señal (típico
+        // de entradas pre-v3); si difiere, avisar.
+        _ => match (&old.artifact_sha256, artifact_sha256) {
+            (Some(a), Some(b)) if a != b => warnings.push(format!(
+                "drift de artefacto: '{version}' reinstalado con distinto binario que el pineado"
+            )),
+            _ => {}
+        },
     }
     warnings
 }
@@ -583,6 +591,21 @@ mod tests {
             &Some("sha256:otro".to_string())
         )
         .is_empty());
+    }
+
+    #[test]
+    fn drift_de_artefacto_solo_sin_commits() {
+        // Sin commit en algún lado, el artefacto es la única señal.
+        let mut legacy = pinned_entry();
+        legacy.repo_commit = None;
+        let warnings = drift_warnings(
+            Some(&legacy),
+            "1.0_1",
+            &None,
+            &Some("sha256:otro".to_string()),
+        );
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("drift de artefacto"), "{warnings:?}");
     }
 
     #[test]

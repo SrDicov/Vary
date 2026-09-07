@@ -153,6 +153,6 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 ## P0-5 en vivo — pinning (`repo_commit` + `artifact_sha256`, schema v3)
 
 - `vary -S lavat` (fuente): DB con `repo_commit` == `git rev-parse HEAD` del clon repository y `artifact_sha256` == `sha256sum` del `.xbps` construido (verificados independientes) ✅.
-- Drift simulado (repo_commit tampered + `--force-build`): avisa `drift de procedencia: 'lavat-3.0.0_2' reinstalado desde otro commit (tampered0000 -> 4530c62d7ba6)` (+ artefacto, esperado en rebuild) ✅.
+- Drift simulado (repo_commit tampered + `--force-build`): avisa `drift de procedencia: 'lavat-3.0.0_2' reinstalado desde otro commit (tampered0000 -> 4530c62d7ba6)` y calla el artefacto (mismo caso: rebuild normal) ✅.
 - **Gap VUP-DB cerrado:** `vary -S basilk` (binario vup) deja rastro (`vup/binary`, commit del índice, artifact del caché xbps verificado) y `vary -R basilk` lo elimina limpiando la DB ✅ (antes quedaba huérfano).
 - Limpieza: `-R` lavat + `xbps-remove` nvm (official, nunca rastreado por diseño); DB de vuelta a brave+librewolf; caché de build podada.
