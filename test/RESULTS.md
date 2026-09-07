@@ -125,3 +125,10 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - **Limpieza/restauración verificada:** `repo remove -p`, `xbps-remove` dummies, server off, `repos.conf`/`installed.json`/`/etc/xbps.d` idénticos a backups (`diff`/comparación exacta), keyring sin restos + plist original restaurado, privadas destruidas (`shred`). Solo quedan logs + llaves públicas + backups en `pre-t012/`.
 - **Upstream real:** VUP rotó su llave mid-test (git sirve llave nueva, repodata aún firmada con la vieja): xbps falla cerrado — correcto y fuera del alcance de vary. Ojo: los installs VUP reales darán ALERTA de rotación hasta que upstream re-firme (H-003 haciendo su trabajo).
 - **Observado fuera de alcance:** installs VUP-binarios no dejan rastro en `installed.json` (`vur_map_lookup_repo` no cubre sintéticos VUP) — candidato a 0.3.1. Tests negativos de regalo: plist con `<data>` vacío y repo sin firmar fallan cerrado con mensajes claros.
+
+## P0-1 en vivo — `preflight.rs` (chequeos previos duros)
+
+- Normal en este host: pasa en silencio (0 warnings) — uchroot 4750, sin OCI/chroot.
+- Root directo (`doas env -u DOAS_USER vary -Ss`, euid 0 sin wrapper): `error: vary no debe ejecutarse como root directo...`, exit 1 ✅.
+- uchroot a 0755: `error: xbps-uchroot en /usr/bin/xbps-uchroot con modo 755 (se exige 4750...); corrige con: doas chmod 4750...`, exit 1; modo restaurado a 4750 y verificado, run posterior exit 0 ✅.
+- Resto de la matriz (OCI, chroot degradado, fallback `/usr/libexec`, ausente/ilegible) en unit tests (`preflight::tests`, tabla de 6).

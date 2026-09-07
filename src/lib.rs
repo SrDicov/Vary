@@ -11,6 +11,7 @@ mod lock;
 mod logging;
 mod masterdir;
 mod metadata;
+mod preflight;
 mod remove;
 mod repo;
 mod reposconf;
@@ -70,6 +71,19 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
 
     if debug_enabled() {
         tracing::debug!("VARY_DEBUG activo");
+    }
+
+    // Chequeos previos duros del entorno (P0-1): root directo y uchroot
+    // sin 4750 abortan; chroot degradado / OCI avisan y siguen.
+    {
+        let report = crate::preflight::check_real();
+        for w in &report.warnings {
+            tracing::warn!("preflight: {w}");
+        }
+        if let Some(msg) = report.abort {
+            print_error(Style::new(), anyhow::anyhow!(msg));
+            return 1;
+        }
     }
 
     let mut config = match Config::new() {
