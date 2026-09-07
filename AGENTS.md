@@ -4,7 +4,7 @@ Vary: gestor de paquetes comunitarios (helper VUR) para Void Linux — port de [
 
 ## Comandos
 
-- Test completo: `cargo test` (~150 tests; 4 ignorados en `src/xbps.rs`, requieren Void Linux real + `xbps-query`; los corre el humano según `audit/VALIDATION.md`).
+- Test completo: `cargo test` (~235 tests en 0.4.0; 4 ignorados en `src/xbps.rs`, requieren Void Linux real + `xbps-query`; los corre el humano según `audit/VALIDATION.md`).
 - Un solo test: `cargo test <filtro>` (p. ej. `cargo test resolver`).
 - Release: `cargo build --release` (`lto=true`, `codegen-units=1` — lento a propósito; NUNCA en el PC dev, solo CI por dispatch/tags).
 - MSRV fijado en DOS sitios: `Cargo.toml` (`rust-version = "1.88"`) y `.github/workflows/ci.yml` (`dtolnay/rust-toolchain@1.88`) — cámbialos juntos. No bajar de 1.88: la dependencia transitiva `time@0.3.x` lo exige.

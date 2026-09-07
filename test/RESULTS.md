@@ -191,3 +191,25 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - **404 distfiles (mirrors + backoff): NO en vary.** El fetch lo ejecuta `xbps-src` (`md.fetch_pkg`), que ya trae sus propios reintentos y soporta mirrors vía su configuración; el pre-fetch de vary es warm-up best-effort (`let _`). Duplicar reintentos en vary no aporta y los "mirrors alternos" no existen en el modelo de datos (requeriría formato VUR nuevo). Capa equivocada.
 - **Soname drift trigger: NO sin decisión de política.** Requiere (1) fuente de sonames + (2) grabar baseline por build (schema v4) + (3) política: ¿avisar o recompilar solo? Recompilar sin consentimiento explícito es peligroso; avisar es útil pero cambia `-Syu`. Propuesta si se aprueba: pin `shlibs_requires` al instalar + aviso en upgrade (nunca auto-rebuild sin flag).
 - **P1-3 (masterdirs aislados): NO tocado** — la spec exige decisión humana expresa (riesgo de corrupción del repo local).
+
+## Post-tag v0.4.0 — release en Void real (2026-09-07, VALIDATION paso 9 extendido)
+
+- Tag `v0.4.0` → CI success + XBPS success (ambos workflows del tag en verde).
+  Release `v0.4.0` publicado con `.xbps` glibc + musl (artefactos descargados OK).
+- Instalación glibc: binario extraído del `.xbps` (`bsdtar`, tar del sistema
+  no lee zstd) → `doas install` sobre `/usr/bin/vary` (rollback listo:
+  `test/backup/2026-09-07/vary-0.3.0-bin` + `test/backup/2026-09-06/`).
+- Smoke release 0.4.0 (5 min, todo exit 0): `-V` (0.4.0), `-Ss lavat`,
+  `-Si lavat` (official + vur), `-S vuru --noconfirm` (binario VUP, sin
+  compilar) con rastro DB perfecto (`binary/vup` + commit + artifact),
+  `-R vuru`, DB final `[brave, librewolf]`, 0 paquetes prueba.
+- **basilk ya no es VUP: entró a repos oficiales** → `-S basilk` instala como
+  `official/` y NO deja rastro (T-005 por diseño, no regresión; verificado
+  vía `-Sp`). El gap VUP-DB de P0-5 sigue cerrado (demostrado con vuru).
+  Observación cosmética preexistente (no 0.4.0): `remove` anota REMOVE en el
+  diario aunque el paquete no tuviera entrada (install oficial no anota
+  INSTALL) — asimetría conocida, sin acción.
+- musl: artefacto válido (ELF x86-64) pero **dinámico** (intérprete
+  `/lib/ld-musl-x86_64.so.1`, ausente en este host glibc) → no ejecutable
+  aquí. Sin defecto: el job `verify musl` del workflow (verde) ya lo ejecutó
+  en contenedor musl. El sistema queda con glibc por orden.
