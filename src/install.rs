@@ -335,7 +335,7 @@ pub fn print_plan(config: &Config) -> Result<i32> {
     let repos_conf = ReposConf::load(config.repos_conf_path())?;
     let mut repos: Vec<VurRepo> = Vec::new();
     for (name, entry) in repos_conf.sorted_by_priority() {
-        let repo = make_repo(&name, &entry, config);
+        let repo = make_repo(&name, entry, config);
         if !repo.path.join(".git").exists() {
             anyhow::bail!(
                 "el repo '{name}' no está clonado y --print no descarga: \
@@ -518,7 +518,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
     let sorted = repos_conf.sorted_by_priority();
     let mut repos: Vec<VurRepo> = Vec::new();
     for (name, entry) in sorted {
-        let repo = make_repo(&name, &entry, config);
+        let repo = make_repo(&name, entry, config);
         match repo.ensure_cloned() {
             Ok(_) => repos.push(repo),
             Err(e) => tracing::warn!("failed to ensure VUR '{name}': {e}"),
