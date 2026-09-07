@@ -802,3 +802,16 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `metadata::tests::arch_supports_exacta_all_y_noarch`.
   - Suite local 160+1 en verde + run CI verde + verificación en vivo (`-S hyfetch` ya no rechaza por arch).
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [T-005] installed.json registra ficción en installs oficiales o abortados
+- **Severidad:** High
+- **Módulo:** `src/install.rs:580-603` (`track_action`)
+- **Commit:** `fix(T-005)` (`git log --oneline --grep="T-005"`)
+- **Descripción:** Dos casos en vivo: (1) `vary -S bibata-cursor-theme` abortado por xbps escribió `{version: "bibata-cursor-theme-_0", vur: "z-packages", install_type: "source"}` sin que nada se instalara; (2) reinstall de `hytale-installer` vía binario oficial/neko sobrescribió su entrada real con la misma ficción (`_0`, `source`, `cnr`). Causa: el upsert recorría `plan.installs` incluyendo `Action::Install(Official)` con el placeholder vacío (`version ""`, `revision 0`), y el brazo `_ => Source` lo etiquetaba mal.
+- **Remediación:** `track_action()`: solo `Build → Source` y `VulBinary → Binary` dejan rastro; oficiales y resto se saltan (xbps es la fuente de verdad). El tracking VUP sigue ausente por diseño Fase 1 (su lookup falla igual que antes).
+- **No-bug asociado (T-003 reclasificado):** los exit 0 tras "Aborting!" vienen de `xbps-install`, que devuelve 0 al abortar por EOF (verificado directo: `xbps_abort=0`). vary propaga fielmente. Propuesta UX (no implementada): pasar `-y` a xbps cuando vary ya confirmó, eliminando el doble prompt y la trampa del abort-0.
+- **Validación:**
+  - `install::tests::track_action_solo_build_y_binario_vur`.
+  - Suite local 161+1 en verde + run CI verde. Ficciones preexistentes (`bibata`, `hytale _0`) purgadas a mano con respaldo en `test/backup/`.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

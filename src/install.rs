@@ -582,15 +582,16 @@ pub fn install(config: &mut Config) -> Result<i32> {
     for item in plan.installs.iter().chain(plan.builds.iter()) {
         // Only VUR packages (por nombre real: lo pedido puede ser virtual).
         let real = &item.info.pkgname;
+        // T-005: los oficiales los gestiona xbps; registrarlos aquí escribía
+        // ficción (placeholder `_0`, `source`, repo del índice aunque el
+        // binario viniera de un repo xbps). Solo Build y VulBinary.
+        let Some(itype) = track_action(&item.action) else {
+            continue;
+        };
         let is_vur = vur_map_lookup_repo(real, &repos, &mut cache).is_ok();
         if is_vur {
             let repo_name = vur_map_lookup_repo(real, &repos, &mut cache)
                 .unwrap_or_else(|_| "unknown".to_string());
-            let itype = match &item.action {
-                Action::Install(BinarySource::VulBinary { .. }) => InstallType::Binary,
-                Action::Build => InstallType::Source,
-                _ => InstallType::Source,
-            };
             db.upsert(real, &item.info.pkgver(), &repo_name, itype.clone());
             for sub in &item.info.subpackages {
                 db.upsert(&sub.pkgname, &item.info.pkgver(), &repo_name, itype.clone());
@@ -600,6 +601,16 @@ pub fn install(config: &mut Config) -> Result<i32> {
     db.save()?;
 
     Ok(0)
+}
+
+/// Decide si una acción del plan deja rastro en installed.json (T-005).
+/// `None` = xbps es la fuente de verdad (oficiales y resto): no registrar.
+fn track_action(action: &Action) -> Option<InstallType> {
+    match action {
+        Action::Install(BinarySource::VulBinary { .. }) => Some(InstallType::Binary),
+        Action::Build => Some(InstallType::Source),
+        _ => None,
+    }
 }
 
 fn vur_map_lookup_repo(name: &str, repos: &[VurRepo], cache: &mut CacheIndex) -> Result<String> {
@@ -697,6 +708,20 @@ mod tests {
         };
         let err2 = install(&mut config2).unwrap_err();
         assert!(err2.to_string().contains("nombre de paquete inválido"));
+    }
+
+    #[test]
+    fn track_action_solo_build_y_binario_vur() {
+        // T-005: los oficiales no dejan rastro (xbps manda); Build y
+        // VulBinary sí, con su tipo correspondiente.
+        assert_eq!(track_action(&Action::Build), Some(InstallType::Source));
+        assert_eq!(
+            track_action(&Action::Install(BinarySource::VulBinary {
+                repo: "vup".to_string()
+            })),
+            Some(InstallType::Binary)
+        );
+        assert_eq!(track_action(&Action::Install(BinarySource::Official)), None);
     }
 
     #[test]
