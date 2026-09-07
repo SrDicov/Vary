@@ -128,6 +128,10 @@ pub struct Config {
     // Flags runtime
     pub force_build: bool,
     pub prefer_binary: bool,
+    /// T-010: orden explícito entre candidatos multi-repo (los flags
+    /// --prefer-binary/--force-build/--no-prefer-binary lo fijan al
+    /// parsear; default Legacy = precedencia histórica).
+    pub candidate_order: crate::resolver::CandidateOrder,
 }
 
 impl Default for Config {
@@ -244,6 +248,7 @@ impl Config {
             ttl_cache_seconds: 3600,
             force_build: false,
             prefer_binary: true,
+            candidate_order: crate::resolver::CandidateOrder::Legacy,
         }
     }
 

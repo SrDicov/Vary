@@ -393,9 +393,18 @@ impl Config {
                 };
                 self.curl_bin = v.to_string();
             }
-            Arg::Long("force-build") => self.force_build = true,
-            Arg::Long("prefer-binary") => self.prefer_binary = true,
-            Arg::Long("no-prefer-binary") => self.prefer_binary = false,
+            Arg::Long("force-build") => {
+                self.force_build = true;
+                self.candidate_order = crate::resolver::CandidateOrder::PreferSource;
+            }
+            Arg::Long("prefer-binary") => {
+                self.prefer_binary = true;
+                self.candidate_order = crate::resolver::CandidateOrder::PreferBinary;
+            }
+            Arg::Long("no-prefer-binary") => {
+                self.prefer_binary = false;
+                self.candidate_order = crate::resolver::CandidateOrder::PreferSource;
+            }
             Arg::Long("interactive") => self.interactive = true,
             Arg::Long("print") | Arg::Short('p') | Arg::Long("print-format") => {
                 bail!("el flag --print / -p no está soportado (reservado para Roadmap P0-4). Para instalar use vary -S <pkg>");

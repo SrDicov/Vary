@@ -847,3 +847,17 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Remediación:** Sin versión → solo `repo/nombre` (xbps resuelve la versión).
 - **Validación:** Suite + CI verde + verificación en vivo.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [T-010] Flags binario/fuente que solo decidían intra-candidato ("flag que miente")
+- **Severidad:** Medium
+- **Módulo:** `src/resolver.rs` (orden de candidatos), `src/install.rs` (multi-mapa + avisos en el plan), `src/config.rs` + `src/command_line.rs` (plumbing de orden explícito)
+- **Commit:** `fix(T-010)` (`git log --oneline --grep="T-010"`)
+- **Descripción:** `--prefer-binary`/`--force-build`/`--no-prefer-binary` solo decidían *dentro* del candidato VUR ya fusionado (`resolver.rs:264`): nunca cambiaban de repositorio (hyfetch-fuente 2.1.0 ganaba al binario vup 2.0.5 aunque se pidiera `--prefer-binary`) ni evitaban el bucket official/xbps (`--force-build` sobre hytale-installer tomaba el binario official en silencio).
+- **Remediación:** `CandidateOrder` (default `Legacy` = precedencia histórica intacta). Flags explícitos fijan `PreferBinary`/`PreferSource` y el resolver ordena candidatos multi-repo (`vur_lookup_all`, default = candidato único fusionado) por (a) clase binario/fuente efectiva, (b) versión desc (`cmp_pkgver`), (c) prioridad de repo (`repo_priority`, default 100). `PreferSource` + official compila el template VUR si existe; si no, avisa "sin efecto" vía `Plan.warnings` (pintado junto al plan, antes del confirm) y sigue con official. `force_rebuild` (vary.conf) equivale a `--force-build` también en el orden.
+- **Validación:**
+  - Red de seguridad: 3 tests de caracterización sin flags (verdes antes y después del rediseño).
+  - Matriz de aceptación 3-caminos (6 tests: prefer-binary cambia de repo, force-build compila template / avisa sin template, no-prefer-binary ordena fuente, fallback a mayor versión, desempate por prioridad) + `cmp_pkgver` numérico por token.
+  - Run CI verde (fmt + clippy `--all-targets -- -D warnings` + test).
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+---

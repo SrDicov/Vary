@@ -16,6 +16,16 @@
 //!    dependencias porque `xbps-install` las resuelve nativamente—; (b) si no,
 //!    se busca en los repos VUR por nombre y, si no existe, por `provides`;
 //!    (c) sin candidato en ninguno => error.
+//!    Con preferencia explícita (T-010: [`CandidateOrder::PreferBinary`] /
+//!    [`CandidateOrder::PreferSource`], flags `--prefer-binary` /
+//!    `--force-build` / `--no-prefer-binary`): (a') el bucket official solo
+//!    gana en automático con preferencia binaria (ya es binario); con
+//!    preferencia de fuente un template VUR existente se compila en su lugar
+//!    y, si no lo hay, se AVISA "sin efecto" y se sigue con official (nunca
+//!    en silencio); (b') entre candidatos VUR multi-repo se ordena por clase
+//!    binario/fuente efectiva, luego versión desc y luego prioridad del repo.
+//!    Sin flags ([`CandidateOrder::Legacy`]) todo queda como antes: official
+//!    primero y candidato VUR fusionado único.
 //! 2. Un nodo VUR se convierte en `Install(VulBinary { repo })` si
 //!    `!force_build && prefer_binary && vul_binary_available(..)`; si no, en
 //!    [`Action::Build`].
@@ -40,6 +50,7 @@
 //!    estricto: toda dependencia de un build aparece antes en `builds` o está
 //!    en `installs`.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Result};
@@ -80,6 +91,8 @@ pub struct Plan {
     pub installs: Vec<PlanItem>,
     /// Builds en ORDEN TOPOSÓGICO (dependencias primero).
     pub builds: Vec<PlanItem>,
+    /// Avisos no fatales (T-010: flag sin efecto sobre candidato official).
+    pub warnings: Vec<String>,
 }
 
 /// Fuente de datos inyectable: abstrae toda consulta a repos/xbps/xbps-src.
@@ -95,8 +108,35 @@ pub trait PackageSource {
     fn vur_lookup_provides(&self, virtual_name: &str) -> Option<(String, VurInfo)>;
     /// hay binario firmado disponible para este pkg en ese repo y arquitectura?
     fn vul_binary_available(&self, repo: &str, info: &VurInfo, arch: &str) -> bool;
+    /// T-010: TODOS los candidatos VUR por nombre (multi-repo), SIN filtrar
+    /// por arquitectura (el resolver filtra). Default: el candidato único de
+    /// [`PackageSource::vur_lookup`] (compatibilidad con implementaciones
+    /// que solo ven el índice fusionado).
+    fn vur_lookup_all(&self, name: &str) -> Vec<(String, VurInfo)> {
+        self.vur_lookup(name).into_iter().collect()
+    }
+    /// T-010: prioridad del repo (menor = mayor preferencia); default 100
+    /// (igual que el fallback de `install.rs`).
+    fn repo_priority(&self, _repo: &str) -> i64 {
+        100
+    }
     /// arquitectura actual del sistema/masterdir (ej "x86_64")
     fn arch(&self) -> String;
+}
+
+/// T-010: orden de candidatos entre repos. Sin flags es [`CandidateOrder::Legacy`]
+/// (comportamiento histórico: official primero, candidato VUR fusionado
+/// único). Los flags explícitos reordenan por clase efectiva ANTES de
+/// versión/prioridad.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CandidateOrder {
+    /// Sin preferencia explícita: precedencia histórica intacta.
+    #[default]
+    Legacy,
+    /// `--prefer-binary`: candidatos con binario firmado primero.
+    PreferBinary,
+    /// `--force-build` / `--no-prefer-binary`: candidatos compilables primero.
+    PreferSource,
 }
 
 /// Opciones de resolución.
@@ -106,6 +146,8 @@ pub struct ResolveOptions {
     pub prefer_binary: bool,
     /// Fuerza compilar desde fuente aunque haya binario disponible.
     pub force_build: bool,
+    /// T-010: orden entre candidatos de varios repos (default: histórico).
+    pub order: CandidateOrder,
 }
 
 impl Default for ResolveOptions {
@@ -113,6 +155,7 @@ impl Default for ResolveOptions {
         Self {
             prefer_binary: true,
             force_build: false,
+            order: CandidateOrder::Legacy,
         }
     }
 }
@@ -127,6 +170,32 @@ pub(crate) fn dep_name(dep: &str) -> &str {
     }
 }
 
+/// T-010: compara (versión, revisión): tokens alfanuméricos separados por
+/// cualquier otro carácter; token numérico vs numérico compara como número,
+/// el resto lexicográficamente; a igualdad de prefijo gana la más larga;
+/// desempata por revisión.
+fn cmp_pkgver(a_ver: &str, a_rev: u32, b_ver: &str, b_rev: u32) -> Ordering {
+    fn tokens(s: &str) -> Vec<&str> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
+            .collect()
+    }
+    fn cmp_token(a: &str, b: &str) -> Ordering {
+        match (a.parse::<u64>(), b.parse::<u64>()) {
+            (Ok(x), Ok(y)) => x.cmp(&y),
+            _ => a.cmp(b),
+        }
+    }
+    let (ta, tb) = (tokens(a_ver), tokens(b_ver));
+    for (x, y) in ta.iter().zip(tb.iter()) {
+        let ord = cmp_token(x, y);
+        if ord != Ordering::Equal {
+            return ord;
+        }
+    }
+    ta.len().cmp(&tb.len()).then_with(|| a_rev.cmp(&b_rev))
+}
+
 /// Estado interno de una resolución (ver semántica en la doc del módulo).
 struct Ctx<'a> {
     source: &'a dyn PackageSource,
@@ -139,6 +208,8 @@ struct Ctx<'a> {
     graph: DiGraphMap<u32, ()>,
     /// camino de expansión activo; conjunto "gris" para ciclos (punto 6).
     stack: Vec<String>,
+    /// T-010: avisos no fatales que viajan al [`Plan`] (flag sin efecto).
+    warnings: Vec<String>,
 }
 
 impl<'a> Ctx<'a> {
@@ -152,6 +223,7 @@ impl<'a> Ctx<'a> {
             index: HashMap::new(),
             graph: DiGraphMap::new(),
             stack: Vec::new(),
+            warnings: Vec::new(),
         }
     }
 
@@ -226,27 +298,53 @@ impl<'a> Ctx<'a> {
             return Ok(idx);
         }
 
+        // T-010: con preferencia de fuente explícita el bucket official NO
+        // gana en automático (un template VUR existente se compila en su
+        // lugar; ver rama sin-candidato abajo). Con Legacy o preferencia
+        // binaria el official (binario) sigue ganando como siempre.
         // Punto 1a: oficial -> Install(Official), NODO HOJA (sin recursión).
-        if self.source.official_exists(name) {
+        if self.source.official_exists(name)
+            && !matches!(self.opts.order, CandidateOrder::PreferSource)
+        {
             let item = Self::official_item(name, &self.arch);
             return Ok(self.push_item(item, dependent));
         }
 
         // Puntos 1b/1c y 5: VUR por nombre o provides, filtrando arquitectura.
-        let mut candidate = None;
-        if let Some(found) = self.source.vur_lookup(name) {
-            if self.arch_supported(&found.1) {
-                candidate = Some(found);
-            }
-        }
-        if candidate.is_none() {
-            if let Some(found) = self.source.vur_lookup_provides(name) {
+        // Legacy usa el candidato fusionado único (comportamiento histórico);
+        // con orden explícito se listan todos los candidatos multi-repo y se
+        // elige por clase efectiva, versión y prioridad (T-010).
+        let found: Option<(String, VurInfo)> = if matches!(self.opts.order, CandidateOrder::Legacy)
+        {
+            let mut candidate = None;
+            if let Some(found) = self.source.vur_lookup(name) {
                 if self.arch_supported(&found.1) {
                     candidate = Some(found);
                 }
             }
-        }
-        let Some((repo, info)) = candidate else {
+            if candidate.is_none() {
+                if let Some(found) = self.source.vur_lookup_provides(name) {
+                    if self.arch_supported(&found.1) {
+                        candidate = Some(found);
+                    }
+                }
+            }
+            candidate
+        } else {
+            let mut cands = self.source.vur_lookup_all(name);
+            if cands.is_empty() {
+                // provides sigue siendo fallback solo-nombre (igual que hoy).
+                if let Some(found) = self.source.vur_lookup_provides(name) {
+                    cands = vec![found];
+                }
+            }
+            let supported: Vec<(String, VurInfo)> = cands
+                .into_iter()
+                .filter(|(_, info)| self.arch_supported(info))
+                .collect();
+            self.pick_ordered(supported)
+        };
+        let Some((repo, info)) = found else {
             // El paquete existe en algún VUR pero es incompatible con la
             // arquitectura actual: lo reportamos como tal en vez de "no encontrado".
             if let Some((mrepo, _)) = self.source.vur_lookup_any_arch(name) {
@@ -257,9 +355,61 @@ impl<'a> Ctx<'a> {
                     self.arch
                 );
             }
+            // T-010: official + preferencia de fuente + sin template VUR: el
+            // flag no puede actuar -> AVISAR (nunca callar) y seguir con el
+            // binario official.
+            if self.source.official_exists(name) {
+                self.warnings.push(format!(
+                    "--force-build/--no-prefer-binary sin efecto sobre '{name}': solo existe como binario oficial"
+                ));
+                let item = Self::official_item(name, &self.arch);
+                return Ok(self.push_item(item, dependent));
+            }
             bail!("paquete no encontrado en repos oficiales ni VURs: {name}");
         };
 
+        self.push_vur(name, repo, info, dependent)
+    }
+
+    /// T-010: clase de un candidato (0 = preferido por el orden efectivo).
+    /// Legacy no reordena (toda la lista empata y decide versión/prioridad,
+    /// aunque en la práctica Legacy no usa esta vía).
+    fn class_rank(&self, repo: &str, info: &VurInfo) -> u8 {
+        let has_binary = self.source.vul_binary_available(repo, info, &self.arch);
+        match self.opts.order {
+            CandidateOrder::Legacy => 0,
+            CandidateOrder::PreferBinary => u8::from(!has_binary),
+            CandidateOrder::PreferSource => u8::from(has_binary),
+        }
+    }
+
+    /// T-010: elige ganador entre candidatos multi-repo: (a) clase efectiva,
+    /// (b) versión desc, (c) prioridad del repo asc, (d) nombre de repo
+    /// (determinismo total).
+    fn pick_ordered(&self, mut cands: Vec<(String, VurInfo)>) -> Option<(String, VurInfo)> {
+        cands.sort_by(|a, b| {
+            self.class_rank(&a.0, &a.1)
+                .cmp(&self.class_rank(&b.0, &b.1))
+                .then_with(|| cmp_pkgver(&b.1.version, b.1.revision, &a.1.version, a.1.revision))
+                .then_with(|| {
+                    self.source
+                        .repo_priority(&a.0)
+                        .cmp(&self.source.repo_priority(&b.0))
+                })
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        cands.into_iter().next()
+    }
+
+    /// Puntos 2 y 3: decide Install/Build para un candidato VUR, lo registra
+    /// y (solo si es Build) expande sus dependencias.
+    fn push_vur(
+        &mut self,
+        name: &str,
+        repo: String,
+        info: VurInfo,
+        dependent: Option<u32>,
+    ) -> Result<u32> {
         // Punto 2: binario firmado disponible -> instalar; si no -> construir.
         let action = if !self.opts.force_build
             && self.opts.prefer_binary
@@ -331,6 +481,7 @@ impl<'a> Ctx<'a> {
         Ok(Plan {
             installs: officials,
             builds,
+            warnings: self.warnings,
         })
     }
 }
@@ -393,8 +544,13 @@ mod tests {
     struct MockSource {
         official: HashSet<&'static str>,
         vur: HashMap<&'static str, (Repo, VurInfo)>,
+        /// T-010: candidatos multi-repo por nombre (tiene prioridad sobre
+        /// `vur` en `vur_lookup_all`).
+        vur_multi: HashMap<&'static str, Vec<(Repo, VurInfo)>>,
         provides: HashMap<&'static str, (Repo, VurInfo)>,
         binaries: HashSet<(Repo, &'static str)>,
+        /// T-010: prioridad por repo (ausente = 100, igual que producción).
+        priorities: HashMap<Repo, i64>,
         arch: &'static str,
     }
 
@@ -403,8 +559,10 @@ mod tests {
             Self {
                 official: HashSet::new(),
                 vur: HashMap::new(),
+                vur_multi: HashMap::new(),
                 provides: HashMap::new(),
                 binaries: HashSet::new(),
+                priorities: HashMap::new(),
                 arch: "x86_64",
             }
         }
@@ -431,6 +589,18 @@ mod tests {
         }
         fn vul_binary_available(&self, repo: &str, info: &VurInfo, _arch: &str) -> bool {
             self.binaries.contains(&(repo, info.pkgname.as_str()))
+        }
+        fn vur_lookup_all(&self, name: &str) -> Vec<(String, VurInfo)> {
+            if let Some(v) = self.vur_multi.get(name) {
+                return v
+                    .iter()
+                    .map(|(repo, info)| ((*repo).to_string(), info.clone()))
+                    .collect();
+            }
+            self.vur_lookup(name).into_iter().collect()
+        }
+        fn repo_priority(&self, repo: &str) -> i64 {
+            self.priorities.get(repo).copied().unwrap_or(100)
         }
         fn arch(&self) -> String {
             self.arch.to_string()
@@ -765,5 +935,173 @@ mod tests {
             plan.installs[0].action,
             Action::Install(BinarySource::Official)
         );
+    }
+
+    // --- T-010: matriz de aceptación 3-caminos (flags explícitos). Casos
+    // reales: hyfetch (repository-fuente 2.1.0 vs vup-binario 2.0.5),
+    // hytale-installer (binario official + template cnr).
+
+    fn opts_con_orden(
+        prefer_binary: bool,
+        force_build: bool,
+        order: CandidateOrder,
+    ) -> ResolveOptions {
+        ResolveOptions {
+            prefer_binary,
+            force_build,
+            order,
+        }
+    }
+
+    fn hyfetch_multi() -> MockSource {
+        MockSource {
+            vur_multi: [(
+                "hyfetch",
+                vec![
+                    ("repository", vur_info_ver("hyfetch", "2.1.0", &["x86_64"])),
+                    ("vup", vur_info_ver("hyfetch", "2.0.5", &["x86_64"])),
+                ],
+            )]
+            .into(),
+            binaries: [("vup", "hyfetch")].into(),
+            ..MockSource::default()
+        }
+    }
+
+    /// Aceptación T-010 (1/2): `hyfetch --prefer-binary` instala el binario
+    /// vup aunque la fuente repository sea más nueva; el plan lo muestra.
+    #[test]
+    fn t010_prefer_binary_cambia_de_repo_al_binario() {
+        let src = hyfetch_multi();
+        let opts = opts_con_orden(true, false, CandidateOrder::PreferBinary);
+        let plan = resolve(&targets(&["hyfetch"]), &src, &opts).unwrap();
+        assert!(plan.builds.is_empty());
+        assert!(plan.warnings.is_empty());
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::VulBinary {
+                repo: "vup".to_string()
+            })
+        );
+        assert_eq!(plan.installs[0].info.version, "2.0.5");
+    }
+
+    /// Aceptación T-010 (mitad de 2/2): `--force-build` sobre official CON
+    /// template VUR compila el template en vez del binario official.
+    #[test]
+    fn t010_force_build_sobre_official_compila_template_vur() {
+        let src = MockSource {
+            official: ["hytale-installer"].into(),
+            vur: [(
+                "hytale-installer",
+                (
+                    "cnr",
+                    vur_info_ver("hytale-installer", "2.0.0", &["x86_64"]),
+                ),
+            )]
+            .into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_orden(true, true, CandidateOrder::PreferSource);
+        let plan = resolve(&targets(&["hytale-installer"]), &src, &opts).unwrap();
+        assert!(plan.installs.is_empty());
+        assert!(plan.warnings.is_empty());
+        assert_eq!(build_names(&plan), vec!["hytale-installer"]);
+    }
+
+    /// Aceptación T-010 (mitad de 2/2): `--force-build` sobre official SIN
+    /// template VUR instala el official pero AVISA (nunca en silencio).
+    #[test]
+    fn t010_force_build_sobre_official_sin_template_avisa() {
+        let src = MockSource {
+            official: ["solo-official"].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_orden(true, true, CandidateOrder::PreferSource);
+        let plan = resolve(&targets(&["solo-official"]), &src, &opts).unwrap();
+        assert!(plan.builds.is_empty());
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
+        assert_eq!(plan.warnings.len(), 1);
+        assert!(
+            plan.warnings[0].contains("sin efecto"),
+            "aviso inesperado: {}",
+            plan.warnings[0]
+        );
+    }
+
+    /// `--no-prefer-binary` ordena la fuente primero aunque el binario sea
+    /// de otro repo (hyfetch -> repository 2.1.0 compilada).
+    #[test]
+    fn t010_no_prefer_binary_ordena_fuente_primero() {
+        let src = hyfetch_multi();
+        let opts = opts_con_orden(false, false, CandidateOrder::PreferSource);
+        let plan = resolve(&targets(&["hyfetch"]), &src, &opts).unwrap();
+        assert!(plan.installs.is_empty());
+        assert_eq!(build_names(&plan), vec!["hyfetch"]);
+        assert_eq!(plan.builds[0].info.version, "2.1.0");
+    }
+
+    /// Sin binario en ningún repo, el orden explícito cae a versión desc:
+    /// gana la más nueva aunque su repo tenga peor prioridad.
+    #[test]
+    fn t010_sin_binarios_gana_mayor_version() {
+        let src = MockSource {
+            vur_multi: [(
+                "app",
+                vec![
+                    ("repo-b", vur_info_ver("app", "1.9.0", &["x86_64"])),
+                    ("repo-a", vur_info_ver("app", "1.10.0", &["x86_64"])),
+                ],
+            )]
+            .into(),
+            priorities: [("repo-a", 50), ("repo-b", 10)].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_orden(true, false, CandidateOrder::PreferBinary);
+        let plan = resolve(&targets(&["app"]), &src, &opts).unwrap();
+        assert_eq!(build_names(&plan), vec!["app"]);
+        assert_eq!(plan.builds[0].info.version, "1.10.0");
+    }
+
+    /// A igualdad de clase y versión, gana la prioridad de repo más baja.
+    #[test]
+    fn t010_empate_version_gana_prioridad_repo() {
+        let src = MockSource {
+            vur_multi: [(
+                "app",
+                vec![
+                    ("repo-b", vur_info_ver("app", "1.0", &["x86_64"])),
+                    ("repo-a", vur_info_ver("app", "1.0", &["x86_64"])),
+                ],
+            )]
+            .into(),
+            binaries: [("repo-a", "app"), ("repo-b", "app")].into(),
+            priorities: [("repo-a", 10), ("repo-b", 50)].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_orden(true, false, CandidateOrder::PreferBinary);
+        let plan = resolve(&targets(&["app"]), &src, &opts).unwrap();
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::VulBinary {
+                repo: "repo-a".to_string()
+            })
+        );
+    }
+
+    /// Comparador de versiones: numérico por token, no lexicográfico.
+    #[test]
+    fn t010_cmp_pkgver_compara_tokens_numericos() {
+        assert_eq!(cmp_pkgver("2.1.0", 1, "2.0.5", 1), Ordering::Greater);
+        assert_eq!(cmp_pkgver("1.10.0", 1, "1.9.0", 1), Ordering::Greater);
+        assert_eq!(cmp_pkgver("1.0", 2, "1.0", 1), Ordering::Greater);
+        assert_eq!(cmp_pkgver("1.0", 1, "1.0", 1), Ordering::Equal);
+        assert_eq!(cmp_pkgver("1.0", 1, "1.0.1", 1), Ordering::Less);
     }
 }

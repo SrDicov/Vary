@@ -4,7 +4,9 @@ use crate::config::Config;
 use crate::db::{InstallType, InstalledDb};
 use crate::metadata::VurInfo;
 use crate::reposconf::ReposConf;
-use crate::resolver::{dep_name, Action, BinarySource, PackageSource, ResolveOptions};
+use crate::resolver::{
+    dep_name, Action, BinarySource, CandidateOrder, PackageSource, ResolveOptions,
+};
 use crate::util::confirm;
 use crate::vur_client::VurRepo;
 use crate::xbps;
@@ -15,6 +17,8 @@ use std::collections::{HashMap, HashSet};
 struct VurSource {
     official_exists_fn: Box<dyn Fn(&str) -> bool>,
     vur_map: HashMap<String, (String, VurInfo)>,
+    /// T-010: TODOS los candidatos por nombre (multi-repo), sin filtrar arch.
+    vur_all: HashMap<String, Vec<(String, VurInfo)>>,
     provides_map: HashMap<String, Vec<(String, VurInfo)>>,
     binary_check: HashMap<String, bool>,
     arch: String,
@@ -43,6 +47,14 @@ impl PackageSource for VurSource {
         self.vur_map
             .get(name)
             .map(|(repo, info)| (repo.clone(), info.clone()))
+    }
+
+    fn vur_lookup_all(&self, name: &str) -> Vec<(String, VurInfo)> {
+        self.vur_all.get(name).cloned().unwrap_or_default()
+    }
+
+    fn repo_priority(&self, repo: &str) -> i64 {
+        self.priority.get(repo).copied().unwrap_or(100)
     }
 
     fn vur_lookup_provides(&self, virtual_name: &str) -> Option<(String, VurInfo)> {
@@ -154,6 +166,8 @@ pub fn install(config: &mut Config) -> Result<i32> {
     // 4. Load indexes
     let mut cache = CacheIndex::load(config.cache_index_path())?;
     let mut vur_map: HashMap<String, (String, VurInfo)> = HashMap::new();
+    // T-010: multi-mapa con todos los candidatos (el resolver ordena).
+    let mut vur_all: HashMap<String, Vec<(String, VurInfo)>> = HashMap::new();
     let mut provides_map: HashMap<String, Vec<(String, VurInfo)>> = HashMap::new();
     let mut binary_check: HashMap<String, bool> = HashMap::new();
     let mut priority_map: HashMap<String, i64> = HashMap::new();
@@ -186,10 +200,20 @@ pub fn install(config: &mut Config) -> Result<i32> {
             vur_map
                 .entry(info.pkgname.clone())
                 .or_insert((repo.name.clone(), info.clone()));
+            // T-010: todos los candidatos (el resolver ordena por clase,
+            // versión y prioridad).
+            vur_all
+                .entry(info.pkgname.clone())
+                .or_default()
+                .push((repo.name.clone(), info.clone()));
             for sub in &info.subpackages {
                 vur_map
                     .entry(sub.pkgname.clone())
                     .or_insert((repo.name.clone(), info.clone()));
+                vur_all
+                    .entry(sub.pkgname.clone())
+                    .or_default()
+                    .push((repo.name.clone(), info.clone()));
             }
             binary_check.insert(format!("{}:{}", repo.name, info.pkgname), has_binary);
             for sub in &info.subpackages {
@@ -227,7 +251,12 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             };
                             vur_map
                                 .entry(pkgname.clone())
-                                .or_insert((repo.name.clone(), info));
+                                .or_insert((repo.name.clone(), info.clone()));
+                            // T-010: el candidato binario VUP también ordena.
+                            vur_all
+                                .entry(pkgname.clone())
+                                .or_default()
+                                .push((repo.name.clone(), info));
                             binary_check.insert(format!("{}:{}", repo.name, pkgname), true);
                             vup_binary_urls
                                 .entry(format!("{}:{}", repo.name, pkgname))
@@ -263,6 +292,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             official_exists_remote(n, &binpkgs_root)
         }),
         vur_map,
+        vur_all,
         provides_map,
         binary_check,
         arch: arch.clone(),
@@ -272,6 +302,13 @@ pub fn install(config: &mut Config) -> Result<i32> {
     let opts = ResolveOptions {
         prefer_binary: config.prefer_binary && !config.force_rebuild,
         force_build: config.force_build || config.force_rebuild,
+        // T-010: force_rebuild equivale a --force-build en cada operación
+        // (ver etc/vary.conf.example): también ordena fuente primero.
+        order: if config.force_rebuild {
+            CandidateOrder::PreferSource
+        } else {
+            config.candidate_order
+        },
     };
 
     let plan = crate::resolver::resolve(&targets, &source, &opts)?;
@@ -337,6 +374,11 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 config.makejobs
             ))
         );
+    }
+    // T-010: avisos del resolver (flag sin efecto sobre official) junto al
+    // plan, antes del confirm: ACTUAR o AVISAR, nunca callar.
+    for w in &plan.warnings {
+        println!("\n{}", c.warning.paint(format!("advertencia: {w}")));
     }
     println!();
 
