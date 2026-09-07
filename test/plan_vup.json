@@ -1,1 +1,78 @@
-{"repo": "vup", "url": "https://github.com/VUP-Linux/vup", "index_url": "https://vup-linux.github.io/vup/index.json", "branch": "main", "protocol": "index.json binario (Fase 1); clon git registrado pero sin uso de fuentes", "catalog_pkgs": 27, "nota_tofu": "el primer install binario debe pedir TOFU (fingerprint + confirmacion) e instalar llave en /etc/xbps.d/keys", "apps": [{"pkg": "nvm", "kind": "binary/script", "why": "el mas pequeno; PRIMER install = test TOFU", "status": "pending"}, {"pkg": "basilk", "kind": "binary", "why": "CLI pequeno", "status": "pending"}, {"pkg": "gittop", "kind": "binary", "why": "CLI pequeno", "status": "pending"}, {"pkg": "hyfetch", "kind": "binary", "why": "cruce 3-path con repository-source", "status": "pending"}, {"pkg": "vuru", "kind": "binary", "why": "core, pequeno", "status": "pending"}, {"pkg": "ruffle", "kind": "binary", "why": "mediano", "status": "pending"}, {"pkg": "ols", "kind": "binary", "why": "language server", "status": "pending"}, {"pkg": "zls", "kind": "binary", "why": "language server", "status": "pending"}, {"pkg": "v-analyzer", "kind": "binary", "why": "pequeno", "status": "pending"}, {"pkg": "odin", "kind": "binary", "why": "compilador (solo binario, sin toolchain local)", "status": "pending"}], "excluded": ["browsers (80M+ c/u)", "mullvad-vpn (servicio)", "xbps-triggers (sistema)", "deno/bun/vlang/zig15 (runtimes 50M+)", "ferdium/antigravity/vscode/zed/anki (grandes)"]}
+{
+ "repo": "vup",
+ "url": "https://github.com/VUP-Linux/vup",
+ "index_url": "https://vup-linux.github.io/vup/index.json",
+ "branch": "main",
+ "protocol": "index.json binario (Fase 1); clon git registrado pero sin uso de fuentes",
+ "catalog_pkgs": 27,
+ "nota_tofu": "el primer install binario debe pedir TOFU (fingerprint + confirmacion) e instalar llave en /etc/xbps.d/keys",
+ "apps": [
+  {
+   "pkg": "nvm",
+   "kind": "binary/script",
+   "why": "el mas pequeno; PRIMER install = test TOFU",
+   "status": "installed-ok-TOFU"
+  },
+  {
+   "pkg": "basilk",
+   "kind": "binary",
+   "why": "CLI pequeno",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "gittop",
+   "kind": "binary",
+   "why": "CLI pequeno",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "hyfetch",
+   "kind": "binary",
+   "why": "cruce 3-path con repository-source",
+   "status": "blocked-T010"
+  },
+  {
+   "pkg": "vuru",
+   "kind": "binary",
+   "why": "core, pequeno",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "ruffle",
+   "kind": "binary",
+   "why": "mediano",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "ols",
+   "kind": "binary",
+   "why": "language server",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "zls",
+   "kind": "binary",
+   "why": "language server",
+   "status": "pending"
+  },
+  {
+   "pkg": "v-analyzer",
+   "kind": "binary",
+   "why": "pequeno",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "odin",
+   "kind": "binary",
+   "why": "compilador (solo binario, sin toolchain local)",
+   "status": "installed-ok"
+  }
+ ],
+ "excluded": [
+  "browsers (80M+ c/u)",
+  "mullvad-vpn (servicio)",
+  "xbps-triggers (sistema)",
+  "deno/bun/vlang/zig15 (runtimes 50M+)",
+  "ferdium/antigravity/vscode/zed/anki (grandes)"
+ ]
+}

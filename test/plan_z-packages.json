@@ -1,1 +1,70 @@
-{"repo": "z-packages", "url": "https://github.com/SrDicov/z-packages", "branch": "master", "protocol": ".VURINFO raiz + templates", "catalog_pkgs": 10, "apps": [{"pkg": "bibata-cursor-theme", "kind": "data/cursor", "why": "trivial", "status": "pending"}, {"pkg": "font-inter", "kind": "data/fonts+subpaquete", "why": "caso subpaquetes (template flaggeado con _package())", "status": "pending"}, {"pkg": "hytale-installer", "kind": "duplicado-entre-repos", "why": "existe en cnr Y z-packages: observar precedencia del resolver (misma prioridad 100)", "status": "pending"}, {"pkg": "librewolf", "kind": "metadata-only", "why": "YA INSTALADO; build fuente = horas. Solo -Si/-Ss + upgrade-dry (sin compilar)", "status": "pending"}, {"pkg": "libudev-zero", "kind": "metadata-only", "why": "EXCLUIDO install: reemplaza libudev del sistema (riesgo). Solo -Si", "status": "pending"}, {"pkg": "mdevd", "kind": "metadata-only", "why": "EXCLUIDO install: demonio con hook de servicio. Solo -Si", "status": "pending"}, {"pkg": "vary", "kind": "metadata-only", "why": "EXCLUIDO install: autobuild (cargo pesado + recursion conceptual). Solo -Si", "status": "pending"}, {"pkg": "xbps-triggers", "kind": "metadata-only", "why": "EXCLUIDO install: paquete de sistema. Solo -Si", "status": "pending"}, {"pkg": "ydotool", "kind": "metadata-only", "why": "EXCLUIDO install: demonio ydotoold. Solo -Si", "status": "pending"}, {"pkg": "NOTA", "kind": "info", "why": "repo de 10 pkgs mayormente system-grade: 3 installs + 6 metadata + esta nota = plan honesto", "status": "pending"}], "excluded": []}
+{
+ "repo": "z-packages",
+ "url": "https://github.com/SrDicov/z-packages",
+ "branch": "master",
+ "protocol": ".VURINFO raiz + templates",
+ "catalog_pkgs": 10,
+ "apps": [
+  {
+   "pkg": "bibata-cursor-theme",
+   "kind": "data/cursor",
+   "why": "trivial",
+   "status": "shadow-zrepo-aborted"
+  },
+  {
+   "pkg": "font-inter",
+   "kind": "data/fonts+subpaquete",
+   "why": "caso subpaquetes (template flaggeado con _package())",
+   "status": "shadow-official-skip"
+  },
+  {
+   "pkg": "hytale-installer",
+   "kind": "duplicado-entre-repos",
+   "why": "existe en cnr Y z-packages: observar precedencia del resolver (misma prioridad 100)",
+   "status": "dup-cnrzpackages-note"
+  },
+  {
+   "pkg": "librewolf",
+   "kind": "metadata-only",
+   "why": "YA INSTALADO; build fuente = horas. Solo -Si/-Ss + upgrade-dry (sin compilar)",
+   "status": "metadata-only-done"
+  },
+  {
+   "pkg": "libudev-zero",
+   "kind": "metadata-only",
+   "why": "EXCLUIDO install: reemplaza libudev del sistema (riesgo). Solo -Si",
+   "status": "metadata-only-done"
+  },
+  {
+   "pkg": "mdevd",
+   "kind": "metadata-only",
+   "why": "EXCLUIDO install: demonio con hook de servicio. Solo -Si",
+   "status": "metadata-only-done"
+  },
+  {
+   "pkg": "vary",
+   "kind": "metadata-only",
+   "why": "EXCLUIDO install: autobuild (cargo pesado + recursion conceptual). Solo -Si",
+   "status": "metadata-only-done"
+  },
+  {
+   "pkg": "xbps-triggers",
+   "kind": "metadata-only",
+   "why": "EXCLUIDO install: paquete de sistema. Solo -Si",
+   "status": "metadata-only-done"
+  },
+  {
+   "pkg": "ydotool",
+   "kind": "metadata-only",
+   "why": "EXCLUIDO install: demonio ydotoold. Solo -Si",
+   "status": "metadata-only-done"
+  },
+  {
+   "pkg": "NOTA",
+   "kind": "info",
+   "why": "repo de 10 pkgs mayormente system-grade: 3 installs + 6 metadata + esta nota = plan honesto",
+   "status": "done"
+  }
+ ],
+ "excluded": []
+}

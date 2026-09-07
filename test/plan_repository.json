@@ -1,1 +1,79 @@
-{"repo": "repository (voiders-community)", "url": "https://git.voiders.dev/voiders-community/repository", "branch": "main (autodetectada)", "protocol": "sin .VURINFO -> fallback template; layout pkgs/<pkg>", "catalog_templates": 118, "apps": [{"pkg": "nothing-fonts", "kind": "data/fonts", "why": "trivial", "status": "pending"}, {"pkg": "bibata-modern-ice", "kind": "data/cursor", "why": "trivial", "status": "pending"}, {"pkg": "adw-gtk-theme", "kind": "data/theme", "why": "trivial", "status": "pending"}, {"pkg": "python-pywalfox", "kind": "source/python3-module", "why": "fuente minima (1 hostmakedepend)", "status": "pending"}, {"pkg": "better-adb-sync", "kind": "source/pep517", "why": "fuente moderada; VICTIMA Ctrl+C alternativa", "status": "pending"}, {"pkg": "lavat", "kind": "source/gnu-makefile", "why": "C diminuto", "status": "pending"}, {"pkg": "hyfetch", "kind": "source/cargo vs binario-vup", "why": "3-path cruzado con vup (versiones difieren: 2.1.0 vs 2.0.5, documentar que elige)", "status": "pending"}, {"pkg": "proton-keyring-linux", "kind": "source+dep-VUR", "why": "cadena VUR: depende protonvpn-core (mismo repo)", "status": "pending"}, {"pkg": "bazaar", "kind": "metadata-only", "why": "EXCLUIDO install: meson + flatpak-devel & co (cientos MB, disco 2.2G). Solo -Si + arbol depends", "status": "pending"}, {"pkg": "svc", "kind": "metadata-only", "why": "EXCLUIDO install: reimplementacion de sv (runit, categoria prohibida). Solo -Si", "status": "pending"}], "excluded": ["linux-zen (kernel)", "mesa-amber/musl-*/xlibre-* (sistema)", "ly/noctalia-*/logbookd (DM/shell/servicio)", "cataclysm-dda/palemon/pcsx2 (builds horas)", "brave/zen/vesktop/equibop/cinny/ayugram/tsukimi/feishin/heroic (electron/Qt pesados)", "superfile/spicetify/dotstate (go/cargo con red en chroot)", "prismlauncher-cracked (politica)", "malcontent/libgsystemservice/obs-plugin/glaze/chimerautils (sistema o toolchain pesado)"]}
+{
+ "repo": "repository (voiders-community)",
+ "url": "https://git.voiders.dev/voiders-community/repository",
+ "branch": "main (autodetectada)",
+ "protocol": "sin .VURINFO -> fallback template; layout pkgs/<pkg>",
+ "catalog_templates": 118,
+ "apps": [
+  {
+   "pkg": "nothing-fonts",
+   "kind": "data/fonts",
+   "why": "trivial",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "bibata-modern-ice",
+   "kind": "data/cursor",
+   "why": "trivial",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "adw-gtk-theme",
+   "kind": "data/theme",
+   "why": "trivial",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "python-pywalfox",
+   "kind": "source/python3-module",
+   "why": "fuente minima (1 hostmakedepend)",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "better-adb-sync",
+   "kind": "source/pep517",
+   "why": "fuente moderada; VICTIMA Ctrl+C alternativa",
+   "status": "installed-ok"
+  },
+  {
+   "pkg": "lavat",
+   "kind": "source/gnu-makefile",
+   "why": "C diminuto",
+   "status": "installed-ok-reinstalled"
+  },
+  {
+   "pkg": "hyfetch",
+   "kind": "source/cargo vs binario-vup",
+   "why": "3-path cruzado con vup (versiones difieren: 2.1.0 vs 2.0.5, documentar que elige)",
+   "status": "blocked-T010-cargo-disk"
+  },
+  {
+   "pkg": "proton-keyring-linux",
+   "kind": "source+dep-VUR",
+   "why": "cadena VUR: depende protonvpn-core (mismo repo)",
+   "status": "installed-ok-chain"
+  },
+  {
+   "pkg": "bazaar",
+   "kind": "metadata-only",
+   "why": "EXCLUIDO install: meson + flatpak-devel & co (cientos MB, disco 2.2G). Solo -Si + arbol depends",
+   "status": "metadata-only-done"
+  },
+  {
+   "pkg": "svc",
+   "kind": "metadata-only",
+   "why": "EXCLUIDO install: reimplementacion de sv (runit, categoria prohibida). Solo -Si",
+   "status": "metadata-only-done"
+  }
+ ],
+ "excluded": [
+  "linux-zen (kernel)",
+  "mesa-amber/musl-*/xlibre-* (sistema)",
+  "ly/noctalia-*/logbookd (DM/shell/servicio)",
+  "cataclysm-dda/palemon/pcsx2 (builds horas)",
+  "brave/zen/vesktop/equibop/cinny/ayugram/tsukimi/feishin/heroic (electron/Qt pesados)",
+  "superfile/spicetify/dotstate (go/cargo con red en chroot)",
+  "prismlauncher-cracked (politica)",
+  "malcontent/libgsystemservice/obs-plugin/glaze/chimerautils (sistema o toolchain pesado)"
+ ]
+}
