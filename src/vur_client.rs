@@ -3,7 +3,6 @@ use crate::metadata::{self, VurInfo};
 use crate::reposconf::RepoEntry;
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -781,18 +780,6 @@ impl VurRepo {
         candidates.sort();
         candidates.into_iter().next()
     }
-
-    pub fn fingerprint_sha256(pem_path: &Path) -> Result<String> {
-        let pem = std::fs::read_to_string(pem_path)
-            .with_context(|| format!("no se pudo leer {}", pem_path.display()))?;
-        let der = decode_pem_body(&pem)?;
-        let digest = Sha256::digest(&der);
-        Ok(digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<Vec<_>>()
-            .join(":"))
-    }
 }
 
 fn has_unclosed_quote(buf: &str) -> bool {
@@ -1156,7 +1143,6 @@ mod tests {
     const THIRD_VURINFO: &str = r#"{"format_version":1,"pkgname":"third","version":"3.0_1","revision":1,"archs":["x86_64"],"checksum":["sha256:cc"]}"#;
     const TEST_PEM: &str =
         "-----BEGIN PUBLIC KEY-----\naGVsbG8gd29ybGQ=\n-----END PUBLIC KEY-----\n";
-    const EXPECTED_FP: &str = "b9:4d:27:b9:93:4d:3e:08:a5:2e:52:d7:da:7d:ab:fa:c4:84:ef:e3:7a:53:80:ee:90:88:f7:ac:e2:ef:cd:e9";
 
     struct Fixture {
         _origin_tmp: tempfile::TempDir,
@@ -1303,13 +1289,8 @@ mod tests {
 
         let pem = repo.path.join("keys/vur.pem");
         std::fs::write(&pem, TEST_PEM)?;
-        let fp1 = VurRepo::fingerprint_sha256(&pem)?;
-        let fp2 = VurRepo::fingerprint_sha256(&pem)?;
-        assert_eq!(fp1, fp2, "el fingerprint debe ser determinista");
-        assert_eq!(fp1.len(), 95);
-        assert_eq!(fp1.matches(':').count(), 31);
-        assert!(fp1.chars().all(|c| c == ':' || c.is_ascii_hexdigit()));
-        assert_eq!(fp1, EXPECTED_FP);
+        // (El fingerprint canónico estilo xbps se cubre en keys::tests con
+        // llaves RSA reales; aquí basta el descubrimiento.)
         Ok(())
     }
 

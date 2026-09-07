@@ -250,15 +250,15 @@ pub fn decode_plist_public_key_pem(plist_text: &str) -> Result<String> {
     Ok(format!("{trimmed}\n"))
 }
 
-/// Lee `keys/*.plist` del clon y devuelve el PEM decodificado.
-pub fn read_repo_plist_key(repo_path: &Path) -> Result<String> {
+/// Lee `keys/*.plist` del clon y devuelve el texto CRUDO (formato plist XML
+/// de xbps: xbps lo almacena verbatim en /var/db/xbps/keys/, verificado en
+/// vivo por diff — por eso el pre-import T-012 escribe este texto tal cual).
+pub fn read_repo_plist_text(repo_path: &Path) -> Result<String> {
     let key_path = discover_plist_key(repo_path).context(
         "el repo no incluye llave pública en keys/*.plist; \
          sin ella no se pueden verificar los binarios",
     )?;
-    let text = std::fs::read_to_string(&key_path)
-        .with_context(|| format!("leyendo {}", key_path.display()))?;
-    decode_plist_public_key_pem(&text)
+    std::fs::read_to_string(&key_path).with_context(|| format!("leyendo {}", key_path.display()))
 }
 
 /// Lee `keys/*.plist` vía git (`ls-tree` + `show`), sin checkout materializado.
@@ -266,7 +266,8 @@ pub fn read_repo_plist_key(repo_path: &Path) -> Result<String> {
 /// Los clones de vary son sparse/partial: `keys/` rara vez existe en disco
 /// aunque sí en HEAD. Sin esta variante, todo install VUP falla con
 /// "el repo no incluye llave pública" aunque el upstream sí la publique (T-006).
-pub fn read_repo_plist_key_git(git_bin: &str, repo_path: &Path) -> Result<String> {
+/// Devuelve el texto crudo (ver [`read_repo_plist_text`]).
+pub fn read_repo_plist_text_git(git_bin: &str, repo_path: &Path) -> Result<String> {
     let output = Command::new(git_bin)
         .arg("-C")
         .arg(repo_path)
@@ -299,7 +300,7 @@ pub fn read_repo_plist_key_git(git_bin: &str, repo_path: &Path) -> Result<String
         show.status.success(),
         "llave no legible en el repo: {first}"
     );
-    decode_plist_public_key_pem(&String::from_utf8_lossy(&show.stdout))
+    String::from_utf8(show.stdout).context("el plist del repo no es UTF-8 válido")
 }
 
 #[cfg(test)]
@@ -359,9 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn plist_decode_roundtrip_and_fingerprint() {
-        // Mismo cuerpo DER ("hello world") que TEST_PEM en vur_client::tests:
-        // el fingerprint debe coincidir por ambas vías.
+    fn plist_decode_roundtrip() {
         let pem = "-----BEGIN PUBLIC KEY-----\naGVsbG8gd29ybGQ=\n-----END PUBLIC KEY-----\n";
         let b64 = general_purpose::STANDARD.encode(pem);
         let plist = format!(
@@ -370,15 +369,6 @@ mod tests {
         );
         let decoded = decode_plist_public_key_pem(&plist).unwrap();
         assert_eq!(decoded, pem);
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("key.pem");
-        std::fs::write(&path, &decoded).unwrap();
-        let fp = crate::vur_client::VurRepo::fingerprint_sha256(&path).unwrap();
-        assert_eq!(
-            fp,
-            "b9:4d:27:b9:93:4d:3e:08:a5:2e:52:d7:da:7d:ab:fa:c4:84:ef:e3:7a:53:80:ee:90:88:f7:ac:e2:ef:cd:e9"
-        );
     }
 
     #[test]
@@ -433,8 +423,10 @@ mod tests {
         // Simular sparse: borrar keys/ del worktree (los objetos quedan en HEAD).
         std::fs::remove_dir_all(root.join("keys")).unwrap();
         assert!(discover_plist_key(root).is_none());
-        assert!(read_repo_plist_key(root).is_err());
-        let got = read_repo_plist_key_git("git", root).expect("llave vía git");
+        assert!(read_repo_plist_text(root).is_err());
+        let raw = read_repo_plist_text_git("git", root).expect("plist crudo vía git");
+        assert_eq!(raw, plist);
+        let got = decode_plist_public_key_pem(&raw).expect("llave vía git");
         assert_eq!(got, pem);
     }
 }

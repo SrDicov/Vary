@@ -85,7 +85,10 @@ vary -S vlang   # instalación binaria desde el release correspondiente
 Notas: requiere `curl` (configurable vía `--curl` / `[general] curl_bin`); la
 llave `keys/*.plist` del repo se verifica como cualquier llave VUR
 (`key_fingerprint` en repos.conf); compilar desde fuente de estos repos aún
-no está soportado.
+no está soportado. En el primer install binario, vary pre-importa la llave
+al keyring de xbps, así que solo se pide la confirmación de confianza de
+vary (sin segundo prompt de importación de xbps). El fingerprint que muestra
+vary coincide con el de xbps: pínalo vía `key_fingerprint`.
 
 ## Repositorio binario
 
@@ -133,7 +136,7 @@ Durante el MVP, vary prioriza simplicidad sobre exhaustividad: la resolución de
 
 > NOTA SOBRE VARIABLES DINÁMICAS: El .VURINFO generado por scripts/vur-generator.sh refleja las opciones de compilación POR DEFECTO (sin XBPS_PKG_OPTIONS activos). Si el usuario final compila con opciones personalizadas (XBPS_PKG_OPTIONS_<pkg>), la resolución de dependencias inicial puede ser incompleta. xbps-src manejará las dependencias adicionales durante la compilación real. Esto es aceptable para el MVP: la resolución del DAG es una optimización para minimizar builds innecesarios, no una garantía de completitud.
 
-> PROBLEMAS CONOCIDOS (hito 0.3.1, ver `test/REPORT.md`): `-v`/`-vv` no surten efecto en consola (rodeo: `RUST_LOG=debug`) — T-002. El primer install desde un repo binario VUP exige corrida interactiva (xbps pide importar su llave; fail-closed sin ella) — T-012.
+> PROBLEMAS CONOCIDOS (hito 0.3.1, ver `test/REPORT.md`): `-v`/`-vv` no surten efecto en consola (rodeo: `RUST_LOG=debug`) — T-002.
 
 ## Hoja de ruta
 

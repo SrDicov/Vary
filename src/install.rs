@@ -557,13 +557,18 @@ pub fn install(config: &mut Config) -> Result<i32> {
                                 vup_urls_by_repo.get(repo).cloned().unwrap_or_default();
                             // T-006: el clon suele ser sparse (keys/ no está en
                             // disco); leer la llave vía git con fallback a fs.
+                            // T-012: se necesita el plist CRUDO (byte-idéntico
+                            // al que xbps almacena) para el pre-import.
+                            let key_plist =
+                                crate::vup_index::read_repo_plist_text_git(&r.git_bin, &r.path)
+                                    .or_else(|_| crate::vup_index::read_repo_plist_text(&r.path))?;
                             let key_pem =
-                                crate::vup_index::read_repo_plist_key_git(&r.git_bin, &r.path)
-                                    .or_else(|_| crate::vup_index::read_repo_plist_key(&r.path))?;
+                                crate::vup_index::decode_plist_public_key_pem(&key_plist)?;
                             if let Err(e) = crate::keys::setup_vup_binary_repo(
                                 repo,
                                 &urls,
                                 &key_pem,
+                                &key_plist,
                                 entry,
                                 &config.sudo_bin,
                                 &config.sudo_flags,

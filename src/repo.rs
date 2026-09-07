@@ -121,12 +121,15 @@ fn repo_add(
     conf.save(config.repos_conf_path())?;
     println!("VUR '{name}' registered.");
 
-    // Show key if present
+    // Show key if present (fingerprint estilo xbps: es el que xbps muestra
+    // y el que se pinea en key_fingerprint).
     if let Some(key) = repo.discover_public_key() {
         println!("Found public key: {}", key.display());
-        if let Ok(fp) = VurRepo::fingerprint_sha256(&key) {
-            println!("  SHA256 fingerprint: {fp}");
-            println!("  To use binary packages from this VUR, add binary_repo_url and key_fingerprint to repos.conf");
+        if let Ok(pem) = std::fs::read_to_string(&key) {
+            if let Ok(fp) = crate::keys::xbps_fingerprint_pem(&pem) {
+                println!("  Fingerprint (xbps): {fp}");
+                println!("  To use binary packages from this VUR, add binary_repo_url and key_fingerprint to repos.conf");
+            }
         }
     }
 

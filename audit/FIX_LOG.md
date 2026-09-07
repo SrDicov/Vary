@@ -861,3 +861,18 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Run CI verde (fmt + clippy `--all-targets -- -D warnings` + test).
 - **Estado:** ✅ CORREGIDO Y VALIDADO
 ---
+
+### [T-012] Pre-import de la llave VUP al keyring de xbps (doble prompt TOFU)
+- **Severidad:** Medium
+- **Módulo:** `src/keys.rs` (`preimport_xbps_key_plist`, `xbps_key_plist_path`, teardown), `src/vup_index.rs` (lectura de plist crudo), `src/install.rs` (call-site VUP)
+- **Commit:** `fix(T-012)` (`git log --oneline --grep="T-012"`)
+- **Descripción:** vary registraba conf + anchor propio (`/etc/xbps.d/keys/*.pem`, que xbps no lee) pero nunca importaba el plist a `/var/db/xbps/keys/`: el primer install VUP dependía del prompt interactivo de importación de xbps (fail-closed sin TTY) y había doble prompt TOFU (vary + xbps).
+- **Remediación:** `setup_vup_binary_repo` pre-importa el plist CRUDO del repo git (verificado en vivo: byte-idéntico al que xbps almacena) a `/var/db/xbps/keys/<fp>.plist` con `install -D -m644` elevado, DESPUÉS de fingerprint verificado + confirmación + TOFU. El fingerprint canónico pasa a estilo xbps (`xbps_fingerprint_pem`, réplica de `xbps_pubkey2fp.c`: MD5 sobre codificación OpenSSH): es el que se muestra, se pinea, hace TOFU y nombra el plist; el SHA256-del-DER que vary mostraba en 0.3.0 no coincide con la visión de xbps y solo se acepta como pin legacy (`fingerprint_matches_pin`). El plist debe decodificar a la misma llave del fp verificado o no se escribe nada (liga artefacto↔verificación, fallo cerrado). `teardown_binary_repo` (remove/rekey) retira el plist huérfano best-effort (deriva el fp del pem instalado). Alcance: solo vía VUP; `setup_binary_repo` clásico (PEM sin plist) mantiene su flujo pero también muestra/compara en estilo xbps.
+- **Validación:**
+  - Unit (CI): `xbps_fingerprint_pem` verificado contra 12 llaves reales (incluye vector en vivo 47:9b); `xbps_key_plist_path` deriva y rechaza traversal; pre-import escribe verbatim en dir simulado y falla cerrado si el plist no liga o es malformado; pins aceptan formato xbps o legacy.
+  - En vivo (esta máquina, evidencia en `test/backup/pre-t012/`): baseline 0.3.0 sin plist falla cerrado sin TTY (exit 1). Con el fix, contra repo VUP local autocontenido: primer install con `</dev/null --noconfirm` funciona con UN SOLO consentimiento (exit 0, sin prompt de xbps); pin erróneo aborta "NO coincide"; rotación simulada aborta con ALERTA H-003 sin escribir plist; `rekey` retira conf+pem+plist y el re-registro con la llave nueva funciona. Ver `test/RESULTS.md`.
+  - Nota: upstream VUP rotó su llave mid-test (git con llave nueva vs repodata aún firmada con la vieja): xbps falla cerrado, conducta correcta fuera del alcance de vary.
+  - Observado fuera de alcance: installs VUP-binarios no dejan rastro en installed.json (`vur_map_lookup_repo` no cubre sintéticos VUP) — candidato a 0.3.1.
+  - Run CI verde (fmt + clippy `--all-targets -- -D warnings` + test).
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+---
