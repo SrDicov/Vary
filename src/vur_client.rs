@@ -428,6 +428,28 @@ impl VurRepo {
             );
         }
 
+        // P1-3: refrescar el path a HEAD aunque ya estuviera materializado.
+        // El refresh (`pull`) avanza HEAD con reset --soft SIN tocar el
+        // working tree por diseño; un `checkout` pelado no actualiza paths
+        // ya materializados → se compilaba la plantilla VIEJA aunque el
+        // índice (leído vía git show) viera la nueva (divergencia
+        // apruebo-nuevo/construyo-viejo, validada en vivo). Best-effort con
+        // aviso: ante fallo se conserva el comportamiento previo.
+        let sync_out = Command::new(&self.git_bin)
+            .arg("-C")
+            .arg(&self.path)
+            .args(["checkout", "HEAD", "--", &sparse_path])
+            .output();
+        match sync_out {
+            Ok(o) if o.status.success() => {}
+            Ok(o) => tracing::warn!(
+                "checkout HEAD de {} no actualizó: {}",
+                sparse_path,
+                String::from_utf8_lossy(&o.stderr).trim()
+            ),
+            Err(e) => tracing::warn!("checkout HEAD de {sparse_path} falló: {e:#}"),
+        }
+
         let materialized = self.path.join(&sparse_path);
         if !materialized.exists() {
             bail!(
