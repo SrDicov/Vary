@@ -72,7 +72,9 @@ pub(crate) fn write_root_file(
     tmp_file.flush().context("sincronizando archivo temporal")?;
 
     let status = crate::elevate::elevate(sudo_bin, sudo_flags, install_bin)?
-        .args(["-m", mode])
+        // -D: crear directorios padres (p. ej. /etc/xbps.d/keys/, ausente en
+        // instalaciones limpias). Sin esto, el primer repo binario falla (T-007).
+        .args(["-D", "-m", mode])
         .arg(tmp_file.path())
         .arg(dest)
         .status()
@@ -418,5 +420,17 @@ mod tests {
         write_root_file(content, dest_str, "644", "env", &[], "install").unwrap();
 
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), content);
+    }
+
+    #[test]
+    fn write_root_file_crea_padres_inexistentes() {
+        // T-007: /etc/xbps.d/keys/ no existe en instalaciones limpias.
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("keys").join("sub").join("k.pem");
+        let dest_str = dest.to_str().unwrap();
+
+        write_root_file("PEM", dest_str, "644", "env", &[], "install").unwrap();
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "PEM");
     }
 }

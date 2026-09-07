@@ -778,3 +778,15 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `vup_index::tests::plist_key_via_git_sin_checkout_materializado` (repo git real con `keys/` borrada del worktree: fs falla, git resuelve).
   - Suite local 158+1 en verde + run CI verde.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [T-007] Setup de repo binario falla si /etc/xbps.d/keys/ no existe
+- **Severidad:** Medium
+- **Módulo:** `src/keys.rs:write_root_file`
+- **Commit:** `fix(T-007)` (`git log --oneline --grep="T-007"`)
+- **Descripción:** Tras T-006, el flujo TOFU VUP llegó a escribir la llave y falló con `install: cannot create regular file '/etc/xbps.d/keys/vary-vur-vup.pem'`: el directorio `keys/` no existe en instalaciones limpias y nada lo creaba. Afecta igual a `setup_binary_repo` (no-VUP): el PRIMER repo binario siempre fallaba.
+- **Remediación:** Flag `-D` en la invocación a `install_bin` (crea padres; sin binario nuevo hardcodeado, respeta `[tools] install_bin` de H-045).
+- **Validación:**
+  - `keys::tests::write_root_file_crea_padres_inexistentes` (destino anidado inexistente).
+  - Suite local 159+1 en verde + run CI verde + verificación en vivo (install `nvm` lo atraviesa).
+- **Estado:** ✅ CORREGIDO Y VALIDADO
