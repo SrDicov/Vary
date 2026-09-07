@@ -862,7 +862,7 @@ mod tests {
         let err_msg = err.to_string();
         assert!(err_msg.contains("ALERTA DE SEGURIDAD CRÍTICA"));
         assert!(err_msg.contains("BLOQUEADA (fallo cerrado)"));
-        assert!(err_msg.contains("vary --repo rekey repo-test"));
+        assert!(err_msg.contains("vary --repo re-trust repo-test"));
         assert!(err_msg.contains("epoch 0"), "{err_msg}");
     }
 

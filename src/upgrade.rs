@@ -107,7 +107,7 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
                 // Los fallos de red ya avisaron y siguieron arriba; esto es
                 // seguridad, no disponibilidad. El install queda doblemente
                 // cubierto por el TOFU de setup.
-                if let Some(st) = crate::keys::collect_trust_state(&repo, &entry) {
+                if let Some(st) = crate::keys::collect_trust_state(&repo, entry) {
                     crate::keys::check_trust(&st)?;
                 }
             }
