@@ -311,6 +311,38 @@ fn stamp_first_trust(config: &Config, repo: &str) {
     }
 }
 
+/// P0-5: commit HEAD del clon (pin de procedencia; best-effort silencioso).
+fn repo_head_commit(clone_path: &std::path::Path, git_bin: &str) -> Option<String> {
+    let out = std::process::Command::new(git_bin)
+        .arg("-C")
+        .arg(clone_path)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if sha.is_empty() {
+        None
+    } else {
+        Some(sha)
+    }
+}
+
+/// P0-5: sha256 del artefacto `.xbps` (`{pkgver}.{arch}.xbps`), buscando en
+/// el repo local de vary y en la caché de xbps. Best-effort silencioso.
+fn package_artifact_hash(binpkgs_root: &str, pkgver: &str, arch: &str) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let file = format!("{pkgver}.{arch}.xbps");
+    let found = [binpkgs_root, "/var/cache/xbps"]
+        .into_iter()
+        .map(|d| std::path::Path::new(d).join(&file))
+        .find(|p| p.is_file())?;
+    let bytes = std::fs::read(found).ok()?;
+    Some(format!("sha256:{:x}", Sha256::digest(&bytes)))
+}
+
 /// P0-4: `vary -Sp <pkg>` — resuelve e imprime el plan SIN mutar nada.
 ///
 /// Congelado: sin bootstrap (el `binpkgs_root` es ruta pura), sin
@@ -892,19 +924,43 @@ pub fn install(config: &mut Config) -> Result<i32> {
         // Only VUR packages (por nombre real: lo pedido puede ser virtual).
         let real = &item.info.pkgname;
         // T-005: los oficiales los gestiona xbps; registrarlos aquí escribía
-        // ficción (placeholder `_0`, `source`, repo del índice aunque el
-        // binario viniera de un repo xbps). Solo Build y VulBinary.
-        let Some(itype) = track_action(&item.action) else {
+        // ficción. Solo Build y VulBinary dejan rastro. P0-5: los VulBinary
+        // registran por su repo de acción (el gate `is_vur` los dejaba fuera
+        // al no tener template en el clon, contradiciendo la regla T-005).
+        let repo_name: Option<String> = match &item.action {
+            Action::Install(BinarySource::VulBinary { repo }) => Some(repo.clone()),
+            Action::Build => vur_map_lookup_repo(real, &repos, &mut cache).ok(),
+            Action::Install(BinarySource::Official) => None,
+        };
+        let (Some(repo_name), Some(itype)) = (repo_name, track_action(&item.action)) else {
             continue;
         };
-        let is_vur = vur_map_lookup_repo(real, &repos, &mut cache).is_ok();
-        if is_vur {
-            let repo_name = vur_map_lookup_repo(real, &repos, &mut cache)
-                .unwrap_or_else(|_| "unknown".to_string());
-            db.upsert(real, &item.info.pkgver(), &repo_name, itype.clone());
-            for sub in &item.info.subpackages {
-                db.upsert(&sub.pkgname, &item.info.pkgver(), &repo_name, itype.clone());
-            }
+        // P0-5: pins best-effort (nunca fatales) + aviso de drift.
+        let version = item.info.pkgver();
+        let repo_commit = repo_head_commit(&config.vurs_dir().join(&repo_name), &config.git_bin);
+        let artifact_sha256 = package_artifact_hash(&binpkgs_root, &version, &arch);
+        for w in crate::db::drift_warnings(db.get(real), &version, &repo_commit, &artifact_sha256) {
+            tracing::warn!("{w}");
+        }
+        db.upsert(
+            real,
+            &version,
+            &repo_name,
+            itype.clone(),
+            repo_commit.clone(),
+            artifact_sha256.clone(),
+        );
+        for sub in &item.info.subpackages {
+            // Los subpaquetes comparten commit pero su artefacto propio no se
+            // rastrea (None honesto en vez de ficción).
+            db.upsert(
+                &sub.pkgname,
+                &version,
+                &repo_name,
+                itype.clone(),
+                repo_commit.clone(),
+                None,
+            );
         }
     }
     db.save()?;

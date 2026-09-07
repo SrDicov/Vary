@@ -35,9 +35,17 @@ pub struct Entry {
     #[serde(default)]
     pub build_date: Option<u64>,
     pub install_type: InstallType,
+    /// P0-5: commit del clon VUR que sirvió el paquete (plantilla o índice).
+    /// Pin de procedencia; ausente en entradas anteriores a v3.
+    #[serde(default)]
+    pub repo_commit: Option<String>,
+    /// P0-5: sha256 del artefacto `.xbps` instalado (`sha256:<hex>`).
+    /// Pin del binario; ausente si no se pudo hashear al instalar.
+    #[serde(default)]
+    pub artifact_sha256: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct InstalledDbFile {
@@ -157,7 +165,15 @@ impl InstalledDb {
         Ok(())
     }
 
-    pub fn upsert(&mut self, name: &str, version: &str, vur: &str, install_type: InstallType) {
+    pub fn upsert(
+        &mut self,
+        name: &str,
+        version: &str,
+        vur: &str,
+        install_type: InstallType,
+        repo_commit: Option<String>,
+        artifact_sha256: Option<String>,
+    ) {
         let now_ms = now_epoch_ms();
         let build_date = match install_type {
             InstallType::Source => Some(now_ms),
@@ -171,6 +187,8 @@ impl InstalledDb {
                 install_date: now_ms / 1000,
                 build_date,
                 install_type,
+                repo_commit,
+                artifact_sha256,
             },
         );
     }
@@ -203,6 +221,40 @@ impl InstalledDb {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+}
+
+/// P0-5: avisos de drift al reinstalar la MISMA versión con pins distintos:
+/// el commit pineado cambió bajo la versión (plantilla/índice movido =
+/// señal supply-chain) o el artefacto ya no coincide. Subir versión no es
+/// drift (es upgrade esperado); pins ausentes no afirman nada.
+pub fn drift_warnings(
+    old: Option<&Entry>,
+    version: &str,
+    repo_commit: &Option<String>,
+    artifact_sha256: &Option<String>,
+) -> Vec<String> {
+    let Some(old) = old else {
+        return Vec::new();
+    };
+    if old.version != version {
+        return Vec::new();
+    }
+    let mut warnings = Vec::new();
+    match (&old.repo_commit, repo_commit) {
+        (Some(a), Some(b)) if a != b => warnings.push(format!(
+            "drift de procedencia: '{v}' reinstalado desde otro commit ({a:.12} -> {b:.12}); \
+             la plantilla/índice cambió bajo la misma versión",
+            v = version
+        )),
+        _ => {}
+    }
+    match (&old.artifact_sha256, artifact_sha256) {
+        (Some(a), Some(b)) if a != b => warnings.push(format!(
+            "drift de artefacto: '{version}' reinstalado con distinto binario que el pineado"
+        )),
+        _ => {}
+    }
+    warnings
 }
 
 pub fn decode_bincode_entry(data: &[u8]) -> Option<Entry> {
@@ -259,6 +311,9 @@ pub fn decode_bincode_entry(data: &[u8]) -> Option<Entry> {
             None
         },
         install_type,
+        // P0-5: el formato binario legacy no trae pins (migran como None).
+        repo_commit: None,
+        artifact_sha256: None,
     })
 }
 
@@ -319,8 +374,22 @@ mod tests {
         let mut db = InstalledDb::load(&path).unwrap();
         assert_eq!(db.len(), 0);
 
-        db.upsert("hello-vur", "1.0_1", "mi-repo", InstallType::Source);
-        db.upsert("kernel-vur", "6.12_1", "void-repo", InstallType::Binary);
+        db.upsert(
+            "hello-vur",
+            "1.0_1",
+            "mi-repo",
+            InstallType::Source,
+            None,
+            None,
+        );
+        db.upsert(
+            "kernel-vur",
+            "6.12_1",
+            "void-repo",
+            InstallType::Binary,
+            None,
+            None,
+        );
         db.save().unwrap();
 
         let reloaded = InstalledDb::load(&path).unwrap();
@@ -339,7 +408,7 @@ mod tests {
 
         let raw = std::fs::read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(v["schema_version"], 2);
+        assert_eq!(v["schema_version"], 3);
         assert!(v["packages"]["hello-vur"].is_object());
     }
 
@@ -369,8 +438,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("installed.json");
         let mut db = InstalledDb::load(&path).unwrap();
-        db.upsert("pkg-a", "1.0", "r", InstallType::Source);
-        db.upsert("pkg-b", "1.0", "r", InstallType::Binary);
+        db.upsert("pkg-a", "1.0", "r", InstallType::Source, None, None);
+        db.upsert("pkg-b", "1.0", "r", InstallType::Binary, None, None);
         assert_eq!(db.len(), 2);
 
         assert!(db.remove("pkg-a"));
@@ -413,5 +482,120 @@ mod tests {
         assert_eq!(entry.install_date, 1700000000);
         assert_eq!(entry.build_date, Some(1700000000000));
         assert_eq!(entry.install_type, InstallType::Source);
+    }
+
+    // --- P0-5: pinning (repo_commit + artifact_sha256) ---
+
+    #[test]
+    fn roundtrip_preserva_pins() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.json");
+        let mut db = InstalledDb::load(&path).unwrap();
+        db.upsert(
+            "pin-pkg",
+            "2.0_1",
+            "mi-repo",
+            InstallType::Source,
+            Some("abc123def456".to_string()),
+            Some("sha256:deadbeef".to_string()),
+        );
+        db.save().unwrap();
+
+        let reloaded = InstalledDb::load(&path).unwrap();
+        let entry = reloaded.get("pin-pkg").unwrap();
+        assert_eq!(entry.repo_commit.as_deref(), Some("abc123def456"));
+        assert_eq!(entry.artifact_sha256.as_deref(), Some("sha256:deadbeef"));
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(v["schema_version"], 3);
+    }
+
+    #[test]
+    fn migracion_v2_a_v3_sin_perdida() {
+        // Patrón H-005: fixture v2 (con build_date, sin pins) migra intacto.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.json");
+        let v2_json = r#"{
+            "schema_version": 2,
+            "packages": {
+                "v2-pkg": {
+                    "version": "3.1_2",
+                    "vur": "repo-x",
+                    "install_date": 1700000001,
+                    "build_date": 1700000001000,
+                    "install_type": "binary"
+                }
+            }
+        }"#;
+        std::fs::write(&path, v2_json).unwrap();
+
+        let db = InstalledDb::load(&path).unwrap();
+        assert_eq!(db.len(), 1);
+        let entry = db.get("v2-pkg").unwrap();
+        assert_eq!(entry.version, "3.1_2");
+        assert_eq!(entry.vur, "repo-x");
+        assert_eq!(entry.install_date, 1700000001);
+        assert_eq!(entry.build_date, Some(1700000001000));
+        assert_eq!(entry.install_type, InstallType::Binary);
+        assert_eq!(entry.repo_commit, None);
+        assert_eq!(entry.artifact_sha256, None);
+    }
+
+    fn pinned_entry() -> Entry {
+        Entry {
+            version: "1.0_1".to_string(),
+            vur: "r".to_string(),
+            install_date: 1700000000,
+            build_date: Some(1700000000000),
+            install_type: InstallType::Source,
+            repo_commit: Some("aaa111".to_string()),
+            artifact_sha256: Some("sha256:bbb222".to_string()),
+        }
+    }
+
+    #[test]
+    fn drift_solo_ante_misma_version_con_pins_distintos() {
+        let old = pinned_entry();
+        // Idéntico: silencio.
+        assert!(drift_warnings(
+            Some(&old),
+            "1.0_1",
+            &Some("aaa111".to_string()),
+            &Some("sha256:bbb222".to_string())
+        )
+        .is_empty());
+        // Subir versión no es drift.
+        assert!(drift_warnings(
+            Some(&old),
+            "2.0_1",
+            &Some("zzz999".to_string()),
+            &Some("sha256:yyy888".to_string())
+        )
+        .is_empty());
+        // Sin entrada previa ni pins: nada que afirmar.
+        assert!(drift_warnings(None, "1.0_1", &Some("x".to_string()), &None).is_empty());
+        assert!(drift_warnings(Some(&old), "1.0_1", &None, &None).is_empty());
+        // Mismo commit, distinto artefacto: rebuild normal, silencio.
+        assert!(drift_warnings(
+            Some(&old),
+            "1.0_1",
+            &Some("aaa111".to_string()),
+            &Some("sha256:otro".to_string())
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn drift_de_commit_avisa_forense() {
+        let old = pinned_entry();
+        let warnings = drift_warnings(
+            Some(&old),
+            "1.0_1",
+            &Some("ccc333".to_string()),
+            &Some("sha256:bbb222".to_string()),
+        );
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("drift de procedencia"), "{warnings:?}");
+        assert!(warnings[0].contains("1.0_1"), "{warnings:?}");
     }
 }
