@@ -657,3 +657,24 @@
 - **Título:** Archivo de texto residual `guia` (29 KB) en la raíz del repositorio
 - **Resolución:** El archivo es el contrato original (análisis comparativo vary/vuru/vura/vouru, base de COMPLIANCE_MATRIX): se movió a `docs/CONTRATO.md`, no se eliminó. Ninguna otra referencia a la ruta vieja en el repo.
 - **Estado:** ✅ CORREGIDO Y VALIDADO (Commit `fix(H-047)`)
+
+---
+
+## 3. Adenda 0.4.0 — Cierre del roadmap post-auditoría (2026-09-07)
+
+**Alcance:** P0-1, P0-4, P0-2, P0-5, P0-3, P1-1, P1-2, P2 (why/log/soname),
+mini-auditoría pre-tag (AUD-0.4.0) y smoke en Void real. P1-3/H-015 diferido
+a 0.5.0 (único ítem, decisión humana vigente); P2-404 cerrado como no-ítem
+(decisión de diseño: capa equivocada). Detalle por ítem: `FIX_LOG.md`
+(Apéndice 0.3.1/0.4.0); evidencia viva: `test/RESULTS.md` + `test/SMOKE-0.4.0.md`.
+
+**Metodología:** mini-auditoría por feature (test real no-trivial, flag
+conectado al flujo, `unwrap`/`expect` en rutas nuevas, no-TTY/`--yes`),
+3 lotes en paralelo con lectura directa de código. Resultado: **0 hallazgos
+mayores, 7 menores** (6 corregidos con tests + CI verde; 2 gaps aceptados con
+fundamento: ceremonias que tocan /etc+TTY y compositores env-dependientes,
+cuyo núcleo fail-closed sí está cubierto y cuyo e2e vivo existe).
+
+**Veredicto:** el árbol 0.4.0 es el estado final de 10/11 requisitos
+contractuales (ver `COMPLIANCE_MATRIX.md`: solo R1 ausente, diferido a P1-3).
+La matriz de cumplimiento queda reconciliada en esta misma revisión.

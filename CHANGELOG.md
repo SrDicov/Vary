@@ -2,6 +2,38 @@
 
 All notable changes to vary will be documented in this file.
 
+## 0.4.0 (2026-09-07) — cierre del roadmap post-auditoría
+
+10/11 requisitos contractuales (solo R1 ausente, diferido a P1-3/0.5.0).
+Evidencia: `audit/FIX_LOG.md` (Apéndice 0.3.1/0.4.0), `test/RESULTS.md`,
+`test/SMOKE-0.4.0.md`. Mini-auditoría pre-tag: 0 hallazgos mayores.
+
+### Garantías (fail-closed, verificadas)
+- TOFU continuo: rotación de llave/URL en repos registrados aborta el
+  refresh con forense + `vary --repo re-trust` (rechaza `--yes`).
+- `vary -Sp`: plan congelado real (sin lock/DB/elevación); semántica honesta
+  documentada (el índice VUP refresca caché como `-Sy`).
+- Preflight de entorno (root/uchroot abortan; chroot/OCI avisan).
+- Orden binario/fuente determinístico (`--prefer-binary`/`--force-build`);
+  avisos cuando un flag no tiene efecto.
+- Pinning (`repo_commit` + `artifact_sha256`, schema v3) y pins de sonames
+  al instalar; drift y soname-drift solo AVISAN (nunca auto-rebuild).
+- Sin `unwrap`/`expect` en rutas nuevas; no-TTY/`--yes` sin sorpresas
+  (EOF = denegación; `--yes` no oculta hallazgos de auditoría).
+
+### Heurísticos (útiles, no garantías)
+- `template_audit`: checksum-ausente + descargas-en-build; consultivo, con
+  falsos negativos/positivos posibles fuera del corpus. No sustituye revisar.
+- `vary challenge`: compara árboles tras rebuild; bit-reproducibilidad
+  observada en lavat, no prometida en general. **Sin guardarraíl de
+  tamaño/tiempo: un challenge compila de verdad** (puede tardar horas).
+- Avisos de drift/soname/lock: advisory, pueden callar sin baseline.
+
+### No-ítems decididos
+- Resiliencia 404 en distfiles: no implementada (capa equivocada; el fetch
+  con reintentos/mirrors lo ejecuta `xbps-src`).
+- P1-3 (masterdirs aislados + H-015): único ítem de 0.5.0.
+
 ## Unreleased (auditoría FASE 4–5, 2026-09-06)
 
 Auditoría integral cerrada: 46/47 hallazgos + A3 + A6 (resta H-015, diferido

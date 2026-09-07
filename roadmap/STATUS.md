@@ -10,7 +10,7 @@ criterios de aceptación.
 
 ---
 
-## P0-1 · `preflight.rs` — chequeos previos duros
+## P0-1 · `preflight.rs` — chequeos previos duros ✅ CERRADO 0.4.0 (`feat/fix P0-1`)
 
 - Abort si `euid == 0` (vary nunca como root directo; solo vía wrapper).
 - Chroot degradado (`proot`/`bwrap` detectado) → warning crítica, seguir.
@@ -18,14 +18,14 @@ criterios de aceptación.
 - Detectar OCI (`/.dockerenv`, `/proc/1/cgroup` con `docker|kubepods`).
 - Aceptación: tabla de entornos × resultado esperado en tests + CI.
 
-## P0-2 · TOFU cerrado + `re-trust`
+## P0-2 · TOFU cerrado + `re-trust` ✅ CERRADO 0.4.0 (`feat/fix P0-2`)
 
 - Cambio de fingerprint o URL en repo registrado durante update → abort
   forense (qué cambió, cuándo se confió) + `vary repo re-trust <name>`.
 - Justificación: incidente Atomic Arch (jun-2026); H-003 cubre solo el alta.
 - Aceptación: test con rotación simulada aborta; `re-trust` reanuda.
 
-## P0-3 · `template_audit.rs` — `audit_template() -> Vec<AuditFinding>`
+## P0-3 · `template_audit.rs` ✅ CERRADO 0.4.0 (`feat P0-3` + `fix auditoria-0.4.0`)
 
 - Reglas: checksum ausente → High; en updates, parsear `git diff` del
   template (URLs nuevas, descargas en build: `npm`/`pip`/`curl|sh`, hooks
@@ -38,26 +38,26 @@ criterios de aceptación.
 - no-TTY aborta salvo `--yes`.
 - Aceptación: corpus de templates con veredicto esperado por regla.
 
-## P0-4 · `--print` real (plan-then-mutate)
+## P0-4 · `--print` real (plan-then-mutate) ✅ CERRADO 0.4.0 (`feat/fix P0-4`; supera H-007)
 
 - Niveles topológicos del plan, batch binaria única, cola de builds,
   nº de elevaciones (= 1). Reemplaza el disable temporal de H-007.
 - Aceptación: `vary -Sp foo` no toca disco/red con elevación; salida
   parseable por scripts.
 
-## P0-5 · Pinning (`repo_commit` + `artifact_sha256` en installed.json)
+## P0-5 · Pinning ✅ CERRADO 0.4.0 (`feat/fix P0-5`; schema v3)
 
 - Migración tolerante (campos opcionales, backfill cuando haya dato).
 - Warning de drift binario (binario instalado ≠ artefacto del commit pineado).
 - Aceptación: roundtrip + migración v2→v3 sin pérdida (patrón H-005).
 
-## P1-1 · `vary.lock` (TOML)
+## P1-1 · `vary.lock` (TOML) ✅ CERRADO 0.4.0 (`feat P1-1`)
 
 - Repos (url/commit/fingerprint) + paquetes (version/source/sha256).
 - `vary sync --lock` regenera; upgrade contra lock es reproducible.
 - Aceptación: dos máquinas, mismo lock, mismo árbol instalado.
 
-## P1-2 · `vary challenge` (build local vs binario servido)
+## P1-2 · `vary challenge` ✅ CERRADO 0.4.0 (`feat/fix P1-2`; tras `--experimental`)
 
 - Recompila local, compara árboles instalados, reporta divergencias.
 - Tras `--experimental` hasta ganar confianza estadística.
@@ -74,8 +74,8 @@ criterios de aceptación.
 
 ## P2 · Miscelánea
 
-- `vary why <pkg>` ✅ 0.4.0 — cadena de dependencia que lo trajo.
-- `vary log` ✅ 0.4.0 — historial legible (`~/.local/share/vary/operations.log`).
+- `vary why <pkg>` ✅ CERRADO 0.4.0 (`feat P2`) — cadena de dependencia que lo trajo.
+- `vary log` ✅ CERRADO 0.4.0 (`feat P2` + `fix auditoria-0.4.0`) — diario append-only + filtro.
 - Resiliencia 404 en distfiles: ❌ **NO IMPLEMENTAR (decisión de diseño
   2026-09-07, confirmada por el mantenedor).** El fetch lo ejecuta `xbps-src`
   (`masterdir.fetch_pkg`), que ya trae reintentos propios y soporta mirrors vía
@@ -89,7 +89,7 @@ criterios de aceptación.
   upgrade; **nunca auto-rebuild sin flag explícito** (compilar sin
   consentimiento es peligroso). Ver P2-soname abajo.
 
-## P2-soname · Pin de sonames + aviso de drift (alcance aprobado 2026-09-07)
+## P2-soname · Pin de sonames + aviso de drift ✅ CERRADO 0.4.0 (`feat P2-soname`)
 
 - Al instalar un paquete Source se graba `shlibs_requires` (salida de
   `xbps-query -R --property rundeps` del artefacto construido... ver

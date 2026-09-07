@@ -1,0 +1,23 @@
+{
+  "schema_version": 3,
+  "packages": {
+    "brave-origin": {
+      "version": "brave-origin-1.93.129_1",
+      "vur": "repository",
+      "install_date": 1788746024,
+      "build_date": 1788746024737,
+      "install_type": "source",
+      "repo_commit": null,
+      "artifact_sha256": null
+    },
+    "librewolf": {
+      "version": "librewolf-153.0.4.1_1",
+      "vur": "z-packages",
+      "install_date": 1788650549,
+      "build_date": 1788650549000,
+      "install_type": "source",
+      "repo_commit": null,
+      "artifact_sha256": null
+    }
+  }
+}

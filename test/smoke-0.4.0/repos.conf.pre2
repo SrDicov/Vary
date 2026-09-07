@@ -1,0 +1,24 @@
+[vur.cnr]
+url = "https://github.com/Neko-Void-Linux/cnr"
+branch = "main"
+priority = 100
+enabled = true
+
+[vur.repository]
+url = "https://git.voiders.dev/voiders-community/repository"
+branch = "main"
+priority = 100
+enabled = true
+
+[vur.vup]
+url = "https://github.com/VUP-Linux/vup"
+branch = "main"
+priority = 100
+index_url = "https://vup-linux.github.io/vup/index.json"
+enabled = true
+
+[vur.z-packages]
+url = "https://github.com/SrDicov/z-packages"
+branch = "master"
+priority = 100
+enabled = true

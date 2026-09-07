@@ -1,0 +1,772 @@
+[repos.cnr]
+url = "https://github.com/Neko-Void-Linux/cnr"
+commit = "94d006cf1e242a6733e4dd99d992124da1029e8e"
+
+[repos.repository]
+url = "https://git.voiders.dev/voiders-community/repository"
+commit = "4530c62d7ba6f141120c9fb94a99e2f0c507dcbe"
+
+[repos.vup]
+url = "https://github.com/VUP-Linux/vup"
+commit = "0b575a387bafd01de54f3a34879a93637cdaaf5c"
+fingerprint = "78:b8:1b:87:74:ff:ce:49:f8:f9:06:9a:04:7f:7e:1e"
+
+[repos.z-packages]
+url = "https://github.com/SrDicov/z-packages"
+commit = "4303163932d0e9fb48e2cfc6c13699bbcf8d176e"
+
+[packages.7zip]
+version = "7zip-26.02_1"
+source = "official"
+
+[packages.MangoHud]
+version = "MangoHud-0.8.4_1"
+source = "official"
+
+[packages.Neko-Kernel-Manager]
+version = "Neko-Kernel-Manager-1.3.0_1"
+source = "official"
+
+[packages.NetworkManager]
+version = "NetworkManager-1.56.0_1"
+source = "official"
+
+[packages.NetworkManager-openvpn]
+version = "NetworkManager-openvpn-1.12.0_1"
+source = "official"
+
+[packages.Thunar]
+version = "Thunar-4.20.9_1"
+source = "official"
+
+[packages.Vulkan-Tools]
+version = "Vulkan-Tools-1.4.350.1_1"
+source = "official"
+
+[packages.alsa-lib]
+version = "alsa-lib-1.2.16.1_1"
+source = "official"
+
+[packages.alsa-pipewire]
+version = "alsa-pipewire-1.6.8_1"
+source = "official"
+
+[packages.alsa-utils]
+version = "alsa-utils-1.2.16_1"
+source = "official"
+
+[packages.android-tools]
+version = "android-tools-36.0.1_2"
+source = "official"
+
+[packages.at-spi2-core]
+version = "at-spi2-core-2.56.5_1"
+source = "official"
+
+[packages.base-system]
+version = "base-system-0.114_2"
+source = "official"
+
+[packages.bash-completion]
+version = "bash-completion-2.16.0_1"
+source = "official"
+
+[packages.blueman]
+version = "blueman-2.4.6_2"
+source = "official"
+
+[packages.bluetui]
+version = "bluetui-0.8.1_1"
+source = "official"
+
+[packages.bluez]
+version = "bluez-5.86_2"
+source = "official"
+
+[packages.brave-origin]
+version = "brave-origin-1.93.129_1"
+source = "vur:repository"
+
+[packages.brltty]
+version = "brltty-6.9.1_1"
+source = "official"
+
+[packages.bsdtar]
+version = "bsdtar-3.8.9_1"
+source = "official"
+
+[packages.btop]
+version = "btop-1.4.7_1"
+source = "official"
+
+[packages.chrony]
+version = "chrony-4.8_1"
+source = "official"
+
+[packages.cryptsetup]
+version = "cryptsetup-2.8.7_1"
+source = "official"
+
+[packages.curl]
+version = "curl-8.22.0_1"
+source = "official"
+
+[packages.dbus]
+version = "dbus-1.16.2_2"
+source = "official"
+
+[packages.dejavu-fonts-ttf]
+version = "dejavu-fonts-ttf-2.37_3"
+source = "official"
+
+[packages.dialog]
+version = "dialog-1.3.20260107_1"
+source = "official"
+
+[packages.dkms]
+version = "dkms-3.3.0_1"
+source = "official"
+
+[packages.dnsmasq]
+version = "dnsmasq-2.93_1"
+source = "official"
+
+[packages.elogind]
+version = "elogind-252.39_1"
+source = "official"
+
+[packages.emptty]
+version = "emptty-0.16.1_1"
+source = "official"
+
+[packages.espeakup]
+version = "espeakup-0.80_2"
+source = "official"
+
+[packages.ethtool]
+version = "ethtool-7.1_1"
+source = "official"
+
+[packages.eudev]
+version = "eudev-3.2.14_2"
+source = "official"
+
+[packages.expect]
+version = "expect-5.45.4_3"
+source = "official"
+
+[packages.fastfetch]
+version = "fastfetch-2.67.1_1"
+source = "official"
+
+[packages.ffmpeg]
+version = "ffmpeg-4.4.8_1"
+source = "official"
+
+[packages.flatpak]
+version = "flatpak-1.18.2_1"
+source = "official"
+
+[packages.font-JetBrainsMono]
+version = "font-JetBrainsMono-2.304_1"
+source = "official"
+
+[packages.font-awesome]
+version = "font-awesome-4.7.0_3"
+source = "official"
+
+[packages.font-misc-misc]
+version = "font-misc-misc-1.1.3_1"
+source = "official"
+
+[packages.foot]
+version = "foot-1.27.0_1"
+source = "official"
+
+[packages.gamemode]
+version = "gamemode-1.8.2_1"
+source = "official"
+
+[packages.git]
+version = "git-2.55.0_1"
+source = "official"
+
+[packages.github-cli]
+version = "github-cli-2.100.0_1"
+source = "official"
+
+[packages.gnome-keyring]
+version = "gnome-keyring-48.0_1"
+source = "official"
+
+[packages.gparted]
+version = "gparted-1.8.1_1"
+source = "official"
+
+[packages.grim]
+version = "grim-1.5.0_1"
+source = "official"
+
+[packages.grub]
+version = "grub-2.12_2"
+source = "official"
+
+[packages.grub-x86_64-efi]
+version = "grub-x86_64-efi-2.12_2"
+source = "official"
+
+[packages.gst-plugins-bad1]
+version = "gst-plugins-bad1-1.28.6_1"
+source = "official"
+
+[packages.gst-plugins-base1]
+version = "gst-plugins-base1-1.28.6_1"
+source = "official"
+
+[packages.gst-plugins-good1]
+version = "gst-plugins-good1-1.28.6_1"
+source = "official"
+
+[packages.gst-plugins-ugly1]
+version = "gst-plugins-ugly1-1.28.6_1"
+source = "official"
+
+[packages.gstreamer1]
+version = "gstreamer1-1.28.6_1"
+source = "official"
+
+[packages.gtk-layer-shell]
+version = "gtk-layer-shell-0.10.1_1"
+source = "official"
+
+[packages.gtk-update-icon-cache]
+version = "gtk-update-icon-cache-3.24.52_1"
+source = "official"
+
+[packages.gtkmm]
+version = "gtkmm-3.24.8_1"
+source = "official"
+
+[packages.gtksourceview]
+version = "gtksourceview-3.24.11_1"
+source = "official"
+
+[packages.gvfs-afc]
+version = "gvfs-afc-1.56.1_3"
+source = "official"
+
+[packages.gvfs-mtp]
+version = "gvfs-mtp-1.56.1_3"
+source = "official"
+
+[packages.gvfs-smb]
+version = "gvfs-smb-1.56.1_3"
+source = "official"
+
+[packages.inetutils]
+version = "inetutils-2.8_1"
+source = "official"
+
+[packages.intel-media-driver]
+version = "intel-media-driver-26.3.1_1"
+source = "official"
+
+[packages.intel-ucode]
+version = "intel-ucode-20260512_1"
+source = "official"
+
+[packages.iproute2]
+version = "iproute2-7.1.0_1"
+source = "official"
+
+[packages.iptables]
+version = "iptables-1.8.11_3"
+source = "official"
+
+[packages.iruka-xbps]
+version = "iruka-xbps-0.1.0_3"
+source = "official"
+
+[packages.iw]
+version = "iw-6.17_1"
+source = "official"
+
+[packages.jq]
+version = "jq-1.8.2_1"
+source = "official"
+
+[packages.json-c]
+version = "json-c-0.18_1"
+source = "official"
+
+[packages.kanshi]
+version = "kanshi-1.9.0_1"
+source = "official"
+
+[packages.kasha-installer]
+version = "kasha-installer-7.3_5"
+source = "official"
+
+[packages.labwc]
+version = "labwc-0.20.2_1"
+source = "official"
+
+[packages.labwc-menu-generator]
+version = "labwc-menu-generator-0.2.0_1"
+source = "official"
+
+[packages.labwc-tweaks-qt]
+version = "labwc-tweaks-qt-0.1.0_1"
+source = "official"
+
+[packages.liberation-fonts-ttf]
+version = "liberation-fonts-ttf-2.1.5_3"
+source = "official"
+
+[packages.libglvnd]
+version = "libglvnd-1.7.0_1"
+source = "official"
+
+[packages.libjack-pipewire]
+version = "libjack-pipewire-1.6.8_1"
+source = "official"
+
+[packages.librewolf]
+version = "librewolf-153.0.4.1_1"
+source = "vur:z-packages"
+
+[packages.libva-intel-driver]
+version = "libva-intel-driver-2.4.1_1"
+source = "official"
+
+[packages.linux-firmware-amd]
+version = "linux-firmware-amd-20260810_1"
+source = "official"
+
+[packages.linux-firmware-intel]
+version = "linux-firmware-intel-20260810_1"
+source = "official"
+
+[packages.linux-firmware-nvidia]
+version = "linux-firmware-nvidia-20260810_1"
+source = "official"
+
+[packages.linux-lts]
+version = "linux-lts-6.12_1"
+source = "official"
+
+[packages.linux-mainline-headers]
+version = "linux-mainline-headers-7.2_1"
+source = "official"
+
+[packages.lvm2]
+version = "lvm2-2.03.29_1"
+source = "official"
+
+[packages.mdadm]
+version = "mdadm-4.4_1"
+source = "official"
+
+[packages.mesa]
+version = "mesa-26.1.8_1"
+source = "official"
+
+[packages.mesa-dri]
+version = "mesa-dri-26.1.8_1"
+source = "official"
+
+[packages.mesa-dri-32bit]
+version = "mesa-dri-32bit-26.1.8_1"
+source = "official"
+
+[packages.mesa-intel-dri]
+version = "mesa-intel-dri-26.1.8_1"
+source = "official"
+
+[packages.mesa-intel-dri-32bit]
+version = "mesa-intel-dri-32bit-26.1.8_1"
+source = "official"
+
+[packages.mesa-vaapi]
+version = "mesa-vaapi-26.1.8_1"
+source = "official"
+
+[packages.mesa-vulkan-intel]
+version = "mesa-vulkan-intel-26.1.8_1"
+source = "official"
+
+[packages.mesa-vulkan-intel-32bit]
+version = "mesa-vulkan-intel-32bit-26.1.8_1"
+source = "official"
+
+[packages.micro]
+version = "micro-2.0.15_1"
+source = "official"
+
+[packages.mpv]
+version = "mpv-0.41.0_3"
+source = "official"
+
+[packages.nano]
+version = "nano-9.2_1"
+source = "official"
+
+[packages.neko-backgrounds]
+version = "neko-backgrounds-7.0_1"
+source = "official"
+
+[packages.neko-icons]
+version = "neko-icons-6.5_1"
+source = "official"
+
+[packages.neko-themes]
+version = "neko-themes-6.5_1"
+source = "official"
+
+[packages.network-manager-applet]
+version = "network-manager-applet-1.36.0_1"
+source = "official"
+
+[packages.noctalia]
+version = "noctalia-5.11.1_8"
+source = "official"
+
+[packages.noto-fonts-cjk]
+version = "noto-fonts-cjk-1_1"
+source = "official"
+
+[packages.noto-fonts-emoji]
+version = "noto-fonts-emoji-2.051_2"
+source = "official"
+
+[packages.noto-fonts-ttf]
+version = "noto-fonts-ttf-2026.08.01_1"
+source = "official"
+
+[packages.ntp]
+version = "ntp-4.2.8p18_7"
+source = "official"
+
+[packages.nwg-look]
+version = "nwg-look-1.1.1_1"
+source = "official"
+
+[packages.open-vm-tools]
+version = "open-vm-tools-12.3.0_3"
+source = "official"
+
+[packages.opendoas]
+version = "opendoas-6.8.2_2"
+source = "official"
+
+[packages.openssh]
+version = "openssh-10.5p1_1"
+source = "official"
+
+[packages.openvpn]
+version = "openvpn-2.7.5_1"
+source = "official"
+
+[packages.orca]
+version = "orca-48.6_2"
+source = "official"
+
+[packages.pavucontrol]
+version = "pavucontrol-6.2_1"
+source = "official"
+
+[packages.pipewire]
+version = "pipewire-1.6.8_1"
+source = "official"
+
+[packages.playerctl]
+version = "playerctl-2.4.1_1"
+source = "official"
+
+[packages.polkit]
+version = "polkit-127_1"
+source = "official"
+
+[packages.proton-vpn-daemon]
+version = "proton-vpn-daemon-0.13.7_1"
+source = "official"
+
+[packages.proton-vpn-gnome-desktop]
+version = "proton-vpn-gnome-desktop-0.10.1_1"
+source = "official"
+
+[packages.proton-vpn-gtk-app]
+version = "proton-vpn-gtk-app-4.16.5_1"
+source = "official"
+
+[packages.protonvpn-stable-release]
+version = "protonvpn-stable-release-1.0.8_1"
+source = "official"
+
+[packages.pulsemixer]
+version = "pulsemixer-1.5.1_2"
+source = "official"
+
+[packages.python3-aiohttp]
+version = "python3-aiohttp-3.14.1_1"
+source = "official"
+
+[packages.python3-bcrypt]
+version = "python3-bcrypt-4.1.2_3"
+source = "official"
+
+[packages.python3-gnupg]
+version = "python3-gnupg-0.5.1_4"
+source = "official"
+
+[packages.python3-keyring]
+version = "python3-keyring-25.6.0_2"
+source = "official"
+
+[packages.python3-openssl]
+version = "python3-openssl-26.2.0_1"
+source = "official"
+
+[packages.python3-pip]
+version = "python3-pip-26.2.1_1"
+source = "official"
+
+[packages.python3-pipx]
+version = "python3-pipx-1.15.0_1"
+source = "official"
+
+[packages.python3-requests]
+version = "python3-requests-2.34.2_1"
+source = "official"
+
+[packages.python3-setuptools]
+version = "python3-setuptools-80.10.2_2"
+source = "official"
+
+[packages.python3-wheel]
+version = "python3-wheel-0.48.0_1"
+source = "official"
+
+[packages.qemu-ga]
+version = "qemu-ga-11.1.0_1"
+source = "official"
+
+[packages.qt6-wayland]
+version = "qt6-wayland-6.11.1_1"
+source = "official"
+
+[packages.qt6-wayland-client]
+version = "qt6-wayland-client-6.11.1_1"
+source = "official"
+
+[packages.ristretto]
+version = "ristretto-0.14.0_1"
+source = "official"
+
+[packages.rsync]
+version = "rsync-3.4.4_1"
+source = "official"
+
+[packages.rtkit]
+version = "rtkit-0.14_1"
+source = "official"
+
+[packages.slurp]
+version = "slurp-1.5.0_2"
+source = "official"
+
+[packages.spice-vdagent]
+version = "spice-vdagent-0.22.1_1"
+source = "official"
+
+[packages.swaylock]
+version = "swaylock-1.8.6_1"
+source = "official"
+
+[packages.terminus-font]
+version = "terminus-font-4.49.1_1"
+source = "official"
+
+[packages.tlp]
+version = "tlp-1.10.2_1"
+source = "official"
+
+[packages.tlp-pd]
+version = "tlp-pd-1.10.2_1"
+source = "official"
+
+[packages.tlp-rdw]
+version = "tlp-rdw-1.10.2_1"
+source = "official"
+
+[packages.tmux]
+version = "tmux-3.7b_1"
+source = "official"
+
+[packages.udisks2]
+version = "udisks2-2.10.1_1"
+source = "official"
+
+[packages.unrar]
+version = "unrar-7.2.6_1"
+source = "official"
+
+[packages.unzip]
+version = "unzip-6.0_15"
+source = "official"
+
+[packages.upower]
+version = "upower-1.91.3_2"
+source = "official"
+
+[packages.vary]
+version = "vary-0.3.0_1"
+source = "official"
+
+[packages.vim]
+version = "vim-9.2.1031_1"
+source = "official"
+
+[packages.void-docs-browse]
+version = "void-docs-browse-2026.04.13_1"
+source = "official"
+
+[packages.void-live-audio]
+version = "void-live-audio-0.1.1_1"
+source = "official"
+
+[packages.void-repo-multilib]
+version = "void-repo-multilib-6_4"
+source = "official"
+
+[packages.void-repo-multilib-nonfree]
+version = "void-repo-multilib-nonfree-6_4"
+source = "official"
+
+[packages.void-repo-nonfree]
+version = "void-repo-nonfree-9_6"
+source = "official"
+
+[packages.volumeicon]
+version = "volumeicon-0.5.1_4"
+source = "official"
+
+[packages.vulkan-loader]
+version = "vulkan-loader-1.4.350.1_1"
+source = "official"
+
+[packages.wdisplays]
+version = "wdisplays-1.1.3_1"
+source = "official"
+
+[packages.wget]
+version = "wget-1.25.0_1"
+source = "official"
+
+[packages.wireguard-tools]
+version = "wireguard-tools-1.0.20260223_1"
+source = "official"
+
+[packages.wireplumber]
+version = "wireplumber-0.5.17_1"
+source = "official"
+
+[packages.wl-clipboard]
+version = "wl-clipboard-2.3.0_1"
+source = "official"
+
+[packages.wlopm]
+version = "wlopm-1.0.0_1"
+source = "official"
+
+[packages.wlr-randr]
+version = "wlr-randr-0.5.0_1"
+source = "official"
+
+[packages.wofi]
+version = "wofi-1.5.3_1"
+source = "official"
+
+[packages.wpa_supplicant]
+version = "wpa_supplicant-2.12_2"
+source = "official"
+
+[packages.xarchiver]
+version = "xarchiver-0.5.4.26_1"
+source = "official"
+
+[packages.xdg-desktop-portal]
+version = "xdg-desktop-portal-1.22.1_1"
+source = "official"
+
+[packages.xdg-desktop-portal-gtk]
+version = "xdg-desktop-portal-gtk-1.15.3_1"
+source = "official"
+
+[packages.xdg-desktop-portal-wlr]
+version = "xdg-desktop-portal-wlr-0.8.2_1"
+source = "official"
+
+[packages.xdg-user-dirs]
+version = "xdg-user-dirs-0.20_2"
+source = "official"
+
+[packages.xdg-utils]
+version = "xdg-utils-1.2.1_1"
+source = "official"
+
+[packages.xdo]
+version = "xdo-0.5.7_3"
+source = "official"
+
+[packages.xf86-video-nouveau]
+version = "xf86-video-nouveau-1.0.18_1"
+source = "official"
+
+[packages.xinit]
+version = "xinit-1.4.4_1"
+source = "official"
+
+[packages.xmirror]
+version = "xmirror-0.4.1_1"
+source = "official"
+
+[packages.xorg]
+version = "xorg-7.6_6"
+source = "official"
+
+[packages.xsetroot]
+version = "xsetroot-1.1.4_1"
+source = "official"
+
+[packages.xtools]
+version = "xtools-0.70_1"
+source = "official"
+
+[packages.xtools-minimal]
+version = "xtools-minimal-0.70_1"
+source = "official"
+
+[packages.xwayland-satellite]
+version = "xwayland-satellite-0.8.2_1"
+source = "official"
+
+[packages.xxd]
+version = "xxd-9.2.1031_1"
+source = "official"
+
+[packages.xz]
+version = "xz-5.8.3_1"
+source = "official"
+
+[packages.yad]
+version = "yad-14.2_1"
+source = "official"
+
+[packages.zip]
+version = "zip-3.0_6"
+source = "official"
+
+[packages.zramen]
+version = "zramen-1.0.1_1"
+source = "official"

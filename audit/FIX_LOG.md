@@ -896,3 +896,177 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Run CI verde (fmt + clippy `--all-targets -- -D warnings` + test).
 - **Estado:** ✅ CERRADO COMO NO-REPRODUCIBLE + TESTS
 ---
+
+## Apéndice 0.3.1/0.4.0 — Roadmap post-auditoría (2026-09-07)
+
+Nota de procedimiento: los ítems P0/P1/P2 se cerraron con su run CI+XBPS
+verde en el commit de cierre (cadena fix-forward donde hizo falta); su
+registro aquí es reconciliación del cierre 0.4.0, no del mismo commit que
+el código (excepción explícita del mantenedor en la orden de cierre).
+
+### [P0-1] Sin chequeos previos de entorno (root/uchroot/chroot)
+- **Módulo:** `src/preflight.rs` (nuevo), `src/lib.rs:84` (gate de entrada)
+- **Commit:** `feat(P0-1)` + `fix(P0-1)` (`git log --oneline --grep="P0-1"`)
+- **Descripción:** vary corría como root directo y con `xbps-uchroot` mal
+  permisado, fallando tarde con errores crípticos (o peor).
+- **Remediación:** gate único al inicio de `run()`: root directo aborta
+  (salvo en contenedor, donde avisa y sigue — los builds XBPS exigen root),
+  uchroot sin `4750` aborta con hint de `chmod`, chroot degradado y OCI
+  avisan. Sin prompts (apto no-TTY).
+- **Validación:** tabla entorno×veredicto con `FakeIo` inyectable (7 tests);
+  en vivo abort-root y chmod-0755→restore-4750. Run CI+XBPS verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+### [P0-4] `--print` mentía (mutaba y pedía elevación)
+- **Módulo:** `src/install.rs` (`print_plan`, `build_levels`,
+  `elevation_estimate`), `src/lib.rs` (dispatch sin lock)
+- **Commit:** `feat(P0-4)` + `fix(P0-4)` (`git log --oneline --grep="P0-4"`)
+- **Descripción:** `-Sp` ejecutaba el flujo de instalación (H-007 lo tenía
+  deshabilitado temporalmente): ni plan ni solo-lectura.
+- **Remediación:** plan congelado real: niveles topológicos, batch binaria
+  única, nº de elevaciones; sin bootstrap, sin lock, sin DB, sin confirm, sin
+  elevación. Semántica honesta documentada: el índice VUP puede refrescar su
+  caché (solo-lectura, como `-Sy`); "no toca disco/red" = cero escrituras en
+  el sistema + cero red elevada + cero elevación.
+- **Validación:** tests de niveles (cadena/diamante/virtual/vacío) +
+  `elevation_estimate` (0/0, oficial→(0,1), build→(0,1), sin tocar /etc);
+  en vivo `-Sp` con sha de DB idéntico antes/después. Supera H-007.
+  Run CI+XBPS verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+### [P0-2] TOFU solo en el alta; rotación posterior invisible
+- **Módulo:** `src/keys.rs` (`trusted_at`, `check_trust`,
+  `collect_trust_state`, `stamp_trust`), `src/repo.rs` (`re-trust`),
+  hooks en `src/upgrade.rs:117` (tras cada pull) y setup/install
+- **Commit:** `feat(P0-2)` + `fix(P0-2)` (`git log --oneline --grep="P0-2"`)
+- **Descripción:** H-003 cubría solo el alta; un cambio de fingerprint o URL
+  en repos registrados pasaba inadvertido (incidente Atomic Arch, jun-2026).
+- **Remediación:** TOFU continuo fail-closed en cada refresh + `vary --repo
+  re-trust <name>` interactivo con ceremonia (muestra vieja→nueva+fecha;
+  rechaza `--yes` explícitamente, precedente H-032). Cambio de URL aborta
+  con hint a remove+add (re-trust no mueve orígenes).
+- **Validación:** matriz pura (continuidad, rotación forense con epoch,
+  cambio de URL, origen ilegible, stamp only-if-absent/force) + sim local
+  e2e (abort forense, re-trust, recover) + smoke 0.4.0 (abort por URL
+  adulterada en binario final, exit 1). Run CI+XBPS verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+### [P0-5] Sin pinning: imposible saber QUÉ se instaló
+- **Módulo:** `src/db.rs` (schema v3: `repo_commit` + `artifact_sha256`,
+  `drift_warnings`), captura en `src/install.rs`
+- **Commit:** `feat(P0-5)` + `fix(P0-5)` (`git log --oneline --grep="P0-5"`)
+- **Descripción:** `installed.json` guardaba nombre+versión: ante un binario
+  sospechoso no había procedencia ni artefacto contra los que comparar.
+- **Remediación:** pins best-effort al instalar (commit del clon + sha256 del
+  `.xbps`; `None` honesto antes que ficción; migración v2→v3 sin pérdida) +
+  aviso de drift (manda el commit; el artefacto solo es fallback pre-v3;
+  rebuild/upgrade normal en silencio). Incluye fix del gap VUP-DB (los
+  VulBinary registran por repo de acción).
+- **Validación:** roundtrip, migración v2→v3, matriz
+  versión×commit×artefacto; helpers con repo/file temporal; en vivo pins
+  verificados byte a byte + drift simulado + ciclo basilk. Run CI+XBPS verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+### [P0-3] Templates sin calificar en los gates de revisión
+- **Módulo:** `src/template_audit.rs` (nuevo), gates en `src/review.rs`
+  (`prompt_review`, primer install) y `src/upgrade.rs`
+  (`review_template_diffs`, `-Syu`)
+- **Commit:** `feat(P0-3)` (`git log --oneline --grep="P0-3"`)
+- **Descripción:** A3 muestra diffs pero nadie los califica: checksums
+  ausentes y descargas en build pasaban sin señalar.
+- **Remediación:** heurísticas CONSULTIVAS (nunca bloquean): en contenido
+  completo solo checksum-ausente + descargas-en-build (URLs/hooks serían
+  ruido: todo es "nuevo"); en diffs, regresión de checksum + añadidas.
+  Hallazgos SOBRE el diff/pager. Fix de auditoría 0.4.0: con `--yes` no hay
+  pager pero los hallazgos SÍ se imprimen (`print_audit_header`, lectura vía
+  git sin materializar) — antes quedaban ciegos.
+- **Validación:** corpus por regla + ramas no-TTY del gate; en vivo spotify
+  (3 HIGH sobre el template) + smoke 0.4.0 (`fakepkg` sin checksum → `1 HIGH`
+  con `--noconfirm`, build falla después sin instalar nada). Run CI+XBPS verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (heurístico, no garantía: ver CHANGELOG)
+
+### [P1-1] Sin reproducibilidad entre máquinas (`vary.lock`)
+- **Módulo:** `src/lockfile.rs` (nuevo), verificación en
+  `install.rs`/`upgrade.rs`, regeneración en éxito con `--lock`
+- **Commit:** `feat(P1-1)` (`git log --oneline --grep="P1-1"`)
+- **Descripción:** imposible replicar el mismo árbol instalado en dos
+  máquinas ni detectar derivas.
+- **Remediación:** `vary.lock` TOML determinista (repos url/commit/
+  fingerprint + paquetes versión/origen/sha; sin timestamps) + `vary --lock`
+  (regen) / `-S`/`-Sy --lock` (regen al final) / `-R --lock` (rechazado).
+  Verificación solo-avisa y solo sobre lo pineado (nuevos no avisan:
+  anti-fatiga; oficiales omitidos: xbps es su fuente de verdad).
+- **Validación:** roundtrip determinista (bytes idénticos), regla
+  solo-mismatch; en vivo tamper→aviso verbatim→restore + dos bugs hallados
+  en vivo y corregidos (`xbps-query -m` rinde pkgvers; semántica congelada
+  de `-Sp` con caché tibia). Run CI+XBPS verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO
+
+### [P1-2] Sin forma de detectar supply-chain en binarios (`challenge`)
+- **Módulo:** `src/challenge.rs` (nuevo), tras `--experimental`
+- **Commit:** `feat(P1-2)` + `fix(P1-2)` (`git log --oneline --grep="P1-2"`)
+- **Descripción:** un binario servido podía diferir de sus fuentes sin que
+  nadie pudiera comprobarlo.
+- **Remediación:** recompila local (mismo flujo que install), compara árboles
+  instalados (streaming `ruzstd`+`tar` puro Rust; symlinks/tipos; metadata
+  excluida) y reporta divergencias. Guards: exige `--experimental`, 1 target,
+  tipo Source, rechaza `-S`/`-R`. Exit 0 informativo (las divergencias no
+  bloquean: es auditoría, no gate).
+- **Validación:** tabla de aceptación del comparador + en vivo lavat
+  (0 divergencias, bit-reproducible) + divergencia inyectada detectada
+  (`falta-en-disco`). Sin auto-rebuild encubierto. Run CI+XBPS verde.
+- **Limitación conocida (smoke 0.4.0):** sin guardarraíl de tamaño/tiempo;
+  un challenge a un paquete gigante compila de verdad (incidente librewolf,
+  ver `test/SMOKE-0.4.0.md`). Por diseño no-interactivo; documentado.
+- **Estado:** ✅ CORREGIDO Y VALIDADO (con limitación documentada)
+
+### [P2] Miscelánea: why/log/soname/404
+- **Módulos:** `src/why.rs`, `src/journal.rs`, `src/soname.rs`,
+  campo `soname_pins` en `src/db.rs`
+- **Commits:** `feat(P2)` + `fix(P1-2)`… (`git log --oneline --grep="P2"`);
+  soname `feat(P2-soname)`; auditoría `fix(auditoria-0.4.0)`
+- **why:** triple fuente (DB + `xbps-query -X` + índices VUR con recorte de
+  constraints); solo-lectura, sin lock. Test puro + en vivo (curl/librewolf).
+- **log:** diario append-only `<data_dir>/operations.log` (sobrevive a
+  limpiezas); hooks INSTALL/REMOVE best-effort; `show` con filtro por
+  paquete. Fix 0.4.0: con filtro las líneas corruptas se ocultan (antes se
+  colaban) + `filter_lines` pura testeada. En vivo ciclo lavat completo.
+- **soname (resto de H-029/A5, alcance aprobado):** pin `shlib → pkgver del
+  proveedor` al instalar Source (resuelto por intersección
+  requires∩provides, sin ficción; `xbps-query` local, sin red) + aviso
+  consultivo en `-Syu` (Bumped/Orphaned con sugerencia de recompilar).
+  NUNCA auto-rebuild sin flag. Sin baseline → silencio. Tests puros +
+  snapshot/detect + roundtrip de persistencia; en vivo pins de lavat
+  (`libc.so.6 → glibc-2.41_1`).
+- **404 (NO-ÍTEM por decisión de diseño 2026-09-07):** el fetch con
+  reintentos/mirrors lo ejecuta `xbps-src`; el pre-fetch de vary es warm-up
+  best-effort; los mirrors no existen en el modelo de datos. Ver STATUS.md.
+- **Validación:** 9+3+9 tests nuevos; en vivo why/log/soname; 404 evaluado y
+  descartado con fundamento. Run CI+XBPS verde.
+- **Estado:** ✅ CERRADO (why/log/soname validados; 404 decidido no-ítem)
+
+### [AUD-0.4.0] Mini-auditoría pre-tag de las 13 features + smoke
+- **Módulo:** transversal (3 lotes auditados por subagentes con lectura
+  directa de código + grep de call-sites/unwrap/prompts)
+- **Commit:** `fix(auditoria-0.4.0)` (`git log --oneline --grep="auditoria"`)
+- **Descripción:** la refactorización fantasma original empezó igual (código
+  que parecía conectado sin estarlo): por feature se verificó test real no
+  trivial, flag conectado al flujo, `unwrap`/`expect` en rutas nuevas y
+  respeto no-TTY/`--yes`.
+- **Remediación (6 menores, 0 mayores):** P0-3 ciego con `--yes` (hallazgos
+  ahora se imprimen sin pager); filtro del diario colaba líneas corruptas
+  (`filter_lines` + test); `elevation_estimate` y formato sin tests
+  (añadidos); `repo_head_commit`/`package_artifact_hash` sin tests
+  (añadidos con fixtures temporales); `soname_pins` sin roundtrip
+  (añadido); README `-Sp` decía "sin descargas" (corregido a semántica
+  honesta, bilingüe). Gaps aceptados con fundamento (no hallazgos):
+  `collect_trust_state`/ceremonia re-trust (tocan /etc+interacción; núcleo
+  fail-closed cubierto + e2e vivo previo), `generate`/`verify` del lock
+  (env-dependientes; determinismo+regla cubiertos + vivo), `challenge()`
+  e2e (requiere builds; comparador cubierto + vivo).
+- **Validación:** CI+XBPS doble-verde en `fc98fe8` (235 passed, 0 failed,
+  4 ignored) + smoke pre-tag en Void real (`test/SMOKE-0.4.0.md`: -Sp sin
+  mutar, lock+divergencia, challenge guards+lavat, abort forense P0-2,
+  audit con --yes, -v/-vv) con UN incidente registrado y limpio (challenge
+  librewolf compilaba de verdad; kill+limpieza verificada).
+- **Estado:** ✅ AUDITADO, VERDE Y CON EVIDENCIA
