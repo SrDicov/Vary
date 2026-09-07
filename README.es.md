@@ -136,7 +136,7 @@ Durante el MVP, vary prioriza simplicidad sobre exhaustividad: la resolución de
 
 > NOTA SOBRE VARIABLES DINÁMICAS: El .VURINFO generado por scripts/vur-generator.sh refleja las opciones de compilación POR DEFECTO (sin XBPS_PKG_OPTIONS activos). Si el usuario final compila con opciones personalizadas (XBPS_PKG_OPTIONS_<pkg>), la resolución de dependencias inicial puede ser incompleta. xbps-src manejará las dependencias adicionales durante la compilación real. Esto es aceptable para el MVP: la resolución del DAG es una optimización para minimizar builds innecesarios, no una garantía de completitud.
 
-> PROBLEMAS CONOCIDOS (hito 0.3.1, ver `test/REPORT.md`): `-v`/`-vv` no surten efecto en consola (rodeo: `RUST_LOG=debug`) — T-002.
+Usa `-v`/`-vv` para salida DEBUG/TRACE en consola (`RUST_LOG` los precede); `log_level` en `vary.conf` fija el nivel por defecto.
 
 ## Hoja de ruta
 

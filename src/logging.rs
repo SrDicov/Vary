@@ -13,7 +13,7 @@
 //!
 //! `RUST_LOG` > CLI (`-v`) > TOML (`[general] log_level`) > default (`info`).
 //! Si `RUST_LOG` está presente, gana sobre todo y las reconfiguraciones
-//! posteriores la respetan (no la pisan).
+//! posteriores la re-aplican idempotente (mismo valor, sin cambio visible).
 //!
 //! # Recarga (H-028)
 //!
@@ -110,18 +110,30 @@ pub fn init(cache_dir: &Path, verbose: u8) {
     }
 }
 
-/// Reconfigura niveles tras parsear CLI/TOML (H-028).
-/// Precedencia: `RUST_LOG` (si existe, no se toca nada) > `-v` > `log_level`.
-pub fn apply_runtime_config(verbose: u8, log_level: &str) {
-    if std::env::var("RUST_LOG").is_ok() {
-        return;
+/// Nivel efectivo de consola como spec de `EnvFilter`. Pura y testeable
+/// (T-002: el test anterior solo afirmaba "no paniquea"; este afirma el
+/// NIVEL resultante para cada combinación).
+/// Precedencia: `RUST_LOG` > `-v` (1 => debug, 2+ => trace) > `log_level`.
+pub fn effective_console_spec(verbose: u8, log_level: &str, rust_log: Option<&str>) -> String {
+    if let Some(spec) = rust_log {
+        return spec.to_string();
     }
-    let console = match verbose {
+    match verbose {
         0 => log_level.to_owned(),
         1 => "debug".to_owned(),
         _ => "trace".to_owned(),
-    };
-    set_console_level(&console);
+    }
+}
+
+/// Reconfigura niveles tras parsear CLI/TOML (H-028).
+/// Precedencia: `RUST_LOG` (si existe, se re-aplica idempotente) > `-v` > `log_level`.
+pub fn apply_runtime_config(verbose: u8, log_level: &str) {
+    let rust_log = std::env::var("RUST_LOG").ok();
+    set_console_level(&effective_console_spec(
+        verbose,
+        log_level,
+        rust_log.as_deref(),
+    ));
 }
 
 /// Ajusta el filtro de consola si el logger ya está instalado; no-op si no.
@@ -155,5 +167,25 @@ mod tests {
         set_console_level("debug");
         shutdown();
         shutdown();
+    }
+
+    /// T-002: la tabla de precedencia del nivel efectivo. (El bug reportado
+    /// resultó ser artefacto de medición —caché tibia sin eventos DEBUG—;
+    /// estos tests fijan el mapeo en CI para que no regresse de verdad.)
+    #[test]
+    fn nivel_efectivo_respeta_precedencia() {
+        // Sin nada: TOML/default tal cual.
+        assert_eq!(effective_console_spec(0, "info", None), "info");
+        // TOML log_level llega intacto (verificado en vivo: 162 líneas DEBUG).
+        assert_eq!(effective_console_spec(0, "debug", None), "debug");
+        assert_eq!(effective_console_spec(0, "warning", None), "warning");
+        // -v / -vv pisan TOML.
+        assert_eq!(effective_console_spec(1, "info", None), "debug");
+        assert_eq!(effective_console_spec(2, "info", None), "trace");
+        assert_eq!(effective_console_spec(9, "warning", None), "trace");
+        // RUST_LOG gana a todo (verificado en vivo: RUST_LOG=info + -v calla).
+        assert_eq!(effective_console_spec(1, "info", Some("info")), "info");
+        assert_eq!(effective_console_spec(0, "debug", Some("warn")), "warn");
+        assert_eq!(effective_console_spec(2, "info", Some("error")), "error");
     }
 }

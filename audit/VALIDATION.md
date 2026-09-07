@@ -37,10 +37,14 @@ Si alguno falla, anotar salida exacta: es regresión contra xbps real.
 
 ```sh
 VARY_DEBUG=1 vary -Syu 2>&1 | tail -20
-vary -v -Ss foo 2>&1 | head -5   # T-002: -v sin efecto actualmente, usar RUST_LOG=debug; re-verificar tras 0.3.1
+vary -v -Ss foo 2>&1 | head -5   # T-002 CERRADO (no-reproducible en 0.3.0):
+                                 # -v muestra DEBUG, -vv TRACE; RUST_LOG precede.
 ```
 
-Esperado: sync oficial + refresh VURs sin errores; `-v` no cambia la salida (T-002 conocido).
+Esperado: sync oficial + refresh VURs sin errores; `-v`/`-vv` suben el
+nivel en consola (ver FIX_LOG T-002). OJO: con caché tibia puede no haber
+eventos DEBUG que mostrar (no es bug): para forzarlos, borrar
+`~/.cache/vary/cache.json` antes (se regenera).
 
 ---
 

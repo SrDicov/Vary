@@ -44,11 +44,8 @@ a P1-3 por decisión PC-2). Detalle: `audit/FIX_LOG.md`.
 
 ### Known issues (hito 0.3.1)
 
-- `-v`/`-vv` sin efecto en consola (usar `RUST_LOG=debug`) — T-002.
-- `--prefer-binary`/`--force-build` no cambian de repo ni evitan el
-  bucket official — T-010.
-- Primer install VUP no-interactivo muere en el prompt de import de
-  xbps (fail-closed; interactivo OK) — T-012.
+- (vacío: T-002 no-reproducible + T-010/T-012 corregidos con CI verde y
+  verificación en vivo; ver `audit/FIX_LOG.md`).
 
 ## 0.2.5 - 2026-09-05
 

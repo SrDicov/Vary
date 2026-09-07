@@ -876,3 +876,16 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - Run CI verde (fmt + clippy `--all-targets -- -D warnings` + test).
 - **Estado:** ✅ CORREGIDO Y VALIDADO
 ---
+
+### [T-002] `-v`/`-vv` sin efecto en consola (NO-REPRODUCIBLE en 0.3.0)
+- **Severidad:** Medium (reportado en test intensivo T2)
+- **Módulo:** `src/logging.rs` (`effective_console_spec`), docs (`README.md`, `README.es.md`, `CHANGELOG.md`, `audit/VALIDATION.md` paso 2)
+- **Commit:** `fix(T-002)` (`git log --oneline --grep="T-002"`)
+- **Descripción:** En fase T se observó `-v`/`-vv` sin efecto (`apply_runtime_config` no bajaría el filtro; solo `RUST_LOG` funcionaba). Re-verificado en vivo contra el release 0.3.0: `-v` muestra DEBUG, `-vv` TRACE, TOML `log_level=debug` muestra DEBUG (162 líneas con caché fría) y `RUST_LOG=info` precede a `-v` — todo correcto. Causa probable del reporte: artefacto de medición (con caché tibia no hay eventos DEBUG que mostrar y parece muerto; el `tracing::debug!("config: ...")` previo a `apply_runtime_config` sí se veía con `RUST_LOG`, reforzando la ilusión). El mecanismo (`reload::Handle::modify`) funciona; no había bug que corregir.
+- **Remediación:** Sin cambio de comportamiento: se extrajo la decisión de nivel a `effective_console_spec()` pura (misma precedencia `RUST_LOG` > `-v` > TOML) y `apply_runtime_config` la usa (re-aplicación idempotente con `RUST_LOG`). Se retiró T-002 de issues conocidos (bilingüe + CHANGELOG) y se corrigió el paso 2 de `VALIDATION.md` (advertía "sin efecto" y documenta el confound de caché tibia).
+- **Validación:**
+  - Matriz en vivo (release 0.3.0): sin flags 0 DEBUG, `-v` DEBUG, `-vv` TRACE, TOML-debug 162 DEBUG, `RUST_LOG=info` + `-v` en silencio.
+  - Unit (CI): `nivel_efectivo_respeta_precedencia` (9 aserciones de nivel efectivo, no "no paniquea" — cierra el hueco de H-028).
+  - Run CI verde (fmt + clippy `--all-targets -- -D warnings` + test).
+- **Estado:** ✅ CERRADO COMO NO-REPRODUCIBLE + TESTS
+---
