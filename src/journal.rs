@@ -56,6 +56,27 @@ pub fn parse_line(line: &str) -> Option<(u64, String, String, String)> {
     Some((epoch, op, pkg, detail))
 }
 
+/// P2: líneas a mostrar para un filtro (puro, testeable). Con filtro solo
+/// pasan las líneas bien parseadas que matchean; las corruptas se ocultan.
+/// Sin filtro pasa todo lo no vacío (incluidas corruptas: el diario no
+/// esconde nada en vista completa).
+pub fn filter_lines(text: &str, filter: Option<&str>) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match parse_line(line) {
+            Some((_, _, pkg, _)) if filter.is_some_and(|f| f != pkg) => {}
+            Some(_) => out.push(line.to_string()),
+            None if filter.is_some() => {}
+            None => out.push(line.to_string()),
+        }
+    }
+    out
+}
+
 /// P2: muestra el diario (`filter` opcional por paquete exacto).
 pub fn show(data_dir: &Path, filter: Option<&str>) -> Result<i32> {
     let path = data_dir.join(JOURNAL_FILE);
@@ -67,19 +88,9 @@ pub fn show(data_dir: &Path, filter: Option<&str>) -> Result<i32> {
         }
         Err(e) => return Err(e).with_context(|| format!("no se pudo leer {}", path.display())),
     };
-    let mut shown = 0;
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        match parse_line(line) {
-            Some((_, _, pkg, _)) if filter.is_some_and(|f| f != pkg) => {}
-            _ => {
-                println!("{line}");
-                shown += 1;
-            }
-        }
+    let shown = filter_lines(&text, filter).len();
+    for line in filter_lines(&text, filter) {
+        println!("{line}");
     }
     if shown == 0 {
         println!("sin historial para ese filtro");
@@ -92,7 +103,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn append_parse_roundtrip_y_filtro() {
+    fn append_parse_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         append(dir.path(), "INSTALL", "a", "a-1.0_1 r").unwrap();
         append(dir.path(), "REMOVE", "a", "").unwrap();
@@ -116,5 +127,17 @@ mod tests {
     fn show_sin_archivo_no_falla() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(show(dir.path(), None).unwrap(), 0);
+    }
+
+    #[test]
+    fn filter_lines_solo_matcheos_y_oculta_corruptas() {
+        let text = "1700000000 INSTALL a a-1.0_1 r\nbasura\n1700000001 REMOVE b\n";
+        let solo_a = filter_lines(text, Some("a"));
+        assert_eq!(solo_a.len(), 1);
+        assert!(solo_a[0].contains("INSTALL a"));
+        // Sin filtro: todo pasa (el diario no esconde nada en vista completa).
+        assert_eq!(filter_lines(text, None).len(), 3);
+        // Filtro sin matches: vacío.
+        assert!(filter_lines(text, Some("zzz")).is_empty());
     }
 }

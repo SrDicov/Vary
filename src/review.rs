@@ -24,25 +24,13 @@ pub(crate) fn pager_cmd() -> (String, Vec<String>) {
     )
 }
 
-pub fn prompt_review(
-    pkg_name: &str,
-    repo_name: &str,
-    clone_dir: &Path,
-    git_bin: &str,
-) -> Result<()> {
-    use std::io::Write;
-
-    println!(
-        "Reviewing changes for {} in {}...",
-        pkg_name,
-        clone_dir.display()
-    );
-
+/// Lee el template de un paquete sin checkout (git show) o desde disco si ya
+/// está materializado. Vacío si no se encuentra (llamadores: silencio).
+pub fn read_template_text(pkg_name: &str, clone_dir: &Path, git_bin: &str) -> String {
     // Intentar leer vía git show (funciona sin checkout).
     // Prefijos conocidos + "" (flat); el primero que acierte gana.
     let mut prefixes: Vec<String> = TEMPLATE_PREFIXES.iter().map(|s| s.to_string()).collect();
     prefixes.push(String::new());
-    let mut content = String::new();
 
     for prefix in &prefixes {
         let path = if prefix.is_empty() {
@@ -59,37 +47,59 @@ pub fn prompt_review(
 
         if let Ok(out) = output {
             if out.status.success() {
-                content = String::from_utf8_lossy(&out.stdout).to_string();
-                break;
+                return String::from_utf8_lossy(&out.stdout).to_string();
             }
         }
     }
 
-    if content.is_empty() {
-        // Fallback: leer desde disco si ya materializado
-        let mut candidates: Vec<std::path::PathBuf> = TEMPLATE_PREFIXES
-            .iter()
-            .map(|p| clone_dir.join(p).join(pkg_name).join("template"))
-            .collect();
-        candidates.push(clone_dir.join(pkg_name).join("template"));
-        if let Some(path) = candidates.iter().find(|p| p.exists()) {
-            content = std::fs::read_to_string(path).unwrap_or_default();
-        }
-    }
+    // Fallback: leer desde disco si ya materializado
+    let mut candidates: Vec<std::path::PathBuf> = TEMPLATE_PREFIXES
+        .iter()
+        .map(|p| clone_dir.join(p).join(pkg_name).join("template"))
+        .collect();
+    candidates.push(clone_dir.join(pkg_name).join("template"));
+    candidates
+        .iter()
+        .find(|p| p.exists())
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .unwrap_or_default()
+}
 
+/// P0-3: imprime SOLO el encabezado de hallazgos (sin pager, sin prompt).
+/// Para corridas `--yes`/no-TTY donde `prompt_review` no corre: los HIGH
+/// siguen visibles aunque nada pregunte ni bloquee. Silencio si no hay nada.
+pub fn print_audit_header(pkg_name: &str, repo_name: &str, content: &str) {
+    let header = crate::template_audit::format_findings(
+        pkg_name,
+        repo_name,
+        &crate::template_audit::audit_template(content),
+    );
+    if !header.is_empty() {
+        print!("{header}");
+    }
+}
+
+pub fn prompt_review(
+    pkg_name: &str,
+    repo_name: &str,
+    clone_dir: &Path,
+    git_bin: &str,
+) -> Result<()> {
+    use std::io::Write;
+
+    println!(
+        "Reviewing changes for {} in {}...",
+        pkg_name,
+        clone_dir.display()
+    );
+
+    let content = read_template_text(pkg_name, clone_dir, git_bin);
     if content.is_empty() {
         return Ok(());
     }
 
     // P0-3: hallazgos sobre el template (consultivos; el gate decide igual).
-    let header = crate::template_audit::format_findings(
-        pkg_name,
-        repo_name,
-        &crate::template_audit::audit_template(&content),
-    );
-    if !header.is_empty() {
-        print!("{header}");
-    }
+    print_audit_header(pkg_name, repo_name, &content);
 
     use std::io::IsTerminal;
     if !std::io::stdout().is_terminal() {
@@ -115,8 +125,7 @@ pub fn prompt_review(
         let _ = stdin.write_all(content.as_bytes());
     }
 
-    // Nota (H-034): el pager NO se registra en signal::CHILDREN a propósito.
-    // El observador mata por GRUPO (-pid) y el pager no es líder de grupo
+    // Nota (H-034): el pager NO se registra en signal::CHILDREN a propósito.    // El observador mata por GRUPO (-pid) y el pager no es líder de grupo
     // (compar­te el frontal para recibir SIGINT directo); registrarlo
     // arriesgaría matar un grupo ajeno por reutilización de pid. El caso
     // residual (SIGTERM solo a vary con pager abierto) es benigno: el pager

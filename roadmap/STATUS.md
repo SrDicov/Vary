@@ -32,6 +32,9 @@ criterios de aceptación.
   añadidos).
 - Hallazgos visibles SOBRE el diff del pager y dentro del review gate (A3
   muestra el diff; P0-3 lo califica).
+- Gates (0.4.0): `review::prompt_review` en primer install (con `--yes` no hay
+  pager pero los hallazgos SÍ se imprimen vía `print_audit_header`) y
+  `upgrade::review_template_diffs` en `-Syu`.
 - no-TTY aborta salvo `--yes`.
 - Aceptación: corpus de templates con veredicto esperado por regla.
 

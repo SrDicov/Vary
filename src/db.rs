@@ -525,15 +525,33 @@ mod tests {
             Some("abc123def456".to_string()),
             Some("sha256:deadbeef".to_string()),
         );
+        db.set_soname_pins(
+            "pin-pkg",
+            BTreeMap::from([("libcurl.so.4".to_string(), "libcurl-8.22.0_1".to_string())]),
+        );
+        // Vacío no se guarda (sin baseline no hay aviso).
+        db.set_soname_pins("pin-pkg-vacio", BTreeMap::new());
         db.save().unwrap();
 
         let reloaded = InstalledDb::load(&path).unwrap();
         let entry = reloaded.get("pin-pkg").unwrap();
         assert_eq!(entry.repo_commit.as_deref(), Some("abc123def456"));
         assert_eq!(entry.artifact_sha256.as_deref(), Some("sha256:deadbeef"));
+        assert_eq!(
+            entry
+                .soname_pins
+                .as_ref()
+                .and_then(|p| p.get("libcurl.so.4"))
+                .map(String::as_str),
+            Some("libcurl-8.22.0_1")
+        );
         let raw = std::fs::read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(v["schema_version"], 3);
+        assert_eq!(
+            v["packages"]["pin-pkg"]["soname_pins"]["libcurl.so.4"],
+            "libcurl-8.22.0_1"
+        );
     }
 
     #[test]

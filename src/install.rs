@@ -710,6 +710,23 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 }
             }
         }
+    } else {
+        // P0-3: con --yes no hay pager ni prompt, pero los hallazgos HIGH
+        // siguen imprimiéndose (lectura vía git, sin materializar).
+        for item in &plan.builds {
+            let real = &item.info.pkgname;
+            if let Ok(repo_name) = vur_map_lookup_repo(real, &repos, &mut cache)
+                .or_else(|_| vur_map_lookup_repo(&item.name, &repos, &mut cache))
+            {
+                if let Some(repo) = repos.iter().find(|r| r.name == repo_name) {
+                    let content =
+                        crate::review::read_template_text(real, &repo.path, &config.git_bin);
+                    if !content.is_empty() {
+                        crate::review::print_audit_header(real, &repo.name, &content);
+                    }
+                }
+            }
+        }
     }
 
     if !confirm("Proceed with installation?", config.no_confirm)? {
@@ -1124,6 +1141,108 @@ pub fn download_only(config: &mut Config) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resolver::{Plan, PlanItem};
+
+    fn fake_info(pkgname: &str) -> VurInfo {
+        VurInfo {
+            format_version: 1,
+            pkgname: pkgname.to_string(),
+            version: "1.0".to_string(),
+            revision: 1,
+            archs: vec!["x86_64".to_string()],
+            subpackages: vec![],
+            depends: vec![],
+            hostmakedepends: vec![],
+            makedepends: vec![],
+            checkdepends: vec![],
+            build_style: None,
+            distfiles: vec![],
+            checksum: vec![],
+            provides: vec![],
+            replaces: vec![],
+            restricted: false,
+            maintainer: None,
+        }
+    }
+
+    fn install_item(name: &str, action: Action) -> PlanItem {
+        PlanItem {
+            name: name.to_string(),
+            info: fake_info(name),
+            action,
+        }
+    }
+
+    #[test]
+    fn elevation_sin_trabajo_es_cero() {
+        let plan = Plan::default();
+        assert_eq!(elevation_estimate(&plan), (0, 0));
+    }
+
+    #[test]
+    fn elevation_oficial_solo_transaccion() {
+        // Sin VulBinary no se lee /etc: puro y estable.
+        let plan = Plan {
+            installs: vec![install_item(
+                "curl",
+                Action::Install(BinarySource::Official),
+            )],
+            builds: vec![],
+            warnings: vec![],
+        };
+        assert_eq!(elevation_estimate(&plan), (0, 1));
+    }
+
+    #[test]
+    fn elevation_build_cuenta_transaccion() {
+        let plan = Plan {
+            installs: vec![],
+            builds: vec![install_item("demo", Action::Build)],
+            warnings: vec![],
+        };
+        assert_eq!(elevation_estimate(&plan), (0, 1));
+    }
+
+    #[test]
+    fn repo_head_commit_lee_head_y_falla_cerrado() {
+        let dir = tempfile::tempdir().unwrap();
+        // No es repo: None, no panic.
+        assert!(repo_head_commit(dir.path(), "git").is_none());
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir.path())
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        run(&["init", "-q"]);
+        run(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "x",
+        ]);
+        let sha = repo_head_commit(dir.path(), "git").unwrap();
+        assert_eq!(sha.len(), 40);
+        assert!(sha.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn package_artifact_hash_hashea_y_falla_cerrado() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().to_string();
+        assert!(package_artifact_hash(&root, "demo-1.0_1", "x86_64").is_none());
+        std::fs::write(dir.path().join("demo-1.0_1.x86_64.xbps"), b"fake-xbps").unwrap();
+        let got = package_artifact_hash(&root, "demo-1.0_1", "x86_64").unwrap();
+        assert!(got.starts_with("sha256:"));
+        assert_eq!(got.len(), "sha256:".len() + 64);
+    }
 
     #[test]
     fn install_rejects_invalid_target_name() {
