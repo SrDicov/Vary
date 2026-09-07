@@ -112,18 +112,20 @@ fn make_repo(name: &str, entry: &crate::reposconf::RepoEntry, config: &Config) -
 }
 
 /// Carga los índices de `repos` en memoria (paso 4, compartido por install y
-/// print; movido verbatim salvo el gate VUP).
+/// print; movido verbatim).
 ///
-/// Con `allow_network == false` (P0-4 `--print`) no se descarga nada: un
-/// índice VUP caducado o ausente es error accionable en vez de fetch (con
-/// caché vigente `fetch_index` no toca la red en ningún flujo).
+/// Nota P0-4: el índice VUP SÍ puede descargarse aquí en ambos flujos: es
+/// lectura de red sin elevación que solo escribe su caché (lo mismo que hace
+/// `vary -Sy` rutinariamente; sin comando standalone que lo refresque, el
+/// print quedaría inservible la mitad del tiempo). Lo congelado de verdad es:
+/// sin ensure/fetch de clones (para eso existe `-Sy`), sin guardar
+/// CacheIndex, sin lock/review/DB y sin elevación.
 fn load_source_maps(
     repos: &[VurRepo],
     repos_conf: &ReposConf,
     cache: &mut CacheIndex,
     arch: &str,
     config: &Config,
-    allow_network: bool,
 ) -> Result<SourceMaps> {
     let mut vur_map: HashMap<String, (String, VurInfo)> = HashMap::new();
     // T-010: multi-mapa con todos los candidatos (el resolver ordena).
@@ -196,16 +198,6 @@ fn load_source_maps(
                     "vup-index-{}.json",
                     crate::vup_index::sanitize_repo_name(&repo.name)
                 ));
-                // P0-4: sin red el índice debe estar vigente en caché.
-                if !allow_network
-                    && !crate::vup_index::cache_is_fresh(&cache_path, config.ttl_cache_seconds)
-                {
-                    anyhow::bail!(
-                        "índice VUP de '{}' caducado o ausente y --print no descarga: \
-                         corre `vary -Sy` (con red) primero",
-                        repo.name
-                    );
-                }
                 match crate::vup_index::fetch_index(
                     &config.curl_bin,
                     index_url,
@@ -312,7 +304,8 @@ fn stamp_first_trust(config: &Config, repo: &str) {
 }
 
 /// P0-5: commit HEAD del clon (pin de procedencia; best-effort silencioso).
-fn repo_head_commit(clone_path: &std::path::Path, git_bin: &str) -> Option<String> {
+/// P1-1 lo reutiliza para el lockfile.
+pub(crate) fn repo_head_commit(clone_path: &std::path::Path, git_bin: &str) -> Option<String> {
     let out = std::process::Command::new(git_bin)
         .arg("-C")
         .arg(clone_path)
@@ -347,11 +340,12 @@ fn package_artifact_hash(binpkgs_root: &str, pkgver: &str, arch: &str) -> Option
 ///
 /// Congelado: sin bootstrap (el `binpkgs_root` es ruta pura), sin
 /// ensure/fetch de clones (se usan tal cual; clon ausente = error
-/// accionable), sin guardar caché, sin lock (ver `needs_lock`), sin
-/// review/materialize, sin confirm, sin installs/builds, sin DB y —sobre
-/// todo— sin elevación. Solo lecturas: repos.conf, clones, cachés vigentes,
-/// xbps-db. "No toca disco/red" = cero escrituras, cero red, cero
-/// elevación (las lecturas son inevitables para resolver).
+/// accionable; para refrescarlos existe `vary -Sy`), sin guardar caché,
+/// sin lock (ver `needs_lock`), sin review/materialize, sin confirm, sin
+/// installs/builds, sin DB y —sobre todo— sin elevación. El índice VUP sí
+/// puede refrescarse (lectura sin elevación que solo escribe su caché, como
+/// `-Sy`). "No toca disco/red" = cero escrituras en el sistema, cero red
+/// elevada, cero elevación (las lecturas son inevitables para resolver).
 pub fn print_plan(config: &Config) -> Result<i32> {
     // Forma válida: -S con targets y sin banderas que cambien el significado
     // (search/info/downloadonly/upgrade); ver handle_sync.
@@ -399,10 +393,10 @@ pub fn print_plan(config: &Config) -> Result<i32> {
         arch
     };
 
-    // 4'. Índices congelados (sin guardar caché) + fuente (binpkgs_root como
+    // 4'. Índices (sin guardar caché) + fuente (binpkgs_root como
     // ruta pura: sin bootstrap no hay masterdir que consultar).
     let mut cache = CacheIndex::load(config.cache_index_path())?;
-    let maps = load_source_maps(&repos, &repos_conf, &mut cache, &arch, config, false)?;
+    let maps = load_source_maps(&repos, &repos_conf, &mut cache, &arch, config)?;
     let binpkgs_root = config
         .void_packages_dir()
         .join("hostdir")
@@ -413,6 +407,31 @@ pub fn print_plan(config: &Config) -> Result<i32> {
 
     let plan = crate::resolver::resolve(&targets, &source, &opts)?;
     print_stable_plan(&targets, &plan);
+    // P1-1: verificación de solo-lectura (no rompe lo congelado: leer el
+    // lock y los HEADs no escribe, no descarga ni eleva).
+    if config.lock_path().is_file() {
+        println!("lock [{}]:", config.lock_path().display());
+        let repos_ref: Vec<_> = repos
+            .iter()
+            .map(|r| (r.name.clone(), r.path.clone()))
+            .collect();
+        let mut items = Vec::new();
+        for it in plan.installs.iter().chain(plan.builds.iter()) {
+            // Oficiales omitidos (ver arriba: placeholder T-009).
+            if matches!(it.action, Action::Install(BinarySource::Official)) {
+                continue;
+            }
+            items.push((it.info.pkgname.clone(), it.info.pkgver()));
+        }
+        let warnings = crate::lockfile::verify_if_pinned(config, &repos_ref, &items);
+        if warnings.is_empty() {
+            println!("  ok");
+        } else {
+            for w in &warnings {
+                println!("  {w}");
+            }
+        }
+    }
     Ok(0)
 }
 
@@ -575,9 +594,9 @@ pub fn install(config: &mut Config) -> Result<i32> {
         arch
     };
 
-    // 4. Load indexes (ver load_source_maps: install permite red, print no).
+    // 4. Load indexes (ver load_source_maps).
     let mut cache = CacheIndex::load(config.cache_index_path())?;
-    let maps = load_source_maps(&repos, &repos_conf, &mut cache, &arch, config, true)?;
+    let maps = load_source_maps(&repos, &repos_conf, &mut cache, &arch, config)?;
     // URLs binarias VUP por paquete (sección 8 las necesita tras mover maps).
     let vup_binary_urls = maps.vup_binary_urls.clone();
     let _ = cache.save();
@@ -587,6 +606,26 @@ pub fn install(config: &mut Config) -> Result<i32> {
     let (source, opts) = assemble_source(maps, &arch, &binpkgs_root, config);
 
     let plan = crate::resolver::resolve(&targets, &source, &opts)?;
+
+    // P1-1: verificación contra vary.lock (avisos, solo si existe). Los
+    // oficiales se omiten: xbps es su fuente de verdad y el plan lleva
+    // placeholder sin versión (T-009); verificarlos daría falsos avisos.
+    {
+        let repos_ref: Vec<_> = repos
+            .iter()
+            .map(|r| (r.name.clone(), r.path.clone()))
+            .collect();
+        let mut items = Vec::new();
+        for it in plan.installs.iter().chain(plan.builds.iter()) {
+            if matches!(it.action, Action::Install(BinarySource::Official)) {
+                continue;
+            }
+            items.push((it.info.pkgname.clone(), it.info.pkgver()));
+        }
+        for w in crate::lockfile::verify_if_pinned(config, &repos_ref, &items) {
+            tracing::warn!("{w}");
+        }
+    }
 
     if plan.installs.is_empty() && plan.builds.is_empty() {
         println!("nothing to do");
@@ -965,6 +1004,11 @@ pub fn install(config: &mut Config) -> Result<i32> {
         }
     }
     db.save()?;
+
+    // P1-1: --lock deja el lock reflejando el estado final (solo en éxito).
+    if config.args.has_arg("lock", "lock") {
+        crate::lockfile::regenerate(config)?;
+    }
 
     Ok(0)
 }

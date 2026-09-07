@@ -27,6 +27,9 @@ pub fn help() {
     println!("    -v --verbose            Increase verbosity (-vv for debug)");
     println!("    -q --quiet              Quiet output");
     println!("    --arch <arch>           Override architecture");
+    println!(
+        "    --lock                  (Re)generate ~/.config/vary/vary.lock from current state"
+    );
     println!();
     println!("Vary options:");
     println!("    --force-build           Force build from source even if binary exists");

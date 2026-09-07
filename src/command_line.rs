@@ -420,6 +420,15 @@ impl Config {
                 // El registro en args es automático (is_pacman_arg); aquí no
                 // se duplica ni se actúa: el dispatch vive en handle_sync.
             }
+
+            Arg::Long("lock") => {
+                // P1-1: regenera ~/.config/vary/vary.lock (ver lockfile).
+                // Flag propio de vary (no pacman): registro manual.
+                self.args.args.push(crate::args::Arg {
+                    key: "lock".to_string(),
+                    value: None,
+                });
+            }
             Arg::Long("print-format") => {
                 // Solo se soporta el formato estable de texto; cualquier otro
                 // valor miente sobre la salida y se rechaza (precedente H-007).
@@ -608,7 +617,6 @@ mod tests {
             other => panic!("inesperado: {other:?}"),
         }
     }
-
     #[test]
     fn repo_retrust_parses_name_and_requires_it() {
         match take_add(&["--repo", "re-trust", "vup"]) {
@@ -617,6 +625,17 @@ mod tests {
         }
         let mut config = Config::default();
         assert!(parse_args(&mut config, &["--repo", "re-trust"]).is_err());
+    }
+
+    #[test]
+    fn lock_flag_se_registra() {
+        // P1-1: --lock es flag propio (no pacman) y se registra para dispatch.
+        let mut config = Config::default();
+        parse_args(&mut config, &["--lock"]).expect("--lock debe parsear");
+        assert!(config.args.has_arg("lock", "lock"));
+        // Desconocidos siguen rechazándose (H-035 intacto).
+        let mut config = Config::default();
+        assert!(parse_args(&mut config, &["--lockero"]).is_err());
     }
 
     #[test]

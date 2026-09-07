@@ -181,16 +181,17 @@ pub fn parse_search_line(line: &str) -> Option<SearchHit> {
     })
 }
 
-/// Consulta un paquete INSTALADO por nombre exacto:
-/// `xbps-query -p pkgver,short_desc,repository <name>`.
+/// Consulta un paquete INSTALADO por nombre exacto (o pkgver):
+/// `xbps-query -p pkgver,short_desc,repository,pkgname <name>`.
 ///
 /// Supuesto de formato: una propiedad por línea, EN ESE ORDEN (pkgver,
-/// short_desc, repository) y valores sin clave; propiedades vacías o líneas
-/// faltantes se toleran (campo `None`). rc != 0 o salida vacía => `Ok(None)`.
+/// short_desc, repository, pkgname) y valores sin clave; propiedades vacías
+/// o líneas faltantes se toleran (campo `None`). rc != 0 o salida vacía =>
+/// `Ok(None)`.
 pub fn query_installed(name: &str) -> Result<Option<PkgInfo>> {
     let out = run_capture(
         XBPS_QUERY,
-        &["-p", "pkgver,short_desc,repository", "--", name],
+        &["-p", "pkgver,short_desc,repository,pkgname", "--", name],
     )?;
     if !out.status.success() {
         return Ok(None);
@@ -206,8 +207,15 @@ fn parse_installed_props(name: &str, text: &str) -> Option<PkgInfo> {
     }
     let short_desc = lines.next().unwrap_or("");
     let repository = lines.next().unwrap_or("");
+    // P1-1: nombre canónico aunque se consulte por pkgver (`xbps-query -m`
+    // rinde pkgvers); si falta (xbps viejos), se usa lo pedido.
+    let canon = lines.next().unwrap_or("");
     Some(PkgInfo {
-        name: name.to_owned(),
+        name: if canon.is_empty() {
+            name.to_owned()
+        } else {
+            canon.to_owned()
+        },
         pkgver: pkgver.to_owned(),
         short_desc: (!short_desc.is_empty()).then(|| short_desc.to_owned()),
         repository: (!repository.is_empty()).then(|| repository.to_owned()),
@@ -755,6 +763,16 @@ mod tests {
     fn props_sin_pkgver_es_none() {
         assert!(parse_installed_props("foo", "").is_none());
         assert!(parse_installed_props("foo", "\n\ndesc\n").is_none());
+    }
+
+    #[test]
+    fn props_pkgname_canonico_ante_consulta_por_pkgver() {
+        // P1-1: consultado por pkgver, el nombre canónico viene en la 4ª línea.
+        let info =
+            parse_installed_props("curl-8.22.0_1", "curl-8.22.0_1\ndesc\nhttps://repo\ncurl\n")
+                .unwrap();
+        assert_eq!(info.name, "curl");
+        assert_eq!(info.pkgver, "curl-8.22.0_1");
     }
 
     // ---------- manual ----------

@@ -8,6 +8,7 @@ mod elevate;
 mod help;
 mod keys;
 mod lock;
+mod lockfile;
 mod logging;
 mod masterdir;
 mod metadata;
@@ -184,7 +185,12 @@ fn needs_lock(config: &Config) -> bool {
     }
     match config.op {
         Op::Remove => true,
-        Op::Default => true, // `vary` pelado o solo flags => -Syu
+        // P1-1: `vary --lock` pelado solo escribe ~/.config (sin lock);
+        // `-p` no muta (P0-4). Resto del Default (-Syu implícito): con lock.
+        Op::Default => {
+            !(config.args.has_arg("p", "print")
+                || (config.args.has_arg("lock", "lock") && config.targets.is_empty()))
+        }
         Op::Sync => {
             // -p no muta: sin lock (H-027); -w descarga (muta caché/masterdir).
             !(config.args.has_arg("s", "search")
@@ -253,6 +259,10 @@ fn handle_sync(config: &mut Config) -> Result<i32> {
 }
 
 fn handle_default(config: &mut Config) -> Result<i32> {
+    // P1-1: `vary --lock` pelado regenera desde el estado actual.
+    if config.targets.is_empty() && config.args.has_arg("lock", "lock") {
+        return crate::lockfile::regenerate(config);
+    }
     if !config.targets.is_empty() {
         // `vary -p foo` cae aquí (sin -S explícito): handle_sync lo imprime.
         return handle_sync(config);
@@ -285,6 +295,9 @@ mod tests {
             (vec!["-Si", "foo"], false),
             (vec!["-Sp", "foo"], false),
             (vec!["-S", "--print", "foo"], false),
+            (vec!["--lock"], false),
+            (vec!["-S", "foo", "--lock"], true),
+            (vec!["-Syu", "--lock"], true),
             (vec!["-S", "foo"], true),
             (vec!["-Syu"], true),
             (vec!["-R", "foo"], true),

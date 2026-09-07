@@ -3,6 +3,11 @@ use crate::db::InstalledDb;
 use anyhow::Result;
 
 pub fn remove(config: &Config) -> Result<i32> {
+    // P1-1: --lock no aplica a -R (no hay estado final que pineado tenga
+    // sentido distinto; regenerar tras borrar se hace con `vary --lock`).
+    if config.args.has_arg("lock", "lock") {
+        anyhow::bail!("--lock no se combina con -R (usa `vary --lock` tras los cambios)");
+    }
     if config.targets.is_empty() {
         anyhow::bail!("no targets specified (use -h for help)");
     }

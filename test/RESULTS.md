@@ -138,7 +138,7 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 
 - `-Sp curl` → `official/curl`, sin builds, `elevations: 1`, exit 0; `-Sp python-pywalfox` → installs oficiales + `level 0: python-pywalfox-2.7.4_2`; `-p curl` (sin -S) también imprime.
 - Errores honestos: sin targets (exit 1), `--print-format=json` (exit 2), `-p` pelado, `-Ss -p`, paquete inexistente (`no encontrado`, exit 1).
-- **Cero mutación:** `cache.json` mismo mtime antes/después, sin ficheros nuevos, sin lock, sin elevación (congelado: sin bootstrap/ensure/fetch/save/review/DB).
+- **Cero mutación del sistema:** `cache.json` mismo mtime antes/después, sin ficheros nuevos, sin lock, sin elevación (congelado: sin bootstrap/ensure-fetch/save/review/DB). Precisión honesta tras hallazgo en vivo: el índice VUP SÍ puede refrescarse por red (solo escribe su caché, como `-Sy`; sin comando standalone que lo refresque, prohibirlo dejaba `-Sp` inservible con caché tibia). "No toca disco/red" = cero escrituras en el sistema + cero red elevada + cero elevación.
 - **Regresión ruta normal:** `vary -S lavat` (fuente repository) compiló+instaló OK tras la extracción (exit 0); DB exacta (`repository/source/3.0.0_2`); `vary -R lavat` limpió binario+DB (quedan brave+librewolf).
 
 ## P0-2 en vivo — TOFU continuo + `re-trust` (evidencia en `test/backup/pre-p02/`)
@@ -163,3 +163,11 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - Reglas calibradas para no fatigar: en contenido completo solo checksum+descargas (URLs/hooks serían ruido: todo es "nuevo"); en diffs, checksum solo si regresa (lo tenía y lo pierde) + añadidas (descargas HIGH, URLs/hooks MEDIUM).
 - Hallazgos siempre consultivos (el gate decide igual; no-TTY sin `--yes` ya abortaba por A3). Sin flags nuevos (sin cambios en help); sin sección README (el review nunca se documentó ahí).
 - Cobertura: corpus en CI (veredicto por regla) + wiring del gate con findings en test + demo viva del install-review. El display del upgrade-diff comparte helper y tests; sin update pendiente real para demo viva de esa rama (documentado).
+
+## P1-1 en vivo — `vary.lock` reproducible
+
+- `vary --lock` genera `~/.config/vary/vary.lock` (4 repos con url/commit/fingerprint + 189 paquetes con versión/origen/sha); **determinista** (sha256 idéntico en regeneraciones; sin timestamps).
+- Dos bugs hallados y corregidos en vivo: (1) `xbps-query -m` rinde pkgvers, no nombres → claves duplicadas; fix en `query_installed` (propiedad `pkgname`, tolerante). (2) Semántica congelada de `-Sp`: prohibir red dejaba `-Sp` inservible con caché VUP tibia sin remedio no-mutante; ahora el índice VUP puede refrescarse (solo escribe su caché, como `-Sy`). "No toca disco/red" = cero escrituras en el sistema + cero red elevada + cero elevación.
+- Verificación: `-Sp` muestra sección `lock:` (`ok` en limpio); lock tampered (brave `0.0.0_1`) → `lock: 'brave-origin' resuelve brave-origin-1.93.129_1 pero pinea ...` con exit 0 y sin mutación; regenerado idéntico después.
+- Oficiales se omiten en la comparación de versiones (placeholder T-009 daría falsos avisos; xbps es su fuente de verdad); commits de repos sí se verifican.
+- CLI: `vary --lock` pelado regenera; `-S/-Sy --lock` regeneran al final; `-R --lock` se rechaza; con lock, install/upgrade/`-Sp` avisan divergencias.

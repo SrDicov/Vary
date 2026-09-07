@@ -332,6 +332,11 @@ impl Config {
         self.config_dir.join("repos.conf")
     }
 
+    /// P1-1: ruta del lockfile reproducible (`vary --lock` lo genera).
+    pub fn lock_path(&self) -> PathBuf {
+        self.config_dir.join("vary.lock")
+    }
+
     /// Árbol maestro inmutable de void-packages.
     pub fn void_packages_dir(&self) -> PathBuf {
         self.cache_dir.join("void-packages")

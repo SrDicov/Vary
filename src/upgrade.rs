@@ -127,6 +127,10 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
     if any_failed {
         Ok(1)
     } else {
+        // P1-1: `vary -Sy --lock` regenera tras sincronizar (solo en éxito).
+        if config.args.has_arg("lock", "lock") {
+            crate::lockfile::regenerate(config)?;
+        }
         Ok(0)
     }
 }
@@ -220,6 +224,23 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         }
     }
     let _ = cache.save();
+
+    // P1-1: verificación contra vary.lock (VUR; oficiales los gestiona xbps).
+    {
+        let repos_ref: Vec<_> = repos_conf
+            .sorted_by_priority()
+            .into_iter()
+            .filter(|(_, entry)| entry.enabled_or(true))
+            .map(|(name, _)| (name.clone(), config.vurs_dir().join(&name)))
+            .collect();
+        let items: Vec<(String, String)> = current_map
+            .iter()
+            .map(|(n, v)| (n.clone(), v.clone()))
+            .collect();
+        for w in crate::lockfile::verify_if_pinned(config, &repos_ref, &items) {
+            tracing::warn!("{w}");
+        }
+    }
 
     // Prune db entries for packages no longer installed
     let installed_names: Vec<String> = xbps::query_manual().unwrap_or_default();
