@@ -227,3 +227,17 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
   serializado; materialize no refrescaba a HEAD → checkout explícito del
   path (+aviso ante ediciones locales); uppers root-owned → `rm -rf`
   elevado validado + reset con bail.
+
+## Post-tag v0.4.1 — release en Void real (2026-09-07)
+
+- Tag `v0.4.1` → CI success + XBPS success (ambos workflows del tag en verde).
+  Release publicada (glibc + musl). Rollback listo: `test/backup/2026-09-07/`
+  (`vary-0.3.0-bin` + `vary-0.4.0-bin`).
+- Instalación glibc sobre `/usr/bin/vary` (extracción con `bsdtar`; el tar
+  del sistema no lee zstd). Smoke release todo exit 0: `-V` (0.4.1),
+  `-Ss`/`-Si lavat`, `-S gittop --noconfirm` (binario VUP, sin compilar)
+  con rastro (`binary/vup`), `-R gittop`, DB final `[brave, librewolf]`.
+- **vuru también se hizo oficial** (como basilk en 0.4.0): instala como
+  `official/` sin rastro (T-005 por diseño, verificado vía `-Sp`).
+- musl: sigue dinámico (documentado en 0.4.1-C); verificado en contenedor
+  por el workflow. Sistema queda con glibc.
