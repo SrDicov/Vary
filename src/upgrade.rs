@@ -1,6 +1,6 @@
 use crate::cache::CacheIndex;
 use crate::config::Config;
-use crate::db::InstalledDb;
+use crate::db::{InstallType, InstalledDb};
 use crate::reposconf::ReposConf;
 use crate::vur_client::VurRepo;
 use crate::xbps;
@@ -257,6 +257,21 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     });
     if db.len() != before {
         let _ = db.save();
+    }
+
+    // P2-soname: aviso consultivo de drift de proveedores. Solo lectura
+    // (nunca bloquea, nunca recompila, sin prompts: apto no-TTY/--yes).
+    // Sin baseline pineada no hay aviso.
+    for (name, entry) in db.entries_snapshot() {
+        if entry.install_type != InstallType::Source {
+            continue;
+        }
+        let Some(pins) = entry.soname_pins.as_ref().filter(|p| !p.is_empty()) else {
+            continue;
+        };
+        for drift in crate::soname::check_db_entry(&name, pins) {
+            tracing::warn!("{}", crate::soname::format_drift(&name, &drift));
+        }
     }
 
     let mut outdated: Vec<String> = Vec::new();

@@ -1,7 +1,12 @@
-# STATUS — Hoja de Ruta Post-Auditoría (specs, NO implementar)
+# STATUS — Hoja de Ruta Post-Auditoría
 
-**Fecha:** 2026-09-06 · **Base:** `vary-mvp` @ FASE 5 (46/47 + A3 + A6; resta H-015).
-Cada ítem es SPEC con criterios de aceptación. Nada de esto está implementado.
+**Fecha:** 2026-09-06/07 · **Base:** `vary-mvp` @ FASE 5 (46/47 + A3 + A6; resta H-015).
+**0.4.0 (2026-09-07):** P0-1, P0-4, P0-2, P0-5, P0-3, P1-1, P1-2, P2-why, P2-log,
+P2-soname **implementados y cerrados con CI+XBPS verdes**; P2-404 **no se
+implementa** (decisión de diseño, ver abajo). Cada ítem restante es SPEC con
+criterios de aceptación.
+
+## 0.5.0 — ÚNICO ítem: P1-3 · Masterdirs aislados estilo xbps-fbulk (+H-015)
 
 ---
 
@@ -66,10 +71,31 @@ Cada ítem es SPEC con criterios de aceptación. Nada de esto está implementado
 
 ## P2 · Miscelánea
 
-- `vary why <pkg>` (cadena de dependencia que lo trajo).
-- `vary log` (historial legible de operaciones desde DB+logs).
-- Resiliencia 404 en distfiles (mirrors alternos, reintento con backoff).
-- Trigger preventivo de recompilación por drift de sonames (resto de H-029/A5).
+- `vary why <pkg>` ✅ 0.4.0 — cadena de dependencia que lo trajo.
+- `vary log` ✅ 0.4.0 — historial legible (`~/.local/share/vary/operations.log`).
+- Resiliencia 404 en distfiles: ❌ **NO IMPLEMENTAR (decisión de diseño
+  2026-09-07, confirmada por el mantenedor).** El fetch lo ejecuta `xbps-src`
+  (`masterdir.fetch_pkg`), que ya trae reintentos propios y soporta mirrors vía
+  su configuración; el pre-fetch de vary es warm-up best-effort (`let _`).
+  Duplicar reintentos/backoff en vary no aporta nada observable y los "mirrors
+  alternos" no existen en el modelo de datos (requerirían formato VUR nuevo +
+  cambios en `metadata.rs` + generador). Capa equivocada; se cierra como
+  no-ítem.
+- Trigger preventivo de recompilación por drift de sonames (resto de H-029/A5)
+  ✅ 0.4.0 con alcance aprobado: pin `shlibs_requires` al instalar + aviso en
+  upgrade; **nunca auto-rebuild sin flag explícito** (compilar sin
+  consentimiento es peligroso). Ver P2-soname abajo.
+
+## P2-soname · Pin de sonames + aviso de drift (alcance aprobado 2026-09-07)
+
+- Al instalar un paquete Source se graba `shlibs_requires` (salida de
+  `xbps-query -R --property rundeps` del artefacto construido... ver
+  implementación) en `installed.json`.
+- En upgrade, si los sonames requeridos ya no los provee la misma versión que
+  al instalar → aviso CONSULTIVO que sugiere recompilar; jamás recompila solo.
+- Sin baseline (paquetes pre-0.4.0) → sin aviso, sin ruido.
+- Aceptación: pin grabado al instalar; drift simulado avisa; sin flag no hay
+  rebuild.
 
 ---
 

@@ -43,6 +43,11 @@ pub struct Entry {
     /// Pin del binario; ausente si no se pudo hashear al instalar.
     #[serde(default)]
     pub artifact_sha256: Option<String>,
+    /// P2-soname: `shlib` → `pkgver` del proveedor al instalar.
+    /// Baseline para el aviso de drift; ausente en entradas pre-0.4.0
+    /// o si la captura falló (sin baseline no hay aviso, sin ruido).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soname_pins: Option<BTreeMap<String, String>>,
 }
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
@@ -189,6 +194,7 @@ impl InstalledDb {
                 install_type,
                 repo_commit,
                 artifact_sha256,
+                soname_pins: None,
             },
         );
     }
@@ -201,6 +207,17 @@ impl InstalledDb {
     #[allow(dead_code)]
     pub fn get_build_date(&self, name: &str) -> Option<u64> {
         self.entries.get(name).and_then(|e| e.build_date)
+    }
+
+    /// P2-soname: guarda la baseline de proveedores (solo si no es vacía).
+    /// Llamar tras `upsert`; best-effort, nunca falla.
+    pub fn set_soname_pins(&mut self, name: &str, pins: BTreeMap<String, String>) {
+        if pins.is_empty() {
+            return;
+        }
+        if let Some(entry) = self.entries.get_mut(name) {
+            entry.soname_pins = Some(pins);
+        }
     }
 
     pub fn remove(&mut self, name: &str) -> bool {
@@ -322,6 +339,7 @@ pub fn decode_bincode_entry(data: &[u8]) -> Option<Entry> {
         // P0-5: el formato binario legacy no trae pins (migran como None).
         repo_commit: None,
         artifact_sha256: None,
+        soname_pins: None,
     })
 }
 
@@ -558,6 +576,7 @@ mod tests {
             install_type: InstallType::Source,
             repo_commit: Some("aaa111".to_string()),
             artifact_sha256: Some("sha256:bbb222".to_string()),
+            soname_pins: None,
         }
     }
 

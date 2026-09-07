@@ -19,6 +19,7 @@ mod repo;
 mod reposconf;
 mod resolver;
 mod signal;
+mod soname;
 mod template_audit;
 mod util;
 mod vup_index;

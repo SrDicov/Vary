@@ -990,6 +990,15 @@ pub fn install(config: &mut Config) -> Result<i32> {
             repo_commit.clone(),
             artifact_sha256.clone(),
         );
+        // P2-soname: pin de proveedores al instalar desde fuente
+        // (best-effort: sin xbps local no hay baseline, sin ruido).
+        if itype == crate::db::InstallType::Source {
+            let pins = crate::soname::capture(real);
+            if pins.is_empty() {
+                tracing::debug!("{real}: sin pins de sonames (paquete sin shlibs o no instalado)");
+            }
+            db.set_soname_pins(real, pins);
+        }
         // P2: diario (best-effort: nunca aborta un install válido).
         if let Err(e) = crate::journal::append(
             &config.data_dir,
@@ -1010,6 +1019,10 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 repo_commit.clone(),
                 None,
             );
+            // P2-soname: los subs son paquetes instalados propios.
+            if itype == crate::db::InstallType::Source {
+                db.set_soname_pins(&sub.pkgname, crate::soname::capture(&sub.pkgname));
+            }
         }
     }
     db.save()?;
