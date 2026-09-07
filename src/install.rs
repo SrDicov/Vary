@@ -573,11 +573,16 @@ struct WorkerParams {
 
 /// Un build pendiente ya resuelto (main thread): repo por índice (los hilos
 /// comparten `&VurRepo`), flags y subpaquetes para `built_names`.
+/// `expected` = ficheros `.xbps` que el build DEBE dejar (padre obligatorio;
+/// subs oportunistas). Determinista: el diff antes/después no ve rebuilds
+/// (xbps fija mtimes y los nombres se repiten; validado en vivo).
 struct BuildJob {
     parent_pkg: String,
     repo_idx: usize,
     explicit: bool,
     subs: Vec<String>,
+    expected_parent: String,
+    expected_subs: Vec<String>,
 }
 
 /// Vía secuencial INTACTA (0.4.0): mismo cuerpo que el loop histórico
@@ -620,22 +625,24 @@ fn worker_log_file(
 
 /// UN build dentro del sandbox del worker. El binpkgs del worker es privado
 /// (su upper): xbps-src lo indexa solo allí, sin carreras; el hilo
-/// principal fusiona e indexa una vez (E4). Devuelve los .xbps nuevos.
+/// principal fusiona e indexa una vez (E4). Devuelve los .xbps verificados:
+/// el del padre DEBE existir (si no, el build mintió con exit 0); los subs
+/// se recogen si existen (un sub restringido por arch puede no generarse y
+/// eso no es fallo: el secuencial tampoco lo notaría).
 fn build_one_in_sandbox(
     repo: &VurRepo,
     sb: &crate::masterdir::WorkerSandbox,
     slot: usize,
-    parent_pkg: &str,
-    explicit: bool,
+    job: &BuildJob,
     params: &WorkerParams,
 ) -> Result<Vec<std::path::PathBuf>> {
+    let parent_pkg = &job.parent_pkg;
     if crate::signal::is_shutting_down() {
         anyhow::bail!("interrumpido por señal antes de compilar {parent_pkg}");
     }
     let srcpkgs = sb.srcpkgs_dir();
-    repo.project_pkg(&srcpkgs, parent_pkg, explicit)?;
+    repo.project_pkg(&srcpkgs, parent_pkg, job.explicit)?;
     let binpkgs = sb.binpkgs_dir();
-    let before = crate::masterdir::list_xbps(&binpkgs);
     tracing::info!(
         "compilando {parent_pkg} con xbps-src en worker w{slot} (makejobs: {})...",
         params.makejobs
@@ -648,21 +655,37 @@ fn build_one_in_sandbox(
     // SIN -m a propósito: xbps-src resuelve masterdir-<arch> por defecto
     // (visible por lowerdir con su marker; pasar -m al legacy provocaba un
     // bootstrap completo por worker).
-    let code = crate::xbps::xbps_src(
+    let res = crate::xbps::xbps_src(
         sb.checkout_root(),
         &["pkg", parent_pkg],
         Some(params.makejobs),
         log.as_deref(),
     )
-    .with_context(|| format!("falló ./xbps-src pkg {parent_pkg} en worker w{slot}"))?;
+    .with_context(|| format!("falló ./xbps-src pkg {parent_pkg} en worker w{slot}"));
+    // m4: desproyectar SIEMPRE (como el secuencial), antes del `?`.
     let _ = repo.unproject_pkg(&srcpkgs, parent_pkg);
+    let code = res?;
     if code != 0 {
         anyhow::bail!("xbps-src pkg {parent_pkg} terminó con código {code} en worker w{slot}");
     }
-    Ok(crate::masterdir::new_files_since(
-        &before,
-        &crate::masterdir::list_xbps(&binpkgs),
-    ))
+    let mut arts = Vec::new();
+    let main = binpkgs.join(&job.expected_parent);
+    if !main.is_file() {
+        anyhow::bail!(
+            "el build de {parent_pkg} terminó OK pero sin artefacto {} en worker w{slot}",
+            job.expected_parent
+        );
+    }
+    arts.push(main);
+    for sub in &job.expected_subs {
+        let p = binpkgs.join(sub);
+        if p.is_file() {
+            arts.push(p);
+        } else {
+            tracing::debug!("subpaquete sin artefacto (omitido): {sub}");
+        }
+    }
+    Ok(arts)
 }
 
 /// Ejecuta UN nivel en paralelo (scope: ningún hilo escapa).
@@ -674,20 +697,24 @@ fn build_level_parallel(
     sandboxes: &[crate::masterdir::WorkerSandbox],
     params: &WorkerParams,
 ) -> Vec<(usize, Result<Vec<std::path::PathBuf>>)> {
+    use std::collections::VecDeque;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         Mutex,
     };
-    let queue = Mutex::new(level.to_vec());
+    // FIFO (pop_front): el orden de intento coincide con el de reporte en
+    // plan; con LIFO los items tempranos se intentaban los últimos y un
+    // early-stop los dejaba sin resultado, enmascarando el error real (M1).
+    let queue = Mutex::new(level.iter().copied().collect::<VecDeque<usize>>());
     let out: Mutex<Vec<(usize, Result<Vec<PathBuf>>)>> = Mutex::new(Vec::new());
     let failed = AtomicBool::new(false);
     // Refs compartidas (Copy): el `move` del hilo las posee sin mover los Mutex.
-    // (Sin shadowing: el shadowing rompe el análisis de vidas del scope.)
+    // (Sin shadowing ni slicing redundante: clippy los tumba.)
     let queue_ref = &queue;
     let out_ref = &out;
     let failed_ref = &failed;
-    let jobs_ref = &jobs[..];
-    let repos_ref = &repos[..];
+    let jobs_ref = jobs;
+    let repos_ref = repos;
     std::thread::scope(|s| {
         for (slot, sb) in sandboxes.iter().enumerate() {
             // `move`: el hilo posee sus copias (slot usize + &ref a sandbox
@@ -702,18 +729,11 @@ fn build_level_parallel(
                         Ok(g) => g,
                         Err(p) => p.into_inner(),
                     };
-                    q.pop()
+                    q.pop_front()
                 };
                 let Some(pos) = pos else { break };
                 let job = &jobs_ref[pos];
-                let r = build_one_in_sandbox(
-                    &repos_ref[job.repo_idx],
-                    sb,
-                    slot,
-                    &job.parent_pkg,
-                    job.explicit,
-                    params,
-                );
+                let r = build_one_in_sandbox(&repos_ref[job.repo_idx], sb, slot, job, params);
                 if r.is_err() {
                     // Parada temprana best-effort (los workers terminan su
                     // pkg en curso; el llamador decide en orden).
@@ -760,6 +780,23 @@ fn index_merged_artifacts(files: &[std::path::PathBuf]) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// m2: variante best-effort para caminos de error (no enmascara el original).
+fn index_best_effort(files: &[std::path::PathBuf]) {
+    if files.is_empty() {
+        return;
+    }
+    if let Err(e) = index_merged_artifacts(files) {
+        tracing::warn!("índice fusionado parcial falló: {e:#}");
+    }
+}
+
+/// Destruye sandboxes consumiendo el vec (umount + rmdir por slot).
+fn destroy_all(sandboxes: Vec<crate::masterdir::WorkerSandbox>) {
+    for sb in sandboxes {
+        sb.destroy();
+    }
 }
 
 pub fn install(config: &mut Config) -> Result<i32> {
@@ -890,13 +927,31 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 );
             }
         }
-        println!(
-            "\n{}",
-            c.warning.paint(format!(
-                "Builds son secuenciales (paralelismo vía XBPS_MAKEJOBS={})",
-                config.makejobs
-            ))
+        // m6: el mensaje depende del scheduler real (con experimental + slots
+        // el plan puede ejecutarse en paralelo; no prometer secuencialidad).
+        let slots = crate::masterdir::effective_build_slots(
+            config.experimental,
+            config.max_concurrent_builds,
+            std::thread::available_parallelism()
+                .map(|p| p.get())
+                .unwrap_or(1),
         );
+        if slots > 1 {
+            println!(
+                "\n{}",
+                c.warning.paint(format!(
+                    "Builds paralelos por niveles ({slots} slots con overlay, experimental)"
+                ))
+            );
+        } else {
+            println!(
+                "\n{}",
+                c.warning.paint(format!(
+                    "Builds son secuenciales (paralelismo vía XBPS_MAKEJOBS={})",
+                    config.makejobs
+                ))
+            );
+        }
     }
     // T-010: avisos del resolver (flag sin efecto sobre official) junto al
     // plan, antes del confirm: ACTUAR o AVISAR, nunca callar.
@@ -1030,68 +1085,9 @@ pub fn install(config: &mut Config) -> Result<i32> {
     let mut built_names: Vec<String> = Vec::new();
     let mut merged_artifacts: Vec<PathBuf> = Vec::new();
     let mut merged_any = false;
-
-    let mut jobs: Vec<BuildJob> = Vec::new();
-    let mut key_to_job: std::collections::HashMap<(String, String), usize> =
-        std::collections::HashMap::new();
-    for item in plan.builds.iter() {
-        // Ya instalada EXACTAMENTE esa versión => omitir compilación
-        // (--force-build / force_rebuild la fuerzan).
-        if !config.force_rebuild && !config.force_build {
-            match crate::xbps::query_installed(&item.info.pkgname) {
-                Ok(Some(cur)) if cur.pkgver == item.info.pkgver() => {
-                    println!(
-                        "{} {} ya instalado ({}) ; omitiendo build",
-                        c.action.paint("::"),
-                        c.bold.paint(&item.info.pkgname),
-                        cur.pkgver
-                    );
-                    continue;
-                }
-                _ => {}
-            }
-        }
-        let parent_pkg = item.info.pkgname.clone();
-        let repo_name = vur_map_lookup_repo(&parent_pkg, &repos, &mut cache)
-            .or_else(|_| vur_map_lookup_repo(&item.name, &repos, &mut cache))?;
-        let repo_idx = repos
-            .iter()
-            .position(|r| r.name == repo_name)
-            .ok_or_else(|| anyhow::anyhow!("repo not found for {}", item.info.pkgname))?;
-        // force=true solo para targets explícitos del usuario (o subpaquetes de esos targets)
-        let explicit = targets.iter().any(|t| {
-            t == &parent_pkg
-                || t == &item.name
-                || item.info.subpackages.iter().any(|s| s.pkgname == *t)
-        });
-        key_to_job.insert((item.name.clone(), item.info.pkgname.clone()), jobs.len());
-        jobs.push(BuildJob {
-            parent_pkg,
-            repo_idx,
-            explicit,
-            subs: item
-                .info
-                .subpackages
-                .iter()
-                .map(|s| s.pkgname.clone())
-                .collect(),
-        });
-    }
-    // Niveles sobre jobs (los ya-instalados simplemente no están).
-    let levels: Vec<Vec<usize>> = crate::resolver::build_levels(&plan)
-        .into_iter()
-        .map(|lvl| {
-            lvl.into_iter()
-                .filter_map(|it| {
-                    key_to_job
-                        .get(&(it.name.clone(), it.info.pkgname.clone()))
-                        .copied()
-                })
-                .collect()
-        })
-        .filter(|v: &Vec<usize>| !v.is_empty())
-        .collect();
-
+    let workers_dir = config.cache_dir.join("workers");
+    // m9: barrido de residuales SIEMPRE y PRIMERO (antes de cualquier `?`).
+    crate::masterdir::cleanup_stale_sandboxes(&workers_dir, &config.sudo_bin, &config.sudo_flags);
     let nproc = std::thread::available_parallelism()
         .map(|p| p.get())
         .unwrap_or(1);
@@ -1100,78 +1096,164 @@ pub fn install(config: &mut Config) -> Result<i32> {
         config.max_concurrent_builds,
         nproc,
     );
-    let workers_dir = config.cache_dir.join("workers");
-    // Barrido de sandboxes residuales SIEMPRE (solo w<N> bajo workers/).
-    crate::masterdir::cleanup_stale_sandboxes(&workers_dir, &config.sudo_bin, &config.sudo_flags);
-    // Parámetros propios de los workers (todo owned: sin pelear Sync).
-    let logs_dir = md
-        .log_file
-        .as_ref()
-        .and_then(|p| p.parent().map(Path::to_path_buf));
-    let wparams = WorkerParams {
-        makejobs: config.makejobs,
-        logs_dir,
-        log_file_default: md.log_file.clone(),
-        sudo_bin: config.sudo_bin.clone(),
-        sudo_flags: config.sudo_flags.clone(),
-    };
-    // Sandboxes perezosos: se crean al primer nivel que los necesite; si la
-    // creación falla, ese nivel (y los siguientes) van en secuencial.
-    let mut sandboxes: Vec<crate::masterdir::WorkerSandbox> = Vec::new();
-    let mut parallel_usable =
-        slots > 1 && crate::masterdir::parallel_available(&config.cache_dir).is_ok();
+    // m5: dos caminos excluyentes. Sin experimental/capacidad, loop
+    // HISTÓRICO VERBATIM (0.4.0 bit-idéntico). Solo armado va a jobs.
+    let mut parallel_armed = false;
     if slots > 1 {
-        if let Err(e) = crate::masterdir::parallel_available(&config.cache_dir) {
-            tracing::warn!("P1-3: {e:#}");
+        match crate::masterdir::parallel_available(&config.cache_dir) {
+            Ok(()) => parallel_armed = true,
+            Err(e) => tracing::warn!("P1-3: {e:#}"),
         }
     }
-    for level in &levels {
-        if level.len() < 2 || !parallel_usable {
-            // Vía secuencial intacta (1 item, slots==1 o sin capacidad).
-            for pos in level {
-                let job = &jobs[*pos];
-                let repo = &repos[job.repo_idx];
-                build_one_sequential(repo, &md, &job.parent_pkg, job.explicit, wparams.makejobs)?;
-                // H-046: registrar el nombre REAL.
-                built_names.push(job.parent_pkg.clone());
-                for sub in &job.subs {
-                    if !built_names.contains(sub) {
-                        built_names.push(sub.clone());
-                    }
-                }
-            }
-            continue;
-        }
-        // Materialize secuencial en main (el clon no admite sparse concurrente).
-        for pos in level {
-            let job = &jobs[*pos];
-            repos[job.repo_idx].materialize_pkg(&job.parent_pkg)?;
-        }
-        // Sandboxes (una vez; reuso entre niveles: el upper acumula, bien).
-        if sandboxes.is_empty() {
-            let mut ok = true;
-            for slot in 0..slots {
-                match crate::masterdir::WorkerSandbox::create(
-                    &md.path,
-                    &workers_dir,
-                    slot,
-                    &wparams.sudo_bin,
-                    &wparams.sudo_flags,
-                ) {
-                    Ok(sb) => sandboxes.push(sb),
-                    Err(e) => {
-                        tracing::warn!(
-                            "P1-3: sandbox {slot} no montable ({e:#}); nivel en secuencial"
+    if !parallel_armed {
+        // Vía HISTÓRICA VERBATIM: orden, mensajes intercalados y errores
+        // idénticos a 0.4.0. Cualquier cambio aquí debe justificarse como
+        // fix, nunca como refactor.
+        for item in &plan.builds {
+            // Ya instalada EXACTAMENTE esa versión => omitir compilación
+            // (--force-build / force_rebuild la fuerzan).
+            if !config.force_rebuild && !config.force_build {
+                match crate::xbps::query_installed(&item.info.pkgname) {
+                    Ok(Some(cur)) if cur.pkgver == item.info.pkgver() => {
+                        println!(
+                            "{} {} ya instalado ({}) ; omitiendo build",
+                            c.action.paint("::"),
+                            c.bold.paint(&item.info.pkgname),
+                            cur.pkgver
                         );
-                        ok = false;
-                        break;
+                        continue;
                     }
+                    _ => {}
                 }
             }
-            if !ok || sandboxes.is_empty() {
-                sandboxes.clear();
-                parallel_usable = false;
-                // Reintento secuencial del nivel (materialize ya hecho: vale).
+            let parent_pkg = item.info.pkgname.clone();
+            let repo_name = vur_map_lookup_repo(&parent_pkg, &repos, &mut cache)
+                .or_else(|_| vur_map_lookup_repo(&item.name, &repos, &mut cache))?;
+            let repo = repos
+                .iter()
+                .find(|r| r.name == repo_name)
+                .ok_or_else(|| anyhow::anyhow!("repo not found for {}", item.info.pkgname))?;
+            // force=true solo para targets explícitos del usuario (o subpaquetes de esos targets)
+            let explicit = targets.iter().any(|t| {
+                t == &parent_pkg
+                    || t == &item.name
+                    || item.info.subpackages.iter().any(|s| s.pkgname == *t)
+            });
+            repo.materialize_pkg(&parent_pkg)?;
+            repo.project_pkg(&md.srcpkgs_dir(), &parent_pkg, explicit)?;
+            let res = md.build_pkg(&parent_pkg, config.makejobs);
+            // Always unproject (proyectamos parent_pkg)
+            let _ = repo.unproject_pkg(&md.srcpkgs_dir(), &parent_pkg);
+            res.with_context(|| format!("building {parent_pkg}"))?;
+            // H-046: registrar el nombre REAL (lo pedido puede ser un virtual de
+            // `provides` que xbps-install no aceptaría).
+            built_names.push(parent_pkg.clone());
+            // También registrar subpaquetes como construidos si el target era el padre
+            for sub in &item.info.subpackages {
+                if !built_names.contains(&sub.pkgname) {
+                    built_names.push(sub.pkgname.clone());
+                }
+            }
+        }
+    } else {
+        // Camino paralelo (solo --experimental + capacidad): jobs pre-resueltos
+        // en main thread (el `?` conserva el comportamiento previo).
+        let mut jobs: Vec<BuildJob> = Vec::new();
+        let mut key_to_job: std::collections::HashMap<(String, String), usize> =
+            std::collections::HashMap::new();
+        for item in plan.builds.iter() {
+            // Ya instalada EXACTAMENTE esa versión => omitir compilación
+            // (--force-build / force_rebuild la fuerzan).
+            if !config.force_rebuild && !config.force_build {
+                match crate::xbps::query_installed(&item.info.pkgname) {
+                    Ok(Some(cur)) if cur.pkgver == item.info.pkgver() => {
+                        println!(
+                            "{} {} ya instalado ({}) ; omitiendo build",
+                            c.action.paint("::"),
+                            c.bold.paint(&item.info.pkgname),
+                            cur.pkgver
+                        );
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+            let parent_pkg = item.info.pkgname.clone();
+            let repo_name = vur_map_lookup_repo(&parent_pkg, &repos, &mut cache)
+                .or_else(|_| vur_map_lookup_repo(&item.name, &repos, &mut cache))?;
+            let repo_idx = repos
+                .iter()
+                .position(|r| r.name == repo_name)
+                .ok_or_else(|| anyhow::anyhow!("repo not found for {}", item.info.pkgname))?;
+            // force=true solo para targets explícitos del usuario (o subpaquetes de esos targets)
+            let explicit = targets.iter().any(|t| {
+                t == &parent_pkg
+                    || t == &item.name
+                    || item.info.subpackages.iter().any(|s| s.pkgname == *t)
+            });
+            key_to_job.insert((item.name.clone(), item.info.pkgname.clone()), jobs.len());
+            // Artefactos esperados (determinista): padre obligatorio + subs.
+            let expected_parent = format!("{}.{arch}.xbps", item.info.pkgver());
+            let expected_subs: Vec<String> = item
+                .info
+                .subpackages
+                .iter()
+                .map(|s| {
+                    format!(
+                        "{}-{}_{}.{arch}.xbps",
+                        s.pkgname, item.info.version, item.info.revision
+                    )
+                })
+                .collect();
+            jobs.push(BuildJob {
+                parent_pkg,
+                repo_idx,
+                explicit,
+                subs: item
+                    .info
+                    .subpackages
+                    .iter()
+                    .map(|s| s.pkgname.clone())
+                    .collect(),
+                expected_parent,
+                expected_subs,
+            });
+        }
+        // Niveles sobre jobs (los ya-instalados simplemente no están).
+        let levels: Vec<Vec<usize>> = crate::resolver::build_levels(&plan)
+            .into_iter()
+            .map(|lvl| {
+                lvl.into_iter()
+                    .filter_map(|it| {
+                        key_to_job
+                            .get(&(it.name.clone(), it.info.pkgname.clone()))
+                            .copied()
+                    })
+                    .collect()
+            })
+            .filter(|v: &Vec<usize>| !v.is_empty())
+            .collect();
+
+        // Parámetros propios de los workers (todo owned: sin pelear Sync).
+        let logs_dir = md
+            .log_file
+            .as_ref()
+            .and_then(|p| p.parent().map(Path::to_path_buf));
+        let wparams = WorkerParams {
+            makejobs: config.makejobs,
+            logs_dir,
+            log_file_default: md.log_file.clone(),
+            sudo_bin: config.sudo_bin.clone(),
+            sudo_flags: config.sudo_flags.clone(),
+        };
+        // Sandboxes perezosos: se crean al primer nivel que los necesite; si la
+        // creación falla, ese nivel (y los siguientes) van en secuencial.
+        // (`usable` local: en este camino parallel_armed ya es true.)
+        let mut sandboxes: Vec<crate::masterdir::WorkerSandbox> = Vec::new();
+        let mut usable = true;
+        for level in &levels {
+            if level.len() < 2 || !usable {
+                // Vía secuencial intacta (1 item, slots==1 o sin capacidad).
                 for pos in level {
                     let job = &jobs[*pos];
                     let repo = &repos[job.repo_idx];
@@ -1182,6 +1264,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                         job.explicit,
                         wparams.makejobs,
                     )?;
+                    // H-046: registrar el nombre REAL.
                     built_names.push(job.parent_pkg.clone());
                     for sub in &job.subs {
                         if !built_names.contains(sub) {
@@ -1191,58 +1274,139 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 }
                 continue;
             }
-            println!(
-                "{} builds paralelos: {} slots con overlay (experimental)",
-                c.action.paint("::"),
-                sandboxes.len()
+            // Materialize secuencial en main (el clon no admite sparse concurrente).
+            for pos in level {
+                let job = &jobs[*pos];
+                repos[job.repo_idx].materialize_pkg(&job.parent_pkg)?;
+            }
+            // Sandboxes (una vez; reuso entre niveles: el upper acumula, bien).
+            if sandboxes.is_empty() {
+                let mut ok = true;
+                for slot in 0..slots {
+                    match crate::masterdir::WorkerSandbox::create(
+                        &md.path,
+                        &workers_dir,
+                        slot,
+                        &wparams.sudo_bin,
+                        &wparams.sudo_flags,
+                    ) {
+                        Ok(sb) => sandboxes.push(sb),
+                        Err(e) => {
+                            tracing::warn!(
+                                "P1-3: sandbox {slot} no montable ({e:#}); nivel en secuencial"
+                            );
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if !ok || sandboxes.is_empty() {
+                    sandboxes.clear();
+                    usable = false;
+                    // Reintento secuencial del nivel (materialize ya hecho: vale).
+                    for pos in level {
+                        let job = &jobs[*pos];
+                        let repo = &repos[job.repo_idx];
+                        build_one_sequential(
+                            repo,
+                            &md,
+                            &job.parent_pkg,
+                            job.explicit,
+                            wparams.makejobs,
+                        )?;
+                        built_names.push(job.parent_pkg.clone());
+                        for sub in &job.subs {
+                            if !built_names.contains(sub) {
+                                built_names.push(sub.clone());
+                            }
+                        }
+                    }
+                    continue;
+                }
+                println!(
+                    "{} builds paralelos: {} slots con overlay (experimental)",
+                    c.action.paint("::"),
+                    sandboxes.len()
+                );
+            }
+            // Nivel en paralelo (scope: los hilos no escapan).
+            let results = build_level_parallel(level, &jobs, &repos, &sandboxes, &wparams);
+            // M1: recorrer en orden de plan; fusionar éxitos; recordar el PRIMER
+            // error real. Un hueco por parada temprana NUNCA se reporta como
+            // "sin resultado": se busca el primer error completado del nivel.
+            let mut first_err: Option<(String, String)> = None;
+            for pos in level {
+                let job = &jobs[*pos];
+                match results.iter().find(|(p, _)| p == pos) {
+                    Some((_, Ok(arts))) if first_err.is_none() => {
+                        for art in arts {
+                            // Layout plano (sin subdir de arch), igual que xbps-src.
+                            let dest = md
+                                .hostdir_binpkgs_root()
+                                .join(art.file_name().unwrap_or_default());
+                            if let Some(parent) = dest.parent() {
+                                crate::util::ensure_private_dir(parent)?;
+                            }
+                            std::fs::copy(art, &dest).with_context(|| {
+                                format!("fusionando artefacto {}", art.display())
+                            })?;
+                            merged_artifacts.push(dest);
+                            merged_any = true;
+                        }
+                        built_names.push(job.parent_pkg.clone());
+                        for sub in &job.subs {
+                            if !built_names.contains(sub) {
+                                built_names.push(sub.clone());
+                            }
+                        }
+                    }
+                    Some((_, Ok(_))) => {}
+                    Some((_, Err(e))) if first_err.is_none() => {
+                        first_err = Some((job.parent_pkg.clone(), format!("{e:#}")));
+                    }
+                    Some((_, Err(_))) => {}
+                    None if first_err.is_none() => {
+                        let real = level
+                            .iter()
+                            .filter_map(|p| {
+                                let j = &jobs[*p];
+                                results.iter().find(|(q, _)| q == p).and_then(|(_, r)| {
+                                    r.as_ref()
+                                        .err()
+                                        .map(|e| (j.parent_pkg.clone(), format!("{e:#}")))
+                                })
+                            })
+                            .next();
+                        first_err = real.or_else(|| {
+                            Some((
+                                job.parent_pkg.clone(),
+                                "sin resultado del worker (parada temprana)".to_string(),
+                            ))
+                        });
+                    }
+                    None => {}
+                }
+            }
+            if let Some((pkg, e)) = first_err {
+                // m2: lo fusionado (este y previos niveles) queda indexado
+                // también en fallo, best-effort para no enmascarar el original.
+                index_best_effort(&merged_artifacts);
+                destroy_all(std::mem::take(&mut sandboxes));
+                anyhow::bail!("building {pkg}: {e}");
+            }
+        }
+        // E4: índice ÚNICO tras fusionar (nunca en workers: sin carreras).
+        if merged_any {
+            tracing::info!(
+                "P1-3: fusionados {} artefactos de workers; índice único",
+                merged_artifacts.len()
             );
+            index_merged_artifacts(&merged_artifacts)?;
         }
-        // Nivel en paralelo (scope: los hilos no escapan; resultados en orden).
-        let results = build_level_parallel(level, &jobs, &repos, &sandboxes, &wparams);
-        // Aplicar en orden de plan; al primer error se fusiona lo previo y se
-        // aborta (paridad con el secuencial: estado parcial + error).
-        for pos in level {
-            let found = results.iter().find(|(p, _)| p == pos);
-            let Some((_, res)) = found else {
-                anyhow::bail!("sin resultado del worker para {}", jobs[*pos].parent_pkg)
-            };
-            let arts = res
-                .as_ref()
-                .map_err(|e| anyhow::anyhow!("building {}: {e:#}", jobs[*pos].parent_pkg))?;
-            for art in arts {
-                // Layout plano (sin subdir de arch), igual que xbps-src.
-                let dest = md
-                    .hostdir_binpkgs_root()
-                    .join(art.file_name().unwrap_or_default());
-                if let Some(parent) = dest.parent() {
-                    crate::util::ensure_private_dir(parent)?;
-                }
-                std::fs::copy(art, &dest)
-                    .with_context(|| format!("fusionando artefacto {}", art.display()))?;
-                merged_artifacts.push(dest);
-                merged_any = true;
-            }
-            built_names.push(jobs[*pos].parent_pkg.clone());
-            for sub in &jobs[*pos].subs {
-                if !built_names.contains(sub) {
-                    built_names.push(sub.clone());
-                }
-            }
-        }
-    }
-    // E4: índice ÚNICO tras fusionar (nunca en workers: sin carreras).
-    if merged_any {
-        tracing::info!(
-            "P1-3: fusionados {} artefactos de workers; índice único",
-            merged_artifacts.len()
-        );
-        index_merged_artifacts(&merged_artifacts)?;
-    }
-    // Limpieza explícita de sandboxes (umount + rmdir). Ante un `?` previo
-    // el Drop ya desmontó y el dir lo barre cleanup_stale en el próximo run.
-    for sb in sandboxes {
-        sb.destroy();
-    }
+        // Limpieza explícita de sandboxes (umount + rmdir). Ante un `?` previo
+        // el Drop ya desmontó y el dir lo barre cleanup_stale en el próximo run.
+        destroy_all(sandboxes);
+    } // fin camino paralelo (else de !parallel_armed)
 
     // 8. Installs
     let mut all_install_names: Vec<String> = Vec::new();

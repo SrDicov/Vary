@@ -166,11 +166,15 @@ pub struct WorkerSandbox {
 }
 
 impl WorkerSandbox {
-    /// Nº de slot (para logs por worker).
+    /// Nº de slot (para logs por worker). Sin pánicos: `get(1..)` devuelve
+    /// None si el nombre es vacío o empieza por multibyte; lo degenerado cae
+    /// a 999 (dos sandboxes degenerados compartirían log: solo posible con
+    /// dirs a mano, nunca en prod donde el nombre lo genera `dir_name`).
     pub fn slot(&self) -> usize {
         self.slot_dir
             .file_name()
-            .and_then(|n| n.to_string_lossy()[1..].parse().ok())
+            .and_then(|n| n.to_string_lossy().get(1..).map(str::to_string))
+            .and_then(|r| r.parse().ok())
             .unwrap_or(999)
     }
     /// Nombre del subdir del slot (puro, testeable): `w<N>`.
@@ -197,9 +201,8 @@ impl WorkerSandbox {
     /// `$XBPS_DISTDIR/masterdir-$MACHINE` (= merged/masterdir-<arch>, visible
     /// por lowerdir con su `.xbps_chroot_init`). Pasar `-m merged/masterdir`
     /// (estilo legacy, ausente en checkouts modernos) provocaba un bootstrap
-    /// completo POR WORKER (GBs de descarga × N, validado en vivo: w0 lo
-    /// sufrió y w1 murió por ello). Sin `-m` no hay bootstrap por worker.
-
+    /// completo POR WORKER (GBs de descarga × N, validado en vivo).
+    /// Sin `-m` no hay bootstrap por worker.
     /// Repo binario local del worker (PLANO, sin subdir de arch: xbps-src
     /// deja los .xbps directos en hostdir/binpkgs/, igual que en secuencial
     /// —validado en vivo: con subdir el diff salía siempre vacío).
@@ -242,6 +245,15 @@ impl WorkerSandbox {
             for d in [&slot_dir, &upper, &work, &merged] {
                 crate::util::ensure_private_dir(d)
                     .with_context(|| format!("no se pudo recrear {}", d.display()))?;
+            }
+            // m3: si el reset no limpió (p. ej. sin vía de elevación ante
+            // ficheros de root), ABORTAR el slot en vez de montar sobre sucio
+            // (fail-closed: el llamador degrada a secuencial).
+            let still_dirty = std::fs::read_dir(&upper)
+                .map(|mut r| r.next().is_some())
+                .unwrap_or(true);
+            if still_dirty {
+                anyhow::bail!("upper residual sin limpiar en slot {slot}; degrada a secuencial");
             }
         }
         let mut cmd = crate::elevate::elevate(sudo_bin, sudo_flags, "mount")?;
@@ -418,32 +430,9 @@ pub fn is_mounted(path: &Path) -> bool {
         .any(|l| l.split_whitespace().nth(1) == Some(target.as_str()))
 }
 
-/// Diferencia de listados `antes/después` de un dir: ficheros nuevos.
-/// (E4: artefactos que aportó UN build; puro, testeable.)
-pub fn new_files_since(before: &[PathBuf], after: &[PathBuf]) -> Vec<PathBuf> {
-    let known: std::collections::HashSet<&PathBuf> = before.iter().collect();
-    let mut new: Vec<PathBuf> = after
-        .iter()
-        .filter(|p| !known.contains(p))
-        .cloned()
-        .collect();
-    new.sort();
-    new
-}
-
-/// Lista `.xbps` directos de un dir (vacío si no existe; nunca falla).
-pub fn list_xbps(dir: &Path) -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map(|r| {
-            r.filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.extension().is_some_and(|x| x == "xbps"))
-                .collect()
-        })
-        .unwrap_or_default();
-    out.sort();
-    out
-}
+// NOTA E4: el diff antes/después de binpkgs (`new_files_since`+`list_xbps`)
+// se retiró: no ve rebuilds porque xbps fija mtimes y repite nombres
+// (validado en vivo). Los artefactos van deterministas en `BuildJob`.
 
 /// Clona void-packages (shallow) si aún no existe.
 pub fn clone_void_packages(target: &Path, git_bin: &str) -> Result<()> {
@@ -546,30 +535,6 @@ mod tests {
         assert!(!WorkerSandbox::is_slot_dir("srcpkgs"));
         assert!(!WorkerSandbox::is_slot_dir(""));
         assert_eq!(WorkerSandbox::dir_name(3), "w3");
-    }
-
-    #[test]
-    fn new_files_since_devuelve_solo_nuevos_ordenados() {
-        let a = PathBuf::from("/b/a.xbps");
-        let b = PathBuf::from("/b/b.xbps");
-        let c = PathBuf::from("/b/c.xbps");
-        assert_eq!(
-            new_files_since(&[a.clone()], &[c.clone(), a.clone(), b.clone()]),
-            vec![b, c]
-        );
-        assert!(new_files_since(&[a.clone()], &[a]).is_empty());
-    }
-
-    #[test]
-    fn list_xbps_solo_xbps_y_ordenado() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("b.xbps"), b"x").unwrap();
-        std::fs::write(dir.path().join("a.xbps"), b"x").unwrap();
-        std::fs::write(dir.path().join("nota.txt"), b"x").unwrap();
-        let got = list_xbps(dir.path());
-        assert_eq!(got.len(), 2);
-        assert!(got[0].ends_with("a.xbps"));
-        assert!(list_xbps(&dir.path().join("inexistente")).is_empty());
     }
 
     #[test]

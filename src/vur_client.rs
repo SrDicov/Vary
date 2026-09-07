@@ -435,6 +435,19 @@ impl VurRepo {
         // índice (leído vía git show) viera la nueva (divergencia
         // apruebo-nuevo/construyo-viejo, validada en vivo). Best-effort con
         // aviso: ante fallo se conserva el comportamiento previo.
+        // m7: si el path trae ediciones locales (flujo de prueba de fixes),
+        // avisar ANTES de pisarlas (los clones los gestiona vary, pero el
+        // silencio destruye trabajo).
+        let dirty = Command::new(&self.git_bin)
+            .arg("-C")
+            .arg(&self.path)
+            .args(["status", "--porcelain", "--", &sparse_path])
+            .output()
+            .map(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty())
+            .unwrap_or(false);
+        if dirty {
+            tracing::warn!("{sparse_path} tiene cambios locales; materialize los pisa con HEAD");
+        }
         let sync_out = Command::new(&self.git_bin)
             .arg("-C")
             .arg(&self.path)
