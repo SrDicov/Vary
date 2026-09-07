@@ -815,3 +815,15 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `install::tests::track_action_solo_build_y_binario_vur`.
   - Suite local 161+1 en verde + run CI verde. Ficciones preexistentes (`bibata`, `hytale _0`) purgadas a mano con respaldo en `test/backup/`.
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [T-011] TOFU re-confía en silencio si la llave instalada está corrupta
+- **Severidad:** Low
+- **Módulo:** `src/keys.rs:verify_key_tofu`
+- **Commit:** `fix(T-011)` (`git log --oneline --grep="T-011"`)
+- **Descripción:** Doble `if let Ok` anidado: si la llave en disco existía pero era ilegible (corrupta, truncada), el chequeo de rotación se saltaba sin aviso y se sobrescribía con la remota. Verificado en vivo: llave basura + `vary -S nvm` procedía (exit 0). Requiere escritura previa en archivo root (modelo de amenaza bajo), pero rompe la promesa "fail-closed" de H-003.
+- **Remediación:** Lectura y decodificación con `?` + contexto: llave ilegible = error fatal (fallo cerrado) con hint a `rekey`.
+- **Validación:**
+  - `keys::tests::verify_key_tofu_falla_cerrado_con_llave_ilegible`.
+  - Suite local 162+1 en verde + run CI verde.
+- **Estado:** ✅ CORREGIDO Y VALIDADO

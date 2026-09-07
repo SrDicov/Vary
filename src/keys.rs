@@ -281,23 +281,34 @@ pub fn setup_vup_binary_repo(
 
 fn verify_key_tofu(dest_path: &std::path::Path, fp: &str, name: &str) -> Result<()> {
     if dest_path.exists() {
-        if let Ok(existing_pem) = std::fs::read_to_string(dest_path) {
-            if let Ok(existing_der) = crate::vur_client::decode_pem_body(&existing_pem) {
-                let existing_digest = Sha256::digest(&existing_der);
-                let existing_fp = existing_digest
-                    .iter()
-                    .map(|b| format!("{b:02x}"))
-                    .collect::<Vec<_>>()
-                    .join(":");
-                if existing_fp.to_lowercase() != fp.to_lowercase() {
-                    bail!("ALERTA DE SEGURIDAD CRÍTICA (Posible rotación no confiable o suplantación):\n\
-                         La llave pública del repo '{name}' ha cambiado respecto a la instalada en el sistema.\n  \
-                         Instalada previamente: {existing_fp}\n  \
-                         Recibida remotamente:  {fp}\n\
-                         Operación BLOQUEADA (fallo cerrado).\n\
-                         Si la rotación es legítima y verificada, ejecuta: vary --repo rekey {name}");
-                }
-            }
+        // T-011: llave instalada ilegible o corrupta = estado no verificable:
+        // fallar cerrado en vez de re-confiar en silencio.
+        let existing_pem = std::fs::read_to_string(dest_path).with_context(|| {
+            format!(
+                "no se pudo leer la llave instalada de '{name}' en {}",
+                dest_path.display()
+            )
+        })?;
+        let existing_der =
+            crate::vur_client::decode_pem_body(&existing_pem).with_context(|| {
+                format!(
+                    "la llave instalada de '{name}' en {} no es un PEM válido",
+                    dest_path.display()
+                )
+            })?;
+        let existing_digest = Sha256::digest(&existing_der);
+        let existing_fp = existing_digest
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(":");
+        if existing_fp.to_lowercase() != fp.to_lowercase() {
+            bail!("ALERTA DE SEGURIDAD CRÍTICA (Posible rotación no confiable o suplantación):\n\
+                 La llave pública del repo '{name}' ha cambiado respecto a la instalada en el sistema.\n  \
+                 Instalada previamente: {existing_fp}\n  \
+                 Recibida remotamente:  {fp}\n\
+                 Operación BLOQUEADA (fallo cerrado).\n\
+                 Si la rotación es legítima y verificada, ejecuta: vary --repo rekey {name}");
         }
     }
     Ok(())
@@ -391,6 +402,16 @@ mod tests {
         assert!(err_msg.contains("ALERTA DE SEGURIDAD CRÍTICA"));
         assert!(err_msg.contains("BLOQUEADA (fallo cerrado)"));
         assert!(err_msg.contains("vary --repo rekey repo-test"));
+    }
+
+    #[test]
+    fn verify_key_tofu_falla_cerrado_con_llave_ilegible() {
+        // T-011: llave instalada corrupta no debe re-confiar en silencio.
+        let dir = tempfile::tempdir().unwrap();
+        let key_file = dir.path().join("k.pem");
+        std::fs::write(&key_file, "basura-no-pem").unwrap();
+        let err = verify_key_tofu(&key_file, "aa:bb", "repo-test").unwrap_err();
+        assert!(err.to_string().contains("no es un PEM válido"));
     }
 
     #[test]
