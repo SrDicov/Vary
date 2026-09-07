@@ -113,3 +113,25 @@ vary -S foo --config /tmp/x >/dev/null 2>&1; echo "config: $?"      # ESPERADO: 
 ## 8. Cierre de fase
 
 Anotar en `audit/FIX_LOG.md` (apéndice FASE 5): fecha, máquina (`xbps-query -R -p architecture`), resultados 1-7 (OK/FALLO + salida). Solo con 1-7 en verde se da por cerrada FASE 5.
+
+---
+
+## 9. Post-tag v0.3.0: binario release sobre el debug (SOLO tras `tag aprobado`)
+
+```sh
+# 9a. Esperar el workflow Release del tag (lo vigila el agente con gh run watch):
+gh run list --workflow Release --limit 1   # success + artefacto .xbps
+# 9b. Instalar sobre el debug actual (rollback: test/backup/2026-09-06/vary-0.2.5-bin;
+#     el debug actual está en target/debug/vary recién compilado):
+doas xbps-install --repository=/ruta/al/artefacto -S vary   # o doas install -m755 vary-release /usr/bin/vary
+# 9c. Smoke 5 min (anotar versiones y salidas en test/RESULTS.md):
+vary -V                              # ESPERADO: 0.3.0 (release, sin debug)
+time vary -Ss lavat                  # ESPERADO: 0 + fila repository
+vary -Si lavat                       # ESPERADO: 0, ficha VUR completa
+printf 'y\ny\n' | vary -R lavat      # remove real
+yes | vary -S lavat                  # reinstall real contra binpkgs local
+xbps-query -l | grep '^ii lavat'     # ESPERADO: presente
+python3 -c "import json;print(json.load(open('$HOME/.cache/vary/installed.json'))['packages']['lavat'])"
+# 9d. Si algo falla: rollback al debug, reporte como T-### contra el release
+#     (el tag NO se mueve; se evalúa 0.3.1), y aviso al humano.
+```
