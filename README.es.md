@@ -38,7 +38,7 @@ vary --repo add https://git.example.com/usuario/vur.git
 vary --repo add https://github.com/SrDicov/z-packages z-packages --branch master
 ```
 
-Otros comandos disponibles en el MVP: `-Si` (información detallada), `-Sw` (descargar sin instalar), `-R` (eliminar), `--repo list|remove|rekey`, `--force-build` (compilar desde fuente aunque exista binario) y `--prefer-binary` (priorizar binarios firmados frente a compilar). `--yes` es alias de `--noconfirm` (ojo: `-y` significa refresh, no yes); `--asdeps`/`--asexplicit` se rechazan (vary instala siempre como explícito).
+Otros comandos disponibles en el MVP: `-Si` (información detallada), `-Sw` (descargar sin instalar), `-R` (eliminar), `--repo list|remove|rekey`, `--force-build` (compilar desde fuente aunque exista binario) y `--prefer-binary` (priorizar binarios firmados frente a compilar). Alcance (T-010, se corrige en 0.3.1): ambos flags solo deciden *dentro* del candidato VUR elegido — nunca cambian de repositorio ni evitan el bucket official/xbps. `--yes` es alias de `--noconfirm` (ojo: `-y` significa refresh, no yes); `--asdeps`/`--asexplicit` se rechazan (vary instala siempre como explícito).
 
 ## Configuración
 
@@ -132,6 +132,8 @@ Directorios relevantes:
 Durante el MVP, vary prioriza simplicidad sobre exhaustividad: la resolución de dependencias de paquetes VUR se basa en el índice declarativo `.VURINFO` que publica cada repositorio, no en una evaluación completa de las plantillas en tu máquina. Eso implica restricciones importantes descritas a continuación, además de que faltan funcionalidades planeadas (ver hoja de ruta).
 
 > NOTA SOBRE VARIABLES DINÁMICAS: El .VURINFO generado por scripts/vur-generator.sh refleja las opciones de compilación POR DEFECTO (sin XBPS_PKG_OPTIONS activos). Si el usuario final compila con opciones personalizadas (XBPS_PKG_OPTIONS_<pkg>), la resolución de dependencias inicial puede ser incompleta. xbps-src manejará las dependencias adicionales durante la compilación real. Esto es aceptable para el MVP: la resolución del DAG es una optimización para minimizar builds innecesarios, no una garantía de completitud.
+
+> PROBLEMAS CONOCIDOS (hito 0.3.1, ver `test/REPORT.md`): `-v`/`-vv` no surten efecto en consola (rodeo: `RUST_LOG=debug`) — T-002. `--force-build`/`--prefer-binary` nunca cambian de repositorio ni evitan binarios oficiales (T-010). El primer install desde un repo binario VUP exige corrida interactiva (xbps pide importar su llave; fail-closed sin ella) — T-012.
 
 ## Hoja de ruta
 
