@@ -112,3 +112,16 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - Perfiles/cachés apps: `~/.cache/{spotify,waterfox}`, `~/.waterfox`, `/opt/waterfox` (310M), `/var/cache/xbps`.
 - Sistema: `vkpurge rm 6.12.105_1` (108 en ejecución; 164M módulos + /boot, grub regenerado).
 - NO tocado (motivo): headers 6.18/7.2 en `/usr/src` (~380M, dkms instalado los puede necesitar), `~/Descargas/iMe*` (579M, archivos tuyos — dime si los borro), rustup 1.88 + cargo-registry (toolchain MSRV), repos VUR y clones (infra de vary), `test/backup/` + logs (evidencia).
+
+## T-012 en vivo — pre-import plist VUP (evidencia en `test/backup/pre-t012/`)
+
+- **Descubrimiento (bloqueante, rediseñó el fix):** el fingerprint canónico de xbps es **MD5-sobre-OpenSSH** (`lib/pubkey2fp.c`: MD5 de `uint32(7)+"ssh-rsa"+mpint(e)+mpint(n)`), NO SHA256-del-DER que vary mostraba. Verificado: algoritmo replicado coincide en **12/12 llaves** del keyring + vector en vivo. xbps busca `/var/db/xbps/keys/<fp-xbps>.plist` por NOMBRE: un plist bien escrito con nombre SHA256 es invisible (probado: prompt igual). `vary` ahora calcula/muestra/pinea en estilo xbps; pins SHA256 legacy se siguen aceptando.
+- **Test0 baseline** (release 0.3.0, sin plist, `</dev/null`): xbps pide importar (`Fingerprint: 78:b8...`) y aborta `ERROR: Failed to import pubkey`, exit 1 → fail-closed confirmado (`test0-xbps.log`).
+- **Repo simulado autocontenido** `t012local` (llave RSA + repo xbps firmado + `index.json` + git `keys/*.plist`, todo local; `file://` no sirve a xbps → se sirvió por `http://127.0.0.1:8765/`; `repo add` rechaza paths locales → alta manual en repos.conf con pin):
+  - **B4 happy-path:** `vary -S t012dummy --noconfirm </dev/null` → plan `t012local/...`, `Fingerprint (xbps): 47:9b...`, pre-import al nombre correcto, **cero prompts xbps**, exit 0, instalado y firma verificada (`testB4d-vary.log`). Un solo consentimiento ✅.
+  - **B5a pin:** pin viejo + llave nueva → `fingerprint ... NO coincide (esperado/recibido)`, exit 1, sin escrituras ✅.
+  - **B5b rotación H-003:** pin nuevo + pem instalado viejo → `ALERTA DE SEGURIDAD CRÍTICA ... Instalada previamente / Recibida remotamente ... BLOQUEADA`, exit 1, keyring intacto (mtime preservado, sin plist nuevo) ✅.
+  - **B6 rekey:** `vary --repo rekey` retiró conf+pem+plist (`plist pre-importado retirado` en log); reinstalación con llave nueva OK sin prompts ✅.
+- **Limpieza/restauración verificada:** `repo remove -p`, `xbps-remove` dummies, server off, `repos.conf`/`installed.json`/`/etc/xbps.d` idénticos a backups (`diff`/comparación exacta), keyring sin restos + plist original restaurado, privadas destruidas (`shred`). Solo quedan logs + llaves públicas + backups en `pre-t012/`.
+- **Upstream real:** VUP rotó su llave mid-test (git sirve llave nueva, repodata aún firmada con la vieja): xbps falla cerrado — correcto y fuera del alcance de vary. Ojo: los installs VUP reales darán ALERTA de rotación hasta que upstream re-firme (H-003 haciendo su trabajo).
+- **Observado fuera de alcance:** installs VUP-binarios no dejan rastro en `installed.json` (`vur_map_lookup_repo` no cubre sintéticos VUP) — candidato a 0.3.1. Tests negativos de regalo: plist con `<data>` vacío y repo sin firmar fallan cerrado con mensajes claros.
