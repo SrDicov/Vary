@@ -45,6 +45,16 @@ pub struct Subpackage {
 
 const SUPPORTED_FORMAT_VERSION: u32 = 1;
 
+/// ¿La lista `archs` cubre `arch`? Vale coincidencia exacta o los comodines
+/// `all` (default del parser de templates sin `archs`) y `noarch`.
+/// Fuente única de verdad (T-008): resolver e install la comparten; antes
+/// install usaba `contains` crudo y rechazaba todo template sin archs explícitos.
+pub fn arch_supports(archs: &[String], arch: &str) -> bool {
+    archs
+        .iter()
+        .any(|a| a == arch || a == "all" || a == "noarch")
+}
+
 impl VurInfo {
     /// Valida los metadatos según las reglas del formato v1.
     ///
@@ -226,6 +236,20 @@ mod tests {
         format!(
             r#"{{"format_version":1,"pkgname":"{pkgname}","version":"{version}","revision":{revision},"archs":{archs_json},"checksum":["sha256:abc123"]}}"#
         )
+    }
+
+    #[test]
+    fn arch_supports_exacta_all_y_noarch() {
+        // T-008: el default del parser ("all") debe cubrir cualquier arch.
+        let all = vec!["all".to_string()];
+        let noarch = vec!["noarch".to_string()];
+        let exact = vec!["x86_64".to_string()];
+        let other = vec!["aarch64".to_string()];
+        assert!(arch_supports(&all, "x86_64"));
+        assert!(arch_supports(&noarch, "x86_64"));
+        assert!(arch_supports(&exact, "x86_64"));
+        assert!(!arch_supports(&other, "x86_64"));
+        assert!(!arch_supports(&[], "x86_64"));
     }
 
     #[test]

@@ -157,7 +157,7 @@ impl<'a> Ctx<'a> {
 
     /// Punto 5: ¿el paquete soporta la arquitectura actual?
     fn arch_supported(&self, info: &VurInfo) -> bool {
-        info.archs.contains(&self.arch) || info.archs.iter().any(|a| a == "all" || a == "noarch")
+        crate::metadata::arch_supports(&info.archs, &self.arch)
     }
 
     /// Puntos 1b y 5: candidato VUR por nombre y, si falla o es descartado

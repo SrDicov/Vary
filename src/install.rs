@@ -27,9 +27,9 @@ impl PackageSource for VurSource {
     }
 
     fn vur_lookup(&self, name: &str) -> Option<(String, VurInfo)> {
-        // Filter by arch
+        // Filter by arch (T-008: vale exacta, "all" o "noarch").
         if let Some((repo, info)) = self.vur_map.get(name) {
-            if !info.archs.contains(&self.arch) {
+            if !crate::metadata::arch_supports(&info.archs, &self.arch) {
                 return None;
             }
             return Some((repo.clone(), info.clone()));
@@ -51,7 +51,7 @@ impl PackageSource for VurSource {
         let mut best: Option<(i64, &(String, VurInfo))> = None;
         for cand in candidates {
             let prio = self.priority.get(&cand.0).copied().unwrap_or(100);
-            if cand.1.archs.contains(&self.arch) {
+            if crate::metadata::arch_supports(&cand.1.archs, &self.arch) {
                 match best {
                     None => best = Some((prio, cand)),
                     Some((bp, _)) if prio < bp => best = Some((prio, cand)),
@@ -63,7 +63,7 @@ impl PackageSource for VurSource {
     }
 
     fn vul_binary_available(&self, repo: &str, info: &VurInfo, arch: &str) -> bool {
-        if !info.archs.contains(&arch.to_string()) {
+        if !crate::metadata::arch_supports(&info.archs, arch) {
             return false;
         }
         *self

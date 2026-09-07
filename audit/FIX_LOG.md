@@ -790,3 +790,15 @@ Este documento registra cronológicamente cada corrección atómica realizada so
   - `keys::tests::write_root_file_crea_padres_inexistentes` (destino anidado inexistente).
   - Suite local 159+1 en verde + run CI verde + verificación en vivo (install `nvm` lo atraviesa).
 - **Estado:** ✅ CORREGIDO Y VALIDADO
+---
+
+### [T-008] Resolver rechaza templates sin `archs` explícitos (default `all`)
+- **Severidad:** Medium
+- **Módulo:** `src/install.rs:29-73`, `src/metadata.rs`, `src/resolver.rs:159`
+- **Commit:** `fix(T-008)` (`git log --oneline --grep="T-008"`)
+- **Descripción:** El parser asigna `archs=["all"]` a templates sin campo `archs` (p. ej. `hyfetch`, `python3-inputs` y todo template minimalista). `resolver.rs` expandía `all`/`noarch`, pero `install.rs` (`vur_lookup`, `vur_lookup_provides`, `vul_binary_available`) usaba `contains` crudo: `vary -S hyfetch` abortaba con "no está disponible para tu arquitectura 'x86_64'" aunque `-Si` mostraba `Archs: all`. Toda una clase de paquetes fuente era desinstalable.
+- **Remediación:** Fuente única `metadata::arch_supports()` (exacta, `all`, `noarch`) usada en los 3 sitios de `install.rs` + `resolver::arch_supported`.
+- **Validación:**
+  - `metadata::tests::arch_supports_exacta_all_y_noarch`.
+  - Suite local 160+1 en verde + run CI verde + verificación en vivo (`-S hyfetch` ya no rechaza por arch).
+- **Estado:** ✅ CORREGIDO Y VALIDADO
