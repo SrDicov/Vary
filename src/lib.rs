@@ -1,6 +1,7 @@
 mod args;
 mod bootstrap;
 mod cache;
+mod challenge;
 mod command_line;
 mod config;
 mod db;
@@ -216,6 +217,10 @@ fn handle_cmd(config: &mut Config) -> Result<i32> {
 }
 
 fn handle_sync(config: &mut Config) -> Result<i32> {
+    // P1-2: challenge no se combina con -S (tiene su propia vía).
+    if config.args.has_arg("challenge", "challenge") {
+        bail!("--challenge no se combina con -S: usa `vary --challenge <pkg> --experimental`");
+    }
     // P0-4: -p imprime el plan congelado sin mutar (ver install::print_plan,
     // que valida su propia forma). Domina sobre el resto de consultas sync.
     if config.args.has_arg("p", "print") {
@@ -259,6 +264,14 @@ fn handle_sync(config: &mut Config) -> Result<i32> {
 }
 
 fn handle_default(config: &mut Config) -> Result<i32> {
+    // P1-2: `vary --challenge <pkg> --experimental` (un paquete por vez).
+    if config.args.has_arg("challenge", "challenge") {
+        if config.targets.len() != 1 {
+            bail!("--challenge requiere exactamente un paquete: `vary --challenge <pkg> --experimental`");
+        }
+        let pkg = config.targets[0].clone();
+        return crate::challenge::challenge(config, &pkg);
+    }
     // P1-1: `vary --lock` pelado regenera desde el estado actual.
     if config.targets.is_empty() && config.args.has_arg("lock", "lock") {
         return crate::lockfile::regenerate(config);
@@ -298,6 +311,7 @@ mod tests {
             (vec!["--lock"], false),
             (vec!["-S", "foo", "--lock"], true),
             (vec!["-Syu", "--lock"], true),
+            (vec!["--challenge", "foo", "--experimental"], true),
             (vec!["-S", "foo"], true),
             (vec!["-Syu"], true),
             (vec!["-R", "foo"], true),

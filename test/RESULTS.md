@@ -171,3 +171,10 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - Verificación: `-Sp` muestra sección `lock:` (`ok` en limpio); lock tampered (brave `0.0.0_1`) → `lock: 'brave-origin' resuelve brave-origin-1.93.129_1 pero pinea ...` con exit 0 y sin mutación; regenerado idéntico después.
 - Oficiales se omiten en la comparación de versiones (placeholder T-009 daría falsos avisos; xbps es su fuente de verdad); commits de repos sí se verifican.
 - CLI: `vary --lock` pelado regenera; `-S/-Sy --lock` regeneran al final; `-R --lock` se rechaza; con lock, install/upgrade/`-Sp` avisan divergencias.
+
+## P1-2 en vivo — `vary --challenge lavat --experimental`
+
+- Guards: sin `--experimental` → error; `-S --challenge` → error; 0/2 targets → error.
+- Instalado lavat (fuente) → challenge: rebuild + `sin divergencias (2 ficheros comparados)` (el rebuild es bit-reproducible aquí) ✅.
+- Divergencia inyectada (template del clon + fichero nuevo en `do_install`, restaurado con `git checkout` después): `challenge lavat: 1 divergencias: [falta-en-disco] /usr/share/lavat/INYECTADO` ✅. Los kinds `Changed`/`Added` restantes van en tabla unitaria CI (el `.xbps` se lee por streaming `ruzstd`+`tar` puro Rust: `tar` del sistema no lee zstd aquí; miembros de metadata `props/files.plist` se excluyen).
+- Limpieza: `-R` lavat + poda de binpkgs/sources; DB de vuelta a brave+librewolf; clon repository limpio (`status` vacío).

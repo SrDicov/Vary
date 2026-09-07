@@ -429,6 +429,20 @@ impl Config {
                     value: None,
                 });
             }
+
+            Arg::Long("experimental") => {
+                // P1-2: habilita funciones en validación (challenge).
+                self.experimental = true;
+            }
+
+            Arg::Long("challenge") => {
+                // P1-2: `vary --challenge <pkg> --experimental`.
+                // Flag propio de vary (no pacman): registro manual.
+                self.args.args.push(crate::args::Arg {
+                    key: "challenge".to_string(),
+                    value: None,
+                });
+            }
             Arg::Long("print-format") => {
                 // Solo se soporta el formato estable de texto; cualquier otro
                 // valor miente sobre la salida y se rechaza (precedente H-007).
@@ -636,6 +650,16 @@ mod tests {
         // Desconocidos siguen rechazándose (H-035 intacto).
         let mut config = Config::default();
         assert!(parse_args(&mut config, &["--lockero"]).is_err());
+    }
+
+    #[test]
+    fn challenge_y_experimental_se_registran() {
+        // P1-2: doble opt-in para funciones en validación.
+        let mut config = Config::default();
+        parse_args(&mut config, &["--challenge", "foo", "--experimental"])
+            .expect("challenge debe parsear");
+        assert!(config.args.has_arg("challenge", "challenge"));
+        assert!(config.experimental);
     }
 
     #[test]

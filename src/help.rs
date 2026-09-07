@@ -30,6 +30,9 @@ pub fn help() {
     println!(
         "    --lock                  (Re)generate ~/.config/vary/vary.lock from current state"
     );
+    println!(
+        "    --challenge <pkg>       Rebuild and compare against installed (needs --experimental)"
+    );
     println!();
     println!("Vary options:");
     println!("    --force-build           Force build from source even if binary exists");
