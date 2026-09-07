@@ -6,7 +6,7 @@
 //! 3. Mostrar fingerprint SHA256 al usuario para confirmación interactiva,
 //!    comparándolo con `key_fingerprint` de repos.conf si está declarado.
 //! 4. Copiar la llave a /etc/xbps.d/keys/vur-<nombre>.pem.
-//! 4b. VUP (T-012): pre-importar el plist a /var/db/xbps/keys/<fp>.plist
+//!    4b. VUP (T-012): pre-importar el plist a /var/db/xbps/keys/<fp>.plist
 //!    tras verificación+TOFU: un solo consentimiento (el de vary).
 //! 5. Crear /etc/xbps.d/20-vur-<nombre>.conf apuntando al binary_repo_url.
 //! 6. `xbps-install -S <pkg>` valida las firmas nativamente (XBPS rechaza
@@ -746,7 +746,7 @@ mod tests {
         let fp = K1_FP_XBPS;
         let plist = sample_plist(K1_PUB);
 
-        preimport_xbps_key_plist(&fp, &plist, keys_dir_str, "env", &[], "install").unwrap();
+        preimport_xbps_key_plist(fp, &plist, keys_dir_str, "env", &[], "install").unwrap();
 
         let written = keys_dir.join(format!("{fp}.plist"));
         assert_eq!(std::fs::read_to_string(&written).unwrap(), plist);
@@ -760,7 +760,7 @@ mod tests {
         let fp_b = K2_FP_XBPS;
         let plist_a = sample_plist(K1_PUB);
 
-        let err = preimport_xbps_key_plist(&fp_b, &plist_a, keys_dir_str, "env", &[], "install")
+        let err = preimport_xbps_key_plist(fp_b, &plist_a, keys_dir_str, "env", &[], "install")
             .unwrap_err();
         assert!(err.to_string().contains("no corresponde"), "{err:#}");
         assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
