@@ -55,6 +55,8 @@ pub enum RepoCmd {
         purge: bool,
     },
     Rekey(String),
+    /// P0-2: reafirmar la llave actual del clon tras una rotación legítima.
+    Retrust(String),
 }
 
 pub fn take_repo_cmd() -> Option<RepoCmd> {
@@ -128,7 +130,7 @@ pub fn parse_args<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<()> 
     let raw: Vec<String> = args.iter().map(|s| s.as_ref().to_string()).collect();
     if !raw.is_empty() && raw[0] == "--repo" {
         if raw.len() < 2 {
-            bail!("--repo requires a subcommand: add|list|remove|rekey");
+            bail!("--repo requires a subcommand: add|list|remove|rekey|re-trust");
         }
         match raw[1].as_str() {
             "add" => {
@@ -211,6 +213,13 @@ pub fn parse_args<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<()> 
                     bail!("--repo rekey requires <name>");
                 }
                 set_repo_cmd(RepoCmd::Rekey(raw[2].clone()));
+                return Ok(());
+            }
+            "re-trust" => {
+                if raw.len() < 3 {
+                    bail!("--repo re-trust requires <name>");
+                }
+                set_repo_cmd(RepoCmd::Retrust(raw[2].clone()));
                 return Ok(());
             }
             other => bail!(format!("unknown --repo subcommand: {other}")),
@@ -598,6 +607,16 @@ mod tests {
             }
             other => panic!("inesperado: {other:?}"),
         }
+    }
+
+    #[test]
+    fn repo_retrust_parses_name_and_requires_it() {
+        match take_add(&["--repo", "re-trust", "vup"]) {
+            RepoCmd::Retrust(name) => assert_eq!(name, "vup"),
+            other => panic!("inesperado: {other:?}"),
+        }
+        let mut config = Config::default();
+        assert!(parse_args(&mut config, &["--repo", "re-trust"]).is_err());
     }
 
     #[test]

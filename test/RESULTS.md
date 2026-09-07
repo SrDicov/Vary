@@ -123,7 +123,7 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
   - **B5b rotación H-003:** pin nuevo + pem instalado viejo → `ALERTA DE SEGURIDAD CRÍTICA ... Instalada previamente / Recibida remotamente ... BLOQUEADA`, exit 1, keyring intacto (mtime preservado, sin plist nuevo) ✅.
   - **B6 rekey:** `vary --repo rekey` retiró conf+pem+plist (`plist pre-importado retirado` en log); reinstalación con llave nueva OK sin prompts ✅.
 - **Limpieza/restauración verificada:** `repo remove -p`, `xbps-remove` dummies, server off, `repos.conf`/`installed.json`/`/etc/xbps.d` idénticos a backups (`diff`/comparación exacta), keyring sin restos + plist original restaurado, privadas destruidas (`shred`). Solo quedan logs + llaves públicas + backups en `pre-t012/`.
-- **Upstream real:** VUP rotó su llave mid-test (git sirve llave nueva, repodata aún firmada con la vieja): xbps falla cerrado — correcto y fuera del alcance de vary. Ojo: los installs VUP reales darán ALERTA de rotación hasta que upstream re-firme (H-003 haciendo su trabajo).
+- **Corrección 2026-09-07 (importante): NO hubo rotación upstream.** Lo anotado como "rotación mid-test" era la misma llave K1 en dos fingerprints: `9f:c1` (SHA256-del-DER, formato viejo de vary) vs `78:b8` (MD5-sobre-OpenSSH, formato xbps — verificado MD5-SSH(K1)==`78:b8...`). El fallo de Test1 fue solo el nombre del plist (SHA256 en vez de xbps). Sistema consistente (K1 en git, keyring y repodata); ninguna acción sobre upstream.
 - **Observado fuera de alcance:** installs VUP-binarios no dejan rastro en `installed.json` (`vur_map_lookup_repo` no cubre sintéticos VUP) — candidato a 0.3.1. Tests negativos de regalo: plist con `<data>` vacío y repo sin firmar fallan cerrado con mensajes claros.
 
 ## P0-1 en vivo — `preflight.rs` (chequeos previos duros)
@@ -140,3 +140,12 @@ Ver `test/REPORT.md`. Veredicto: **APTA PARA TAG con 3 conocidos (T-002/T-010/T-
 - Errores honestos: sin targets (exit 1), `--print-format=json` (exit 2), `-p` pelado, `-Ss -p`, paquete inexistente (`no encontrado`, exit 1).
 - **Cero mutación:** `cache.json` mismo mtime antes/después, sin ficheros nuevos, sin lock, sin elevación (congelado: sin bootstrap/ensure/fetch/save/review/DB).
 - **Regresión ruta normal:** `vary -S lavat` (fuente repository) compiló+instaló OK tras la extracción (exit 0); DB exacta (`repository/source/3.0.0_2`); `vary -R lavat` limpió binario+DB (quedan brave+librewolf).
+
+## P0-2 en vivo — TOFU continuo + `re-trust` (evidencia en `test/backup/pre-p02/`)
+
+- **Corrección previa:** lo anotado en T-012 como "rotación upstream" era la misma llave en dos fingerprints (SHA256 vs xbps); verificado MD5-SSH(K1)==`78:b8...`. No hubo rotación real (FIX_LOG y sección T-012 enmendados).
+- **Repo simulado** `p02local` (llave RSA + repo xbps firmado + `index.json` + git, registro manual con pin y sin fecha = estado pre-feature): tras rotar a keyB y re-firmar todo (repodata+pkgs; `xbps-rindex` no sobrescribe `.sig2` sin regenerar),
+  - `vary -Sy` aborta forense en `p02local` (exit 1): `ALERTA (P0-2, cambio de llave)`, instalada `17:ab...` (confiada "en fecha desconocida"), recibida `dd:b4...`, hint `re-trust`; el resto de repos no se refresca (fail-closed).
+  - `vary --repo re-trust` (interactivo; `--noconfirm` se rechaza): muestra vieja→nueva+fecha, confirma, retira lo viejo (incluye plist), re-registra, fija pin (`dd:b4...`) + fecha (epoch). `install p02dummy` posterior OK sin prompts.
+- Fixture famoso: instalé por error el plist XML como `.pem` (el chequeo calló con warn en vez de abortar — por diseño: ausencia de evidencia ≠ evidencia; el gate duro quedó en setup). `pkill -f` se suicida con su propio patrón (usar `pgrep -f "http[.]server"`).
+- **Limpieza verificada:** remove `-p`, xbps-remove, server off, `repos.conf`/`installed.json` idénticos, sin restos en `/etc`, keyring, clones ni caché; privadas con `shred`.

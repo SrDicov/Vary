@@ -2,6 +2,7 @@ use crate::command_line::RepoCmd;
 use crate::config::Config;
 use crate::keys::teardown_binary_repo;
 use crate::reposconf::{RepoEntry, ReposConf};
+use crate::util::confirm;
 use crate::vur_client::VurRepo;
 use anyhow::{bail, Context, Result};
 use std::process::Command;
@@ -29,6 +30,7 @@ pub fn handle_repo_cmd(config: &Config, cmd: RepoCmd) -> Result<i32> {
         RepoCmd::List => repo_list(config),
         RepoCmd::Remove { name, purge } => repo_remove(config, &name, purge),
         RepoCmd::Rekey(name) => repo_rekey(config, &name),
+        RepoCmd::Retrust(name) => repo_retrust(config, &name),
     }
 }
 
@@ -86,6 +88,8 @@ fn repo_add(
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string()),
         enabled: Some(true),
+        // P0-2: sin llave aún (se fija al primer registro binario).
+        trusted_at: None,
     };
 
     let repo = VurRepo {
@@ -229,12 +233,197 @@ fn repo_rekey(config: &Config, name: &str) -> Result<i32> {
         .ok_or_else(|| anyhow::anyhow!("VUR '{name}' not found"))?;
 
     teardown_binary_repo(name, &config.sudo_bin, &config.sudo_flags)?;
+    // P0-2: rekey = des-confiar (borra la fecha; el próximo registro la fija).
+    if let Err(e) = crate::keys::stamp_trust(&config.repos_conf_path(), name, None, false) {
+        tracing::warn!("no se pudo borrar la fecha de confianza de '{name}': {e:#}");
+    }
     println!("Binary repo artifacts for '{name}' removed. They will be re-registered on next binary install.");
 
     if entry.has_binary() {
         println!("Tip: run `vary -S <pkg>` from this VUR to re-trigger key verification.");
     }
     Ok(0)
+}
+
+/// P0-2: `vary repo re-trust <name>` — reafirma la llave ACTUAL del clon.
+///
+/// Ceremonia explícita para rotaciones legítimas (lo que el abort forense
+/// pide): muestra vieja→nueva + fecha original, exige confirmación
+/// INTERACTIVA (con `--noconfirm` se rechaza: re-confiar a ciegas mentiría
+/// sobre la verificación), retira lo viejo, registra lo nuevo y fija pin +
+/// fecha. Si cambió la URL se niega (`re-trust` no mueve el origen del
+/// clon: remove `-p` + add).
+fn repo_retrust(config: &Config, name: &str) -> Result<i32> {
+    crate::keys::validate_repo_name(name)?;
+    let mut conf = ReposConf::load(config.repos_conf_path())?;
+    let entry = conf
+        .vur
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("VUR '{name}' not found"))?
+        .clone();
+    if !entry.has_binary() && !entry.has_vup_index() {
+        anyhow::bail!("'{name}' no es un repo binario (sin binary_repo_url ni index_url): nada que re-confiar");
+    }
+    let repo = VurRepo {
+        name: name.to_string(),
+        path: config.vurs_dir().join(name),
+        entry: entry.clone(),
+        git_bin: config.git_bin.clone(),
+    };
+    // La URL no la mueve re-trust: si el origen del clon difiere, re-clonar.
+    if let Some(origin) = crate::keys::clone_origin_url(&config.git_bin, &repo.path) {
+        if crate::keys::normalize_repo_url(&origin) != crate::keys::normalize_repo_url(&entry.url) {
+            anyhow::bail!(
+                "la URL de '{name}' cambió (origen del clon: {origin}; repos.conf: {}): \
+                 `re-trust` no mueve el origen; re-clona con `vary --repo remove {name} -p` + `vary --repo add <url>`",
+                entry.url
+            );
+        }
+    }
+    // Llave actual del clon (mismos lectores que install, con fallback fs).
+    let (key_pem, key_plist): (String, Option<String>) = if entry.has_vup_index() {
+        let plist = crate::vup_index::read_repo_plist_text_git(&repo.git_bin, &repo.path)
+            .or_else(|_| crate::vup_index::read_repo_plist_text(&repo.path))?;
+        let pem = crate::vup_index::decode_plist_public_key_pem(&plist)?;
+        (pem, Some(plist))
+    } else {
+        let path = repo.discover_public_key().ok_or_else(|| {
+            anyhow::anyhow!("'{name}' no publica llave en keys/ (¿clon sparse sin materializar?)")
+        })?;
+        let pem = std::fs::read_to_string(&path)
+            .with_context(|| format!("leyendo {}", path.display()))?;
+        (pem, None)
+    };
+    let new_fp = crate::keys::xbps_fingerprint_pem(&key_pem)?;
+    let old_fp = crate::keys::key_dest_path(name)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|pem| crate::keys::xbps_fingerprint_pem(&pem).ok());
+    match &old_fp {
+        Some(old) if old.to_lowercase() == new_fp.to_lowercase() => {
+            println!("La llave de '{name}' no cambió ({new_fp}): se reafirma la confianza.");
+        }
+        _ => {
+            println!("Rotación de llave en '{name}':");
+            println!(
+                "  instalada: {}",
+                old_fp.as_deref().unwrap_or("(ninguna: registro fresco)")
+            );
+            println!("  actual:    {new_fp}");
+            println!(
+                "  confiada:  {}",
+                crate::keys::fmt_trusted_at(entry.trusted_at)
+            );
+        }
+    }
+    // Confirmación interactiva OBLIGATORIA: la verificación es visual y
+    // fuera de banda; aceptarla con --noconfirm mentiría (precedente H-032).
+    if config.no_confirm {
+        anyhow::bail!(
+            "re-trust exige confirmación interactiva de la llave (verifica el fingerprint fuera de banda); \
+             re-ejecuta sin --noconfirm/--yes"
+        );
+    }
+    if !confirm(
+        "¿Confías en esta llave y deseas registrarla (pin + fecha actualizados)?",
+        false,
+    )? {
+        anyhow::bail!("re-trust cancelado por el usuario");
+    } // Retirar lo viejo (tolerante si no hay nada) y registrar lo nuevo con
+      // el pin actualizado. El pin se persiste SOLO si el setup tiene éxito
+      // (si falla, repos.conf queda intacta).
+    crate::keys::teardown_binary_repo(name, &config.sudo_bin, &config.sudo_flags)?;
+    let mut updated = entry.clone();
+    updated.key_fingerprint = Some(new_fp.clone());
+    if entry.has_vup_index() {
+        let urls = retrust_vup_urls(config, &repo, &entry)?;
+        let plist = key_plist.ok_or_else(|| anyhow::anyhow!("interno: falta plist VUP"))?;
+        // `true` = no re-preguntar (la confirmación interactiva ya se hizo arriba).
+        crate::keys::setup_vup_binary_repo(
+            name,
+            &urls,
+            &key_pem,
+            &plist,
+            &updated,
+            &config.sudo_bin,
+            &config.sudo_flags,
+            &config.tools_install_bin,
+            true,
+        )?;
+    } else {
+        crate::keys::setup_binary_repo(
+            &repo,
+            &updated,
+            &config.sudo_bin,
+            &config.sudo_flags,
+            &config.tools_install_bin,
+            true,
+        )?;
+    }
+    updated.trusted_at = Some(crate::keys::now_epoch());
+    conf.vur.insert(name.to_string(), updated);
+    conf.save(config.repos_conf_path())?;
+    println!("Confianza renovada para '{name}' (pin + fecha actualizados).");
+    Ok(0)
+}
+
+/// P0-2: URLs binarias VUP para re-trust: reutiliza las ya registradas en
+/// el conf (si existe); si no (post-rekey), las deriva del índice remoto.
+fn retrust_vup_urls(config: &Config, repo: &VurRepo, entry: &RepoEntry) -> Result<Vec<String>> {
+    if let Ok(text) = std::fs::read_to_string(format!("/etc/xbps.d/20-vur-{}.conf", repo.name)) {
+        let urls: Vec<String> = text
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("repository="))
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(str::to_string)
+            .collect();
+        if !urls.is_empty() {
+            return Ok(urls);
+        }
+    }
+    let index_url = entry
+        .index_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "el repo VUP '{}' no declara index_url y no hay conf previo",
+                repo.name
+            )
+        })?;
+    let cache_path = config.cache_dir.join(format!(
+        "vup-index-{}.json",
+        crate::vup_index::sanitize_repo_name(&repo.name)
+    ));
+    let arch = config.arch();
+    let arch = if config.arch_override.is_none() {
+        crate::xbps::query_architecture().unwrap_or(arch)
+    } else {
+        arch
+    };
+    let idx = crate::vup_index::fetch_index(
+        &config.curl_bin,
+        index_url,
+        &cache_path,
+        config.ttl_cache_seconds,
+    )?;
+    let mut urls = Vec::new();
+    for (pkgname, vpkg) in &idx.packages {
+        if let Some((_, repo_url)) = crate::vup_index::to_vur_info(pkgname, vpkg, &arch) {
+            if !repo_url.trim().is_empty() && !urls.contains(&repo_url) {
+                urls.push(repo_url);
+            }
+        }
+    }
+    if urls.is_empty() {
+        anyhow::bail!(
+            "el índice VUP de '{}' no aporta URLs para {arch}",
+            repo.name
+        );
+    }
+    Ok(urls)
 }
 
 #[cfg(test)]

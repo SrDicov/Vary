@@ -42,6 +42,7 @@ pub fn help() {
     println!("    vary --repo list                  List configured VURs");
     println!("    vary --repo remove <name> [-p]    Remove a VUR (-p also purges the clone)");
     println!("    vary --repo rekey <name>          Re-register binary repo key");
+    println!("    vary --repo re-trust <name>       Re-affirm current repo key after legitimate rotation");
     println!();
     println!("If no arguments are provided 'vary -Syu' will be performed");
     println!();

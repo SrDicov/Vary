@@ -871,7 +871,14 @@ Este documento registra cronológicamente cada corrección atómica realizada so
 - **Validación:**
   - Unit (CI): `xbps_fingerprint_pem` verificado contra 12 llaves reales (incluye vector en vivo 47:9b); `xbps_key_plist_path` deriva y rechaza traversal; pre-import escribe verbatim en dir simulado y falla cerrado si el plist no liga o es malformado; pins aceptan formato xbps o legacy.
   - En vivo (esta máquina, evidencia en `test/backup/pre-t012/`): baseline 0.3.0 sin plist falla cerrado sin TTY (exit 1). Con el fix, contra repo VUP local autocontenido: primer install con `</dev/null --noconfirm` funciona con UN SOLO consentimiento (exit 0, sin prompt de xbps); pin erróneo aborta "NO coincide"; rotación simulada aborta con ALERTA H-003 sin escribir plist; `rekey` retira conf+pem+plist y el re-registro con la llave nueva funciona. Ver `test/RESULTS.md`.
-  - Nota: upstream VUP rotó su llave mid-test (git con llave nueva vs repodata aún firmada con la vieja): xbps falla cerrado, conducta correcta fuera del alcance de vary.
+  - Nota (corrección 2026-09-07: NO hubo rotación upstream): lo que pareció
+    "rotación mid-test" (git con llave `9f:c1` vs repodata firmada `78:b8`)
+    era la misma llave K1 vista en dos fingerprints distintos —`9f:c1` es su
+    SHA256-del-DER (formato viejo de vary) y `78:b8` su MD5-sobre-OpenSSH
+    (formato xbps, verificado: MD5-SSH(K1) == `78:b8...`). El fallo de Test1
+    fue solo el nombre del plist pre-importado (SHA256 en vez de xbps), que
+    xbps no encontró. Ninguna acción sobre upstream; el sistema quedó
+    consistente (K1 en git, keyring y repodata).
   - Observado fuera de alcance: installs VUP-binarios no dejan rastro en installed.json (`vur_map_lookup_repo` no cubre sintéticos VUP) — candidato a 0.3.1.
   - Run CI verde (fmt + clippy `--all-targets -- -D warnings` + test).
 - **Estado:** ✅ CORREGIDO Y VALIDADO

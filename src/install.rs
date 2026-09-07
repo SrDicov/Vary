@@ -298,6 +298,19 @@ fn assemble_source(
     (source, opts)
 }
 
+/// P0-2: fecha el primer registro binario (best-effort con aviso; la
+/// higiene de confianza nunca debe abortar un install válido).
+fn stamp_first_trust(config: &Config, repo: &str) {
+    if let Err(e) = crate::keys::stamp_trust(
+        &config.repos_conf_path(),
+        repo,
+        Some(crate::keys::now_epoch()),
+        true,
+    ) {
+        tracing::warn!("no se pudo fechar la confianza de '{repo}': {e:#}");
+    }
+}
+
 /// P0-4: `vary -Sp <pkg>` — resuelve e imprime el plan SIN mutar nada.
 ///
 /// Congelado: sin bootstrap (el `binpkgs_root` es ruta pura), sin
@@ -454,11 +467,7 @@ fn elevation_estimate(plan: &crate::resolver::Plan) -> (usize, usize) {
     }
     let mut setups = 0;
     for repo in &repos {
-        let conf_ok =
-            crate::keys::repo_conf_path(repo).is_ok_and(|p| std::path::Path::new(&p).exists());
-        let key_ok =
-            crate::keys::key_dest_path(repo).is_ok_and(|p| std::path::Path::new(&p).exists());
-        if !(conf_ok && key_ok) {
+        if !crate::keys::binary_repo_registered(repo) {
             setups += 1;
         }
     }
@@ -798,6 +807,10 @@ pub fn install(config: &mut Config) -> Result<i32> {
                                     .or_else(|_| crate::vup_index::read_repo_plist_text(&r.path))?;
                             let key_pem =
                                 crate::vup_index::decode_plist_public_key_pem(&key_plist)?;
+                            // P0-2: ¿primer registro? Solo se fecha la confianza
+                            // si la llave NO pre-existía (si ya había, la
+                            // fecha original —o su ausencia— se preserva).
+                            let had_key = crate::keys::repo_key_installed(repo);
                             if let Err(e) = crate::keys::setup_vup_binary_repo(
                                 repo,
                                 &urls,
@@ -811,15 +824,24 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             ) {
                                 bail!("failed to setup VUP binary repo '{repo}': {e}");
                             }
-                        } else if let Err(e) = crate::keys::setup_binary_repo(
-                            r,
-                            entry,
-                            &config.sudo_bin,
-                            &config.sudo_flags,
-                            &config.tools_install_bin,
-                            config.no_confirm,
-                        ) {
-                            bail!("failed to setup binary repo '{repo}': {e}");
+                            if !had_key {
+                                stamp_first_trust(config, repo);
+                            }
+                        } else {
+                            let had_key = crate::keys::repo_key_installed(repo);
+                            if let Err(e) = crate::keys::setup_binary_repo(
+                                r,
+                                entry,
+                                &config.sudo_bin,
+                                &config.sudo_flags,
+                                &config.tools_install_bin,
+                                config.no_confirm,
+                            ) {
+                                bail!("failed to setup binary repo '{repo}': {e}");
+                            }
+                            if !had_key {
+                                stamp_first_trust(config, repo);
+                            }
                         }
                     }
                     binary_repos_configured.insert(repo.clone());

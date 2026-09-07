@@ -358,7 +358,12 @@ pub fn setup_binary_repo(
 
     // (4) Verificar contra llave preexistente en disco (protección TOFU contra rotación no verificada)
     let dest_key = key_dest_path(&repo.name)?;
-    verify_key_tofu(std::path::Path::new(&dest_key), &fp, &repo.name)?;
+    verify_key_tofu(
+        std::path::Path::new(&dest_key),
+        &fp,
+        &repo.name,
+        entry.trusted_at,
+    )?;
 
     // Copiar llave a /etc/xbps.d/keys/
     write_root_file(
@@ -455,7 +460,7 @@ pub fn setup_vup_binary_repo(
 
     // (2) Verificar contra llave preexistente en disco (protección TOFU contra rotación no verificada)
     let dest_key = key_dest_path(name)?;
-    verify_key_tofu(std::path::Path::new(&dest_key), &fp, name)?;
+    verify_key_tofu(std::path::Path::new(&dest_key), &fp, name, entry.trusted_at)?;
 
     // Copiar llave a /etc/xbps.d/keys/
     write_root_file(key_pem, &dest_key, "644", sudo_bin, sudo_flags, install_bin)?;
@@ -483,7 +488,12 @@ pub fn setup_vup_binary_repo(
     Ok(())
 }
 
-fn verify_key_tofu(dest_path: &std::path::Path, fp: &str, name: &str) -> Result<()> {
+fn verify_key_tofu(
+    dest_path: &std::path::Path,
+    fp: &str,
+    name: &str,
+    trusted_at: Option<i64>,
+) -> Result<()> {
     if dest_path.exists() {
         // T-011: llave instalada ilegible o corrupta = estado no verificable:
         // fallar cerrado en vez de re-confiar en silencio.
@@ -504,13 +514,206 @@ fn verify_key_tofu(dest_path: &std::path::Path, fp: &str, name: &str) -> Result<
         if existing_fp.to_lowercase() != fp.to_lowercase() {
             bail!("ALERTA DE SEGURIDAD CRÍTICA (Posible rotación no confiable o suplantación):\n\
                  La llave pública del repo '{name}' ha cambiado respecto a la instalada en el sistema.\n  \
-                 Instalada previamente: {existing_fp}\n  \
+                 Instalada previamente (confiada {}): {existing_fp}\n  \
                  Recibida remotamente:  {fp}\n\
                  Operación BLOQUEADA (fallo cerrado).\n\
-                 Si la rotación es legítima y verificada, ejecuta: vary --repo rekey {name}");
+                 Si la rotación es legítima y verificada: vary --repo re-trust {name}\n\
+                 (o rekey para resetear la confianza y re-registrar en el próximo install)",
+                fmt_trusted_at(trusted_at));
         }
     }
     Ok(())
+}
+
+/// P0-2: TOFU continuo — estado de confianza de un repo binario registrado:
+/// lo instalado (confiado) frente a lo actual (clon recién actualizado).
+pub struct TrustState {
+    pub name: String,
+    /// Fingerprint estilo xbps de la llave INSTALADA (/etc, la confiada).
+    pub installed_fp: String,
+    /// Fingerprint estilo xbps de la llave ACTUAL (clon).
+    pub current_fp: String,
+    /// URL origen del clon (la confiada); `None` si no se pudo leer (en ese
+    /// caso solo se verifica la llave, nunca se aborta por URL).
+    pub trusted_url: Option<String>,
+    /// URL configurada ahora en repos.conf.
+    pub configured_url: String,
+    /// Cuándo se confió (repos.conf); `None` = anterior al registro temporal.
+    pub trusted_at: Option<i64>,
+}
+
+/// P0-2: compara continuidad y aborta forense ante cualquier cambio (fp o
+/// URL). `Ok(())` = continuidad intacta. El error describe QUÉ cambió
+/// (viejo→nuevo), CUÁNDO se confió y el remedio (`re-trust`, o remove+add
+/// si cambió la URL: re-trust no mueve el origen del clon).
+pub fn check_trust(state: &TrustState) -> Result<()> {
+    if state.installed_fp.to_lowercase() != state.current_fp.to_lowercase() {
+        anyhow::bail!(
+            "ALERTA DE SEGURIDAD (P0-2, cambio de llave en '{}'):\n  \
+             Instalada (confiada {}): {}\n  \
+             Recibida ahora:           {}\n\
+             El repo cambió su llave fuera de un `re-trust`/`rekey`: posible rotación no confiable o suplantación.\n  \
+             NO instales de este repo hasta resolverlo.\n  \
+             Si la rotación es legítima y verificada: vary --repo re-trust {}",
+            state.name,
+            fmt_trusted_at(state.trusted_at),
+            state.installed_fp,
+            state.current_fp,
+            state.name
+        );
+    }
+    match (&state.trusted_url, &state.configured_url) {
+        (Some(trusted), configured)
+            if normalize_repo_url(trusted) != normalize_repo_url(configured) =>
+        {
+            anyhow::bail!(
+                "ALERTA DE SEGURIDAD (P0-2, cambio de URL en '{}'):\n  \
+                 URL confiada (origen del clon, {}): {}\n  \
+                 URL configurada ahora:                 {}\n\
+                 El origen del clon ya no coincide con repos.conf: posible redirección.\n  \
+                 `re-trust` no mueve el origen: re-clona con `vary --repo remove {} -p` + `vary --repo add <url>`.",
+                state.name,
+                fmt_trusted_at(state.trusted_at),
+                trusted,
+                configured,
+                state.name
+            );
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// P0-2: normaliza URLs de repo para comparar (barra final y `.git`
+/// opcionales no son un cambio).
+pub fn normalize_repo_url(url: &str) -> String {
+    let u = url.trim().trim_end_matches('/');
+    u.strip_suffix(".git").unwrap_or(u).to_string()
+}
+
+/// P0-2: epoch unix actual (para `trusted_at`).
+pub(crate) fn now_epoch() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// P0-2: "cuándo se confió" en legible (relativo + epoch crudo).
+pub fn fmt_trusted_at_at(trusted_at: Option<i64>, now: i64) -> String {
+    match trusted_at {
+        None => "en fecha desconocida (anterior al registro temporal)".to_string(),
+        Some(t) => {
+            let age = now.saturating_sub(t).max(0);
+            let rel = if age < 90 {
+                format!("hace ~{age} s")
+            } else if age < 5400 {
+                format!("hace ~{} min", age / 60)
+            } else if age < 172_800 {
+                format!("hace ~{} h", age / 3600)
+            } else {
+                format!("hace ~{} días", age / 86400)
+            };
+            format!("{rel} (epoch {t})")
+        }
+    }
+}
+
+/// P0-2: [`fmt_trusted_at_at`] con el reloj real.
+pub fn fmt_trusted_at(trusted_at: Option<i64>) -> String {
+    fmt_trusted_at_at(trusted_at, now_epoch())
+}
+
+/// P0-2: fija `trusted_at` en repos.conf. `when`: `Some(t)` = fijar,
+/// `None` = borrar (rekey = des-confiar). `only_if_absent`: primer registro
+/// (no pisa la fecha original). Repo ausente = no-op (dado de baja).
+pub fn stamp_trust(
+    repos_conf_path: &std::path::Path,
+    name: &str,
+    when: Option<i64>,
+    only_if_absent: bool,
+) -> Result<()> {
+    let mut conf = crate::reposconf::ReposConf::load(repos_conf_path)?;
+    let Some(entry) = conf.vur.get_mut(name) else {
+        return Ok(());
+    };
+    if only_if_absent && entry.trusted_at.is_some() {
+        return Ok(());
+    }
+    entry.trusted_at = when;
+    conf.save(repos_conf_path)?;
+    Ok(())
+}
+
+/// P0-2: recolecta el [`TrustState`] de un repo (tras `pull` en refresh).
+/// `None` = no aplica (no binario, nunca registrado, o llave ilegible en el
+/// clon —en ese caso avisa y el gate duro queda en el install vía setup—).
+pub fn collect_trust_state(
+    repo: &VurRepo,
+    entry: &crate::reposconf::RepoEntry,
+) -> Option<TrustState> {
+    let is_vup = entry.has_vup_index();
+    if !is_vup && !entry.has_binary() {
+        return None;
+    }
+    let dest = key_dest_path(&repo.name).ok()?;
+    let installed_pem = std::fs::read_to_string(&dest).ok()?;
+    let installed_fp = xbps_fingerprint_pem(&installed_pem).ok()?;
+    let current_pem: Option<String> = if is_vup {
+        crate::vup_index::read_repo_plist_text_git(&repo.git_bin, &repo.path)
+            .or_else(|_| crate::vup_index::read_repo_plist_text(&repo.path))
+            .and_then(|t| crate::vup_index::decode_plist_public_key_pem(&t))
+            .ok()
+    } else {
+        repo.discover_public_key()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+    };
+    let Some(current_pem) = current_pem else {
+        tracing::warn!(
+            "P0-2: sin llave legible en el clon de '{n}'; se omite el chequeo de continuidad en refresh (el install lo exige vía setup)",
+            n = repo.name
+        );
+        return None;
+    };
+    let current_fp = xbps_fingerprint_pem(&current_pem).ok()?;
+    Some(TrustState {
+        name: repo.name.clone(),
+        installed_fp,
+        current_fp,
+        trusted_url: clone_origin_url(&repo.git_bin, &repo.path),
+        configured_url: entry.url.clone(),
+        trusted_at: entry.trusted_at,
+    })
+}
+
+/// URL del remoto `origin` del clon (`None` si no se puede leer).
+pub(crate) fn clone_origin_url(git_bin: &str, path: &std::path::Path) -> Option<String> {
+    let out = std::process::Command::new(git_bin)
+        .arg("-C")
+        .arg(path)
+        .args(["config", "--get", "remote.origin.url"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if url.is_empty() {
+        None
+    } else {
+        Some(url)
+    }
+}
+
+/// P0-2: ¿hay llave instalada para el repo? (confianza previa, con o sin fecha).
+pub fn repo_key_installed(name: &str) -> bool {
+    key_dest_path(name).is_ok_and(|p| std::path::Path::new(&p).exists())
+}
+
+/// P0-2: ¿repo binario registrado? (conf + llave presentes en /etc).
+pub fn binary_repo_registered(name: &str) -> bool {
+    let conf_ok = repo_conf_path(name).is_ok_and(|p| std::path::Path::new(&p).exists());
+    conf_ok && repo_key_installed(name)
 }
 
 /// Elimina llave y conf de un VUR binario (--repo remove / rekey).
@@ -651,14 +854,16 @@ mod tests {
         let fp_b = xbps_fingerprint_pem(K2_PUB).unwrap();
 
         let non_existent = dir.path().join("nonexistent.pem");
-        assert!(verify_key_tofu(&non_existent, &fp_a, "repo-test").is_ok());
-        assert!(verify_key_tofu(&key_file, &fp_a, "repo-test").is_ok());
+        assert!(verify_key_tofu(&non_existent, &fp_a, "repo-test", None).is_ok());
+        assert!(verify_key_tofu(&key_file, &fp_a, "repo-test", None).is_ok());
 
-        let err = verify_key_tofu(&key_file, &fp_b, "repo-test").unwrap_err();
+        // P0-2: la alerta forense cita cuándo se confió.
+        let err = verify_key_tofu(&key_file, &fp_b, "repo-test", Some(0)).unwrap_err();
         let err_msg = err.to_string();
         assert!(err_msg.contains("ALERTA DE SEGURIDAD CRÍTICA"));
         assert!(err_msg.contains("BLOQUEADA (fallo cerrado)"));
         assert!(err_msg.contains("vary --repo rekey repo-test"));
+        assert!(err_msg.contains("epoch 0"), "{err_msg}");
     }
 
     #[test]
@@ -667,7 +872,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let key_file = dir.path().join("k.pem");
         std::fs::write(&key_file, "basura-no-pem").unwrap();
-        let err = verify_key_tofu(&key_file, "aa:bb", "repo-test").unwrap_err();
+        let err = verify_key_tofu(&key_file, "aa:bb", "repo-test", None).unwrap_err();
         assert!(err.to_string().contains("no es una public key RSA válida"));
     }
 
@@ -780,5 +985,134 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("no decodifica"), "{err:#}");
+    }
+
+    // --- P0-2: TOFU continuo (tabla de estados × veredicto) ---
+
+    fn trust_state() -> TrustState {
+        TrustState {
+            name: "vur-test".to_string(),
+            installed_fp: K1_FP_XBPS.to_string(),
+            current_fp: K1_FP_XBPS.to_string(),
+            trusted_url: Some("https://example.com/vur.git".to_string()),
+            configured_url: "https://example.com/vur.git".to_string(),
+            trusted_at: Some(1_000_000),
+        }
+    }
+
+    #[test]
+    fn check_trust_ok_con_continuidad_intacta() {
+        assert!(check_trust(&trust_state()).is_ok());
+        // Mayúsculas/minúsculas no son un cambio.
+        let mut st = trust_state();
+        st.current_fp = K1_FP_XBPS.to_uppercase();
+        assert!(check_trust(&st).is_ok());
+        // Barra final / .git no son un cambio de URL.
+        let mut st = trust_state();
+        st.configured_url = "https://example.com/vur.git/".to_string();
+        assert!(check_trust(&st).is_ok());
+        let mut st = trust_state();
+        st.trusted_url = Some("https://example.com/vur".to_string());
+        st.configured_url = "https://example.com/vur.git".to_string();
+        assert!(check_trust(&st).is_ok());
+    }
+
+    #[test]
+    fn check_trust_aborta_forense_en_cambio_de_llave() {
+        let mut st = trust_state();
+        st.current_fp = K2_FP_XBPS.to_string();
+        let err = check_trust(&st).unwrap_err().to_string();
+        assert!(err.contains("P0-2"), "{err}");
+        assert!(err.contains(K1_FP_XBPS), "{err}");
+        assert!(err.contains(K2_FP_XBPS), "{err}");
+        assert!(err.contains("epoch 1000000"), "{err}");
+        assert!(err.contains("re-trust"), "{err}");
+        assert!(err.contains("NO instales"), "{err}");
+    }
+
+    #[test]
+    fn check_trust_aborta_forense_en_cambio_de_url() {
+        let mut st = trust_state();
+        st.configured_url = "https://evil.example.com/vur.git".to_string();
+        let err = check_trust(&st).unwrap_err().to_string();
+        assert!(err.contains("cambio de URL"), "{err}");
+        assert!(err.contains("https://evil.example.com/vur.git"), "{err}");
+        assert!(err.contains("remove"), "{err}");
+    }
+
+    #[test]
+    fn check_trust_sin_origen_no_aborta_por_url() {
+        // Origen ilegible: solo se verifica la llave (nunca abortar a ciegas).
+        let mut st = trust_state();
+        st.trusted_url = None;
+        st.configured_url = "https://otra.example.com/x.git".to_string();
+        assert!(check_trust(&st).is_ok());
+    }
+
+    #[test]
+    fn fmt_trusted_at_relativo_y_desconocido() {
+        assert!(fmt_trusted_at_at(None, 9_999).contains("desconocida"));
+        assert_eq!(
+            fmt_trusted_at_at(Some(1_000_000), 1_000_030),
+            "hace ~30 s (epoch 1000000)"
+        );
+        assert_eq!(
+            fmt_trusted_at_at(Some(1_000_000), 1_003_000),
+            "hace ~50 min (epoch 1000000)"
+        );
+        assert_eq!(
+            fmt_trusted_at_at(Some(1_000_000), 1_010_000),
+            "hace ~2 h (epoch 1000000)"
+        );
+        assert_eq!(
+            fmt_trusted_at_at(Some(1_000_000), 1_500_000),
+            "hace ~5 días (epoch 1000000)"
+        );
+    }
+
+    #[test]
+    fn normalize_repo_url_ignora_barra_y_dotgit() {
+        assert_eq!(
+            normalize_repo_url("https://a/b.git/"),
+            "https://a/b".to_string()
+        );
+        assert_eq!(
+            normalize_repo_url("  https://a/b  "),
+            "https://a/b".to_string()
+        );
+    }
+
+    #[test]
+    fn stamp_trust_fija_solo_primer_registro_y_borra() {
+        use crate::reposconf::{RepoEntry, ReposConf};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("repos.conf");
+        let mut conf = ReposConf::default();
+        conf.vur.insert(
+            "r".to_string(),
+            RepoEntry {
+                url: "https://example.com/r.git".to_string(),
+                ..RepoEntry::default()
+            },
+        );
+        conf.save(&path).unwrap();
+
+        stamp_trust(&path, "r", Some(111), true).unwrap();
+        let conf = ReposConf::load(&path).unwrap();
+        assert_eq!(conf.vur["r"].trusted_at, Some(111));
+        // once: no pisa la fecha original.
+        stamp_trust(&path, "r", Some(222), true).unwrap();
+        let conf = ReposConf::load(&path).unwrap();
+        assert_eq!(conf.vur["r"].trusted_at, Some(111));
+        // force: renueva (re-trust).
+        stamp_trust(&path, "r", Some(333), false).unwrap();
+        let conf = ReposConf::load(&path).unwrap();
+        assert_eq!(conf.vur["r"].trusted_at, Some(333));
+        // borrado (rekey = des-confiar).
+        stamp_trust(&path, "r", None, false).unwrap();
+        let conf = ReposConf::load(&path).unwrap();
+        assert_eq!(conf.vur["r"].trusted_at, None);
+        // repo ausente: no-op sin error.
+        stamp_trust(&path, "fantasma", Some(1), false).unwrap();
     }
 }

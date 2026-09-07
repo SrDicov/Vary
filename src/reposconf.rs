@@ -21,6 +21,11 @@ pub struct RepoEntry {
     /// plantillas (adaptador Fase 1, ver `vup_index`).
     pub index_url: Option<String>,
     pub enabled: Option<bool>,
+    /// P0-2: cuándo se confió por primera vez en la llave binaria del repo
+    /// (epoch unix, fijado al registrar; `rekey` lo borra, `re-trust` lo
+    /// renueva). Ausente = registrado antes de este campo (fecha desconocida,
+    /// no se exige re-confianza). Solo informativo/forense: nunca decide.
+    pub trusted_at: Option<i64>,
 }
 
 impl RepoEntry {
