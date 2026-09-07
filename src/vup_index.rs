@@ -64,8 +64,8 @@ pub fn sanitize_repo_name(name: &str) -> String {
         .collect()
 }
 
-/// ¿la caché en disco sigue vigente? (P0-4 la usa para decidir sin red.)
-pub(crate) fn cache_is_fresh(path: &Path, ttl_secs: u64) -> bool {
+/// ¿la caché en disco sigue vigente?
+fn cache_is_fresh(path: &Path, ttl_secs: u64) -> bool {
     let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
     let Some(mtime) = mtime else {
         return false;
