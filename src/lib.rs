@@ -3,6 +3,7 @@ mod bootstrap;
 mod cache;
 mod challenge;
 mod command_line;
+mod conf;
 mod config;
 mod db;
 mod elevate;

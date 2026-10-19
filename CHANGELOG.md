@@ -4,6 +4,16 @@ All notable changes to vary will be documented in this file.
 
 ## 0.4.1 (2026-09-07) — P1-3 + pulido (pendiente tag)
 
+- **Compilación híbrida oficial:** `[build] source_always` (globs) emite
+  `BuildOfficial` para oficiales matcheados (nodo hoja: deps delegadas a
+  xbps-src); `[make]` + `[options]` vía conf de xbps-src por invocación
+  (`etc/conf.vary-<id>` + `-c`, guard RAII); `--force-build` sobre oficial
+  sin template VUR ahora compila el oficial; `repolock` tras instalar algo
+  desde fuente y `repounlock` al pisarlo con binario (oficial o VUR) sobre
+  una entrada Source; para un nombre matcheado el binario firmado VUR nunca
+  gana (se compila); `-Syu`
+  re-ancla fuentes y recompila oficiales `source_always` con template más
+  nuevo. `RUSTFLAGS` no soportado nativamente. Detalles en README.
 - **R1 cumplido / H-015 cerrado:** builds paralelos por niveles con overlay
   por slot (estilo xbps-fbulk); `>1 slot` solo con `--experimental` +
   capacidad; índice único en main thread; degradación fail-safe a

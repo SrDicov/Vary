@@ -16,6 +16,8 @@ use std::process::{Command, Output};
 
 use anyhow::{bail, Context, Result};
 
+use crate::config::Config;
+
 const XBPS_QUERY: &str = "xbps-query";
 
 /// Paquete resultado de una consulta o búsqueda.
@@ -452,6 +454,24 @@ fn status_code(cmd: &mut Command) -> Result<i32> {
     Ok(exit_code_of_status(status))
 }
 
+/// Ejecuta `xbps-pkgdb -m <mode> <pkg>` con la elevación configurada
+/// (repolock/repounlock tocan la DB de xbps). Devuelve el código 0 o error;
+/// el llamador añade el contexto accionable.
+pub fn pkgdb_mode(config: &Config, mode: &str, pkg: &str) -> Result<()> {
+    let mut cmd = crate::elevate::elevate(&config.sudo_bin, &config.sudo_flags, "xbps-pkgdb")?;
+    cmd.args(["-m", mode, pkg]);
+    let status = cmd
+        .status()
+        .with_context(|| "no se pudo invocar xbps-pkgdb")?;
+    if !status.success() {
+        bail!(
+            "xbps-pkgdb -m {mode} {pkg} terminó con código {}",
+            exit_code_of_status(status)
+        );
+    }
+    Ok(())
+}
+
 /// Ejecuta `./xbps-src <args>` con `current_dir(masterdir)` heredando stdio
 /// (progreso en vivo); devuelve el código de salida.
 ///
@@ -842,6 +862,8 @@ mod tests {
             .collect();
         assert!(!args.iter().any(|a| a == "--"));
     }
+
+    // ---------- pkgdb / conf ----------
 
     // ---------- run_capture (mensaje accionable, sin invocar xbps real) ----------
 

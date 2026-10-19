@@ -872,4 +872,16 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn force_build_fija_prefer_source_en_cli() {
+        // Wiring CLI: el test del resolver no cubre esta ruta de parseo.
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "foo", "--force-build"]).expect("parse");
+        assert!(config.force_build);
+        assert_eq!(
+            config.candidate_order,
+            crate::resolver::CandidateOrder::PreferSource
+        );
+    }
 }

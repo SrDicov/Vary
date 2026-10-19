@@ -101,6 +101,36 @@ sudo xbps-install vary      # later: sudo xbps-install -Su keeps it current
 
 Both glibc and musl are served from that single URL (`x86_64` / `x86_64-musl`). The musl artifact (`vary-*_1.x86_64-musl.xbps`) is dynamically linked (interpreter `/lib/ld-musl-x86_64.so.1`) and requires a Void musl system to run; it does not run on glibc (verified by the `verify musl` workflow job in a musl container). The signing public key is published as [`keys/vary-repo.pub.pem`](./keys/vary-repo.pub.pem).
 
+## Hybrid source builds (official packages)
+
+Official packages may be compiled from source instead of installing the binary. Patterns are simple globs (`*` / `?`, case-sensitive) in `[build] source_always`; per-package options, flags and build settings go in `[make]` and `[options]`:
+
+```toml
+[build]
+source_always = ["linux*", "mesa-*"]
+
+[make]
+cflags = "-O2 -pipe"
+ccache = true            # XBPS_CCACHE=yes
+# distcc = true
+# distcc_hosts = "localhost/4"
+# global_options = ["static"]        # global XBPS_PKG_OPTIONS
+# debug_pkgs / check_pkgs / allow_restricted = true
+
+[options]                # XBPS_PKG_OPTIONS_<pkg>; quote keys with dots: ["foo.bar"]
+linux = ["pgo", "wayland", "~jack"]
+```
+
+Behavior:
+
+- An official package matching `source_always` becomes a source build in the plan (`vary -Sp` shows it as an official source build; its dependencies are handled by `xbps-src` itself — binaries from repos where available, built otherwise — so vary does not expand or track that subgraph). For a matched name a **signed VUR binary never wins**: if a VUR template exists it is compiled from source (existing VUR precedence still applies between VUR candidates).
+- `--force-build` on an official package without a VUR template now builds the official from source (previously it warned and installed the binary).
+- The build reuses the normal bootstrap/masterdir path (and the experimental parallel workers); each invocation gets its own temporary xbps-src config written as `etc/conf.vary-<id>` and passed with `xbps-src -c`. Your existing `void-packages/etc/conf` is NOT merged into it; within that invocation the generated config replaces it (vary warns once).
+- After installing anything from source, vary runs `xbps-pkgdb -m repolock <pkg>` so xbps will not later update it from a foreign repository. Installing an official binary over a locked package runs `repounlock` first. A failed repolock (install flow) is an error, not a silent warning.
+- `-Syu` best-effort re-locks Source packages before the official upgrade, and afterwards adds official Source packages matching `source_always` whose template version in the void-packages clone is newer than the installed one (a template it cannot read via `xbps-src show` is skipped with a warning).
+
+Limits: `RUSTFLAGS`/`CFLAGS` are not propagated natively (`RUSTFLAGS` is unset by xbps-src in native builds and there is no `XBPS_RUSTFLAGS`); vary does not emit them. `makejobs` stays in `[build]`. Sub-packages of an official source build are built but only installed when the main package pulls them in; otherwise run `vary -S <sub>` again. `source_always` must name **sourcepkgs** (subpackages are built along with their parent; matching a subpackage name alone does nothing).
+
 ## Architecture
 
 ```mermaid

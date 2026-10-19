@@ -102,6 +102,36 @@ sudo xbps-install vary      # luego: sudo xbps-install -Su lo mantiene al día
 
 Se sirven glibc y musl desde esa única URL (`x86_64` / `x86_64-musl`). El artefacto musl (`vary-*_1.x86_64-musl.xbps`) es dinámico (intérprete `/lib/ld-musl-x86_64.so.1`) y exige un sistema Void musl para ejecutarse; en glibc no corre (verificado por el job `verify musl` del workflow en contenedor musl). La clave pública de firma está publicada en [`keys/vary-repo.pub.pem`](./keys/vary-repo.pub.pem).
 
+## Compilación híbrida desde fuente (paquetes oficiales)
+
+Los paquetes oficiales pueden compilarse desde fuente en vez de instalarse como binario. Los patrones son globs simples (`*` / `?`, case-sensitive) en `[build] source_always`; las opciones por paquete, flags y ajustes de compilación van en `[make]` y `[options]`:
+
+```toml
+[build]
+source_always = ["linux*", "mesa-*"]
+
+[make]
+cflags = "-O2 -pipe"
+ccache = true            # XBPS_CCACHE=yes
+# distcc = true
+# distcc_hosts = "localhost/4"
+# global_options = ["static"]        # XBPS_PKG_OPTIONS global
+# debug_pkgs / check_pkgs / allow_restricted = true
+
+[options]                # XBPS_PKG_OPTIONS_<pkg>; claves con punto se citan: ["foo.bar"]
+linux = ["pgo", "wayland", "~jack"]
+```
+
+Comportamiento:
+
+- Un paquete oficial que matchee `source_always` aparece como build desde fuente en el plan (`vary -Sp` lo muestra como build oficial desde fuente; sus dependencias las maneja `xbps-src` — binario si existe en repos, compila lo que falte — así que vary no expande ni rastrea ese subgrafo). Para un nombre matcheado, un **binario firmado VUR nunca gana**: si existe template VUR se compila desde fuente (la precedencia VUR sigue aplicando entre candidatos VUR).
+- `--force-build` sobre un oficial sin template VUR ahora lo compila desde fuente (antes avisaba e instalaba el binario).
+- El build reutiliza el camino normal de bootstrap/masterdir (y los workers paralelos experimentales); cada invocación recibe su propio conf temporal de xbps-src escrito como `etc/conf.vary-<id>` y pasado con `xbps-src -c`. Tu `void-packages/etc/conf` existente NO se fusiona; en esa invocación el conf generado lo reemplaza (vary avisa una vez).
+- Tras instalar algo desde fuente, vary ejecuta `xbps-pkgdb -m repolock <pkg>` para que xbps no lo actualice después desde otro repo. Al instalar un binario oficial sobre un paquete bloqueado corre `repounlock` antes. Un repolock fallido (flujo install) es error, no aviso silencioso.
+- `-Syu` re-ancla (repolock, best-effort) los paquetes Source antes del upgrade oficial, y después añade los oficiales Source que matcheen `source_always` cuya versión de template en el clon de void-packages sea mayor que la instalada (si no puede leerla vía `xbps-src show`, omite el paquete con aviso).
+
+Límites: `RUSTFLAGS`/`CFLAGS` no se propagan nativamente (`RUSTFLAGS` lo desarma xbps-src en build nativo y no existe `XBPS_RUSTFLAGS`); vary no las emite. `makejobs` sigue en `[build]`. Los subpaquetes de un build oficial se compilan pero solo se instalan si el paquete principal los arrastra; si no, corre `vary -S <sub>` de nuevo. `source_always` debe apuntar a nombres de **sourcepkg** (los subpaquetes se construyen con su padre; matchear solo el nombre de un subpaquete no hace nada).
+
 ## Arquitectura
 
 ```mermaid

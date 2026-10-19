@@ -45,6 +45,47 @@ max_concurrent_builds = 2
 # (equivalente a pasar --force-build en cada operación).
 force_rebuild = false
 
+# Compilación híbrida: paquetes OFICIALES que siempre se compilan desde
+# fuente (globs simples `*`/`?`, case-sensitive; sin regex). Un paquete
+# oficial que matchee se emite como build source: xbps-src resuelve sus
+# dependencias (binario si existe, compila lo que falte) y el plan no las
+# expande. Si un repo VUR también lo provee, manda la precedencia VUR, pero
+# compilado desde fuente: el binario firmado VUR nunca gana para un match.
+#source_always = ["linux*", "mesa-*", "gcc"]
+
+[make]
+# Ajustes de compilación que se inyectan en un conf de xbps-src por
+# invocación (`etc/conf.vary-<id>` + `xbps-src -c`). NO se fusiona con tu
+# `void-packages/etc/conf` existente: en esa invocación lo reemplaza.
+# `makejobs` sigue en [build] (XBPS_MAKEJOBS); no va aquí.
+#
+# Variables XBPS_* soportadas (al chroot solo pasan líneas XBPS_):
+#   XBPS_CFLAGS / XBPS_CXXFLAGS / XBPS_LDFLAGS / XBPS_CCACHE /
+#   XBPS_DISTCC / XBPS_DISTCC_HOSTS / XBPS_PKG_OPTIONS /
+#   XBPS_PKG_OPTIONS_<pkg> / XBPS_DEBUG_PKGS / XBPS_CHECK_PKGS /
+#   XBPS_ALLOW_RESTRICTED.
+#
+# Limitación: RUSTFLAGS/CIFLAGS no se propagan nativamente (xbps-src hace
+# unset RUSTFLAGS y no existe XBPS_RUSTFLAGS).
+#
+#cflags = "-O2 -pipe"
+#cxxflags = ""
+#ldflags = ""
+#ccache = false
+#distcc = false
+#distcc_hosts = "localhost/4"
+#global_options = ["static"]   # XBPS_PKG_OPTIONS global
+#debug_pkgs = false
+#check_pkgs = false
+#allow_restricted = false
+
+[options]
+# Opciones por paquete -> XBPS_PKG_OPTIONS_<pkg> (el nombre se normaliza
+# a [A-Za-z0-9_]; `foo-bar` => XBPS_PKG_OPTIONS_foo_bar). Solo aplica a los
+# paquetes que vary compila.
+# Las claves con punto se CITAN en TOML: ["foo.bar"] = ["opt"].
+#linux = ["pgo", "wayland", "~jack"]
+
 [search]
 # Tiempo de vida (en segundos) de las entradas de la caché de búsqueda
 # (cache.json). Caducadas, la próxima búsqueda vuelve a consultar los repos.

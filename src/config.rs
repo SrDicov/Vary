@@ -2,6 +2,7 @@ use crate::args::Args;
 use ansiterm::Style;
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io::{stderr, stdout, IsTerminal};
 use std::path::{Path, PathBuf};
@@ -124,6 +125,14 @@ pub struct Config {
     pub makejobs: usize,
     pub force_rebuild: bool,
     pub ttl_cache_seconds: u64,
+    /// Compilación híbrida: patrones glob (`*`/`?`, case-sensitive) de
+    /// paquetes OFICIALES que siempre se compilan desde fuente
+    /// (`Action::BuildOfficial`, hoja: las deps las resuelve xbps-src).
+    pub source_always: Vec<String>,
+    /// `[make]`: ajustes de compilación por invocación (conf de xbps-src).
+    pub make: MakeSettings,
+    /// `[options]`: opciones por paquete que van a `XBPS_PKG_OPTIONS_<pkg>`.
+    pub pkg_options: BTreeMap<String, Vec<String>>,
 
     // Flags runtime
     pub force_build: bool,
@@ -149,6 +158,10 @@ struct VaryConfFile {
     #[serde(default)]
     build: BuildSection,
     #[serde(default)]
+    make: MakeSection,
+    #[serde(default)]
+    options: OptionsSection,
+    #[serde(default)]
     search: SearchSection,
     #[serde(default)]
     tools: ToolsSection,
@@ -172,6 +185,47 @@ struct BuildSection {
     max_concurrent_builds: Option<u32>,
     makejobs: Option<usize>,
     force_rebuild: Option<bool>,
+    /// PATRONES glob simples (`*`/`?`, case-sensitive) de paquetes oficiales
+    /// que siempre se compilan desde fuente.
+    source_always: Option<Vec<String>>,
+}
+
+/// `[make]`: ajustes de compilación que van al conf de xbps-src por
+/// invocación (ver `crate::conf`; NO incluye makejobs, que sigue en `[build]`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MakeSettings {
+    pub cflags: String,
+    pub cxxflags: String,
+    pub ldflags: String,
+    pub ccache: bool,
+    pub distcc: bool,
+    pub distcc_hosts: String,
+    pub global_options: Vec<String>,
+    pub debug_pkgs: bool,
+    pub check_pkgs: bool,
+    pub allow_restricted: bool,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct MakeSection {
+    cflags: Option<String>,
+    cxxflags: Option<String>,
+    ldflags: Option<String>,
+    ccache: Option<bool>,
+    distcc: Option<bool>,
+    distcc_hosts: Option<String>,
+    global_options: Option<Vec<String>>,
+    debug_pkgs: Option<bool>,
+    check_pkgs: Option<bool>,
+    allow_restricted: Option<bool>,
+}
+
+/// `[options]`: tabla libre `paquete = ["opt", ...]`. Las claves con punto
+/// (p. ej. `foo.bar`) deben citarse en TOML: `["foo.bar"]`.
+#[derive(Debug, Deserialize, Default)]
+struct OptionsSection {
+    #[serde(flatten)]
+    pkgs: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -183,6 +237,35 @@ struct SearchSection {
 struct ToolsSection {
     /// Binario `install` para escribir en /etc (H-045).
     install_bin: Option<String>,
+}
+
+/// Coincidencia de patrón glob simple: solo `*` (cualquier secuencia) y
+/// `?` (un carácter), case-sensitive, sin dependencias nuevas.
+pub fn matches_glob(pattern: &str, name: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let n: Vec<char> = name.chars().collect();
+    let (mut pi, mut ni) = (0usize, 0usize);
+    let (mut star_pi, mut star_ni) = (None::<usize>, 0usize);
+    while ni < n.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == n[ni]) {
+            pi += 1;
+            ni += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star_pi = Some(pi);
+            pi += 1;
+            star_ni = ni;
+        } else if let Some(sp) = star_pi {
+            pi = sp + 1;
+            star_ni += 1;
+            ni = star_ni;
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == '*' {
+        pi += 1;
+    }
+    pi == p.len()
 }
 
 fn expand_home(p: &str) -> PathBuf {
@@ -248,6 +331,9 @@ impl Config {
             makejobs: 1,
             force_rebuild: false,
             ttl_cache_seconds: 3600,
+            source_always: Vec::new(),
+            make: MakeSettings::default(),
+            pkg_options: BTreeMap::new(),
             force_build: false,
             prefer_binary: true,
             experimental: false,
@@ -317,6 +403,43 @@ impl Config {
         }
         if let Some(f) = file.build.force_rebuild {
             self.force_rebuild = f;
+        }
+        if let Some(pats) = file.build.source_always {
+            self.source_always = pats;
+        }
+        let mk = file.make;
+        if let Some(v) = mk.cflags {
+            self.make.cflags = v;
+        }
+        if let Some(v) = mk.cxxflags {
+            self.make.cxxflags = v;
+        }
+        if let Some(v) = mk.ldflags {
+            self.make.ldflags = v;
+        }
+        if let Some(v) = mk.ccache {
+            self.make.ccache = v;
+        }
+        if let Some(v) = mk.distcc {
+            self.make.distcc = v;
+        }
+        if let Some(v) = mk.distcc_hosts {
+            self.make.distcc_hosts = v;
+        }
+        if let Some(v) = mk.global_options {
+            self.make.global_options = v;
+        }
+        if let Some(v) = mk.debug_pkgs {
+            self.make.debug_pkgs = v;
+        }
+        if let Some(v) = mk.check_pkgs {
+            self.make.check_pkgs = v;
+        }
+        if let Some(v) = mk.allow_restricted {
+            self.make.allow_restricted = v;
+        }
+        for (pkg, opts) in file.options.pkgs {
+            self.pkg_options.insert(pkg, opts);
         }
         if let Some(t) = file.search.ttl_cache_seconds {
             self.ttl_cache_seconds = t;
@@ -467,5 +590,62 @@ mod tests {
         assert_eq!(expand_home("~/x"), home.join("x"));
         assert_eq!(expand_home("/abs"), PathBuf::from("/abs"));
         assert_eq!(expand_home("rel"), PathBuf::from("rel"));
+    }
+
+    #[test]
+    fn matches_glob_simple_star_y_question_case_sensitive() {
+        assert!(matches_glob("linux*", "linux6.6"));
+        assert!(matches_glob("linux*", "linux-firmware"));
+        assert!(!matches_glob("linux*", "glibc"));
+        assert!(!matches_glob("LINUX*", "linux"), "case-sensitive");
+        assert!(matches_glob("mesa-?", "mesa-x"));
+        assert!(!matches_glob("mesa-?", "mesa-xy"));
+        assert!(matches_glob("*", "cualquier.cosa"));
+        assert!(matches_glob("*", ""));
+        assert!(!matches_glob("", "x"));
+        assert!(matches_glob("a*b*c", "a-b-c"));
+        assert!(!matches_glob("a*b*c", "abc"));
+    }
+
+    #[test]
+    fn load_vary_conf_parsea_make_options_y_source_always() {
+        // Secciones nuevas opcionales: config vieja sin ellas sigue igual
+        // (defaults vacíos), y esta sí se parsea completa.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("vary.conf"),
+            r#"
+[build]
+source_always = ["linux*", "mesa-?"]
+[make]
+cflags = "-O2"
+ccache = true
+distcc_hosts = "localhost/4"
+global_options = ["static"]
+debug_pkgs = true
+[options]
+linux = ["pgo", "wayland"]
+# Claves con punto se citan en TOML:
+"foo.bar" = ["pgo"]
+"#,
+        )
+        .expect("write");
+        let mut c = Config {
+            config_dir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        c.load_vary_conf().expect("conf válido");
+        assert_eq!(c.source_always, vec!["linux*", "mesa-?"]);
+        assert_eq!(c.make.cflags, "-O2");
+        assert!(c.make.ccache && !c.make.distcc && c.make.debug_pkgs);
+        assert_eq!(c.make.global_options, vec!["static"]);
+        assert_eq!(
+            c.pkg_options.get("linux"),
+            Some(&vec!["pgo".to_string(), "wayland".to_string()])
+        );
+        assert_eq!(c.pkg_options.get("foo.bar"), Some(&vec!["pgo".to_string()]));
+        // "mesa-?" con '?' literal: no coincide con "mesa-xy".
+        assert!(matches_glob(&c.source_always[1], "mesa-a"));
+        assert!(!matches_glob(&c.source_always[1], "mesa-ab"));
     }
 }

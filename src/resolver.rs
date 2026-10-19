@@ -21,11 +21,15 @@
 //!    `--force-build` / `--no-prefer-binary`): (a') el bucket official solo
 //!    gana en automático con preferencia binaria (ya es binario); con
 //!    preferencia de fuente un template VUR existente se compila en su lugar
-//!    y, si no lo hay, se AVISA "sin efecto" y se sigue con official (nunca
-//!    en silencio); (b') entre candidatos VUR multi-repo se ordena por clase
+//!    y, si no lo hay, el oficial se compila desde fuente
+//!    ([`Action::BuildOfficial`], hoja: las deps las resuelve `xbps-src`);
+//!    (b') entre candidatos VUR multi-repo se ordena por clase
 //!    binario/fuente efectiva, luego versión desc y luego prioridad del repo.
-//!    Sin flags ([`CandidateOrder::Legacy`]) todo queda como antes: official
-//!    primero y candidato VUR fusionado único.
+//!    Híbrida (`source_always` en vary.conf): un oficial que matchee los
+//!    patrones baja al camino VUR (precedencia actual intacta) y, sin
+//!    candidato VUR, se emite [`Action::BuildOfficial`].
+//!    Sin flags ([`CandidateOrder::Legacy`]) lo demás queda como antes:
+//!    official primero y candidato VUR fusionado único.
 //! 2. Un nodo VUR se convierte en `Install(VulBinary { repo })` si
 //!    `!force_build && prefer_binary && vul_binary_available(..)`; si no, en
 //!    [`Action::Build`].
@@ -73,6 +77,11 @@ pub enum BinarySource {
 pub enum Action {
     Install(BinarySource),
     Build,
+    /// Compilación híbrida: paquete OFICIAL compilado desde fuente
+    /// (`source_always`-match o `--force-build` sin template VUR). Nodo HOJA
+    /// por diseño: xbps-src resuelve sus dependencias (binario si existe,
+    /// compila lo que falte); el resolver no las expande.
+    BuildOfficial,
 }
 
 /// Entrada del plan: paquete resuelto más acción asociada.
@@ -148,6 +157,10 @@ pub struct ResolveOptions {
     pub force_build: bool,
     /// T-010: orden entre candidatos de varios repos (default: histórico).
     pub order: CandidateOrder,
+    /// Compilación híbrida: patrones glob (`*`/`?`, case-sensitive); un
+    /// paquete oficial que matchee se compila desde fuente (nodo
+    /// `Action::BuildOfficial`) a menos que exista candidato VUR source.
+    pub source_always: Vec<String>,
 }
 
 impl Default for ResolveOptions {
@@ -156,6 +169,7 @@ impl Default for ResolveOptions {
             prefer_binary: true,
             force_build: false,
             order: CandidateOrder::Legacy,
+            source_always: Vec::new(),
         }
     }
 }
@@ -173,8 +187,9 @@ pub(crate) fn dep_name(dep: &str) -> &str {
 /// T-010: compara (versión, revisión): tokens alfanuméricos separados por
 /// cualquier otro carácter; token numérico vs numérico compara como número,
 /// el resto lexicográficamente; a igualdad de prefijo gana la más larga;
-/// desempata por revisión.
-fn cmp_pkgver(a_ver: &str, a_rev: u32, b_ver: &str, b_rev: u32) -> Ordering {
+/// desempata por revisión. La reutiliza upgrade.rs para comparar templates
+/// de oficiales con lo instalado.
+pub(crate) fn cmp_pkgver(a_ver: &str, a_rev: u32, b_ver: &str, b_rev: u32) -> Ordering {
     fn tokens(s: &str) -> Vec<&str> {
         s.split(|c: char| !c.is_alphanumeric())
             .filter(|t| !t.is_empty())
@@ -232,10 +247,21 @@ impl<'a> Ctx<'a> {
         crate::metadata::arch_supports(&info.archs, &self.arch)
     }
 
+    /// Compilación híbrida: ¿`name` matchea algún patrón de `source_always`?
+    /// Contrato: para un nombre matcheado, un candidato fuente VUR puede
+    /// ganar pero un BINARIO VUR nunca (ver `push_vur`).
+    fn source_always_matches(&self, name: &str) -> bool {
+        self.opts
+            .source_always
+            .iter()
+            .any(|p| crate::config::matches_glob(p, name))
+    }
+
     /// Puntos 1b y 5: candidato VUR por nombre y, si falla o es descartado
     /// Nodo hoja para un paquete oficial. `VurInfo` es aquí un placeholder
     /// mínimo (los oficiales no tienen template VUR); solo importa el nombre.
-    fn official_item(name: &str, arch: &str) -> PlanItem {
+    /// `source` elige el tipo de hoja: binario oficial o build desde fuente.
+    fn official_item(name: &str, arch: &str, source: Action) -> PlanItem {
         PlanItem {
             name: name.to_string(),
             info: VurInfo {
@@ -257,7 +283,7 @@ impl<'a> Ctx<'a> {
                 restricted: false,
                 maintainer: None,
             },
-            action: Action::Install(BinarySource::Official),
+            action: source,
         }
     }
 
@@ -302,11 +328,17 @@ impl<'a> Ctx<'a> {
         // gana en automático (un template VUR existente se compila en su
         // lugar; ver rama sin-candidato abajo). Con Legacy o preferencia
         // binaria el official (binario) sigue ganando como siempre.
+        // Compilación híbrida: un oficial que matchee `source_always` baja
+        // al lookup VUR (precedencia actual de VUR intacta) y, si no hay
+        // candidato, se compila él mismo desde fuente (BuildOfficial, hoja).
         // Punto 1a: oficial -> Install(Official), NODO HOJA (sin recursión).
+        let source_always = self.source_always_matches(name);
         if self.source.official_exists(name)
             && !matches!(self.opts.order, CandidateOrder::PreferSource)
+            && !source_always
         {
-            let item = Self::official_item(name, &self.arch);
+            let item =
+                Self::official_item(name, &self.arch, Action::Install(BinarySource::Official));
             return Ok(self.push_item(item, dependent));
         }
 
@@ -355,20 +387,37 @@ impl<'a> Ctx<'a> {
                     self.arch
                 );
             }
-            // T-010: official + preferencia de fuente + sin template VUR: el
-            // flag no puede actuar -> AVISAR (nunca callar) y seguir con el
-            // binario official.
+            // T-010 / híbrida: official con preferencia de fuente (o match de
+            // `source_always`) SIN template VUR:
+            // * `--force-build` => compilar el oficial desde fuente (nodo
+            //   BuildOfficial): la semántica se extiende al oficial.
+            // * source_always configurado => build oficial sin más (es el
+            //   contrato del usuario; no hay nada que silenciar).
+            // Sin ninguno de los dos, el flag no puede actuar -> AVISAR
+            // (nunca callar) y seguir con el binario official.
             if self.source.official_exists(name) {
+                if matches!(self.opts.order, CandidateOrder::PreferSource) || source_always {
+                    let item = Self::official_item(name, &self.arch, Action::BuildOfficial);
+                    return Ok(self.push_item(item, dependent));
+                }
                 self.warnings.push(format!(
                     "--force-build/--no-prefer-binary sin efecto sobre '{name}': solo existe como binario oficial"
                 ));
-                let item = Self::official_item(name, &self.arch);
+                let item =
+                    Self::official_item(name, &self.arch, Action::Install(BinarySource::Official));
                 return Ok(self.push_item(item, dependent));
             }
             bail!("paquete no encontrado en repos oficiales ni VURs: {name}");
         };
 
         self.push_vur(name, repo, info, dependent)
+    }
+
+    /// Compilación híbrida: ¿la fuente está forzada para este nodo? Match de
+    /// `source_always` sobre el nombre pedido o el pkgname real (lo pedido
+    /// puede ser virtual).
+    fn force_source(&self, name: &str, info: &VurInfo) -> bool {
+        self.source_always_matches(name) || self.source_always_matches(&info.pkgname)
     }
 
     /// T-010: clase de un candidato (0 = preferido por el orden efectivo).
@@ -411,10 +460,14 @@ impl<'a> Ctx<'a> {
         dependent: Option<u32>,
     ) -> Result<u32> {
         // Punto 2: binario firmado disponible -> instalar; si no -> construir.
-        let action = if !self.opts.force_build
+        // Contrato híbrida: un nombre que matchee `source_always` nunca se
+        // satisface con un binario VUR firmado -> se compila el template
+        // (un candidato SOURCE VUR sí puede ganar, via normal para acá).
+        let binary_ok = !self.force_source(&name, &info)
+            && !self.opts.force_build
             && self.opts.prefer_binary
-            && self.source.vul_binary_available(&repo, &info, &self.arch)
-        {
+            && self.source.vul_binary_available(&repo, &info, &self.arch);
+        let action = if binary_ok {
             Action::Install(BinarySource::VulBinary { repo })
         } else {
             Action::Build
@@ -462,7 +515,7 @@ impl<'a> Ctx<'a> {
         let mut builds = Vec::new();
         for idx in order {
             let item = &self.items[idx as usize];
-            if matches!(item.action, Action::Build) {
+            if matches!(item.action, Action::Build | Action::BuildOfficial) {
                 builds.push(item.clone());
             }
         }
@@ -473,7 +526,7 @@ impl<'a> Ctx<'a> {
             match &item.action {
                 Action::Install(BinarySource::Official) => officials.push(item.clone()),
                 Action::Install(BinarySource::VulBinary { .. }) => vuls.push(item.clone()),
-                Action::Build => {}
+                Action::Build | Action::BuildOfficial => {}
             }
         }
         officials.append(&mut vuls);
@@ -990,7 +1043,123 @@ mod tests {
             prefer_binary,
             force_build,
             order,
+            source_always: Vec::new(),
         }
+    }
+
+    // --- Compilación híbrida oficial (source_always) ---
+
+    fn opts_con_source_always(pats: &[&str]) -> ResolveOptions {
+        ResolveOptions {
+            source_always: strs(pats),
+            ..ResolveOptions::default()
+        }
+    }
+
+    /// Oficial normal (sin match) sigue Install(Official): cero regresión.
+    #[test]
+    fn source_always_sin_match_deja_oficial_binario() {
+        let src = MockSource {
+            official: ["glibc"].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_source_always(&["linux*"]);
+        let plan = resolve(&targets(&["glibc"]), &src, &opts).unwrap();
+        assert!(plan.builds.is_empty());
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
+    }
+
+    /// Oficial + match de source_always => BuildOfficial como nodo HOJA
+    /// (no se expanden dependencias; un fantasma no debe provocar error).
+    #[test]
+    fn source_always_convierte_oficial_en_build_oficial() {
+        let src = MockSource {
+            official: ["linux"].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_source_always(&["linux*"]);
+        let plan = resolve(&targets(&["linux"]), &src, &opts).unwrap();
+        assert!(plan.installs.is_empty());
+        assert_eq!(build_names(&plan), vec!["linux"]);
+        assert_eq!(plan.builds[0].action, Action::BuildOfficial);
+        // Preferencia de fuente con match: mismo resultado (hoja oficial).
+        let opts = ResolveOptions {
+            source_always: strs(&["linux*"]),
+            ..opts_con_orden(true, true, CandidateOrder::PreferSource)
+        };
+        let plan = resolve(&targets(&["linux"]), &src, &opts).unwrap();
+        assert_eq!(plan.builds[0].action, Action::BuildOfficial);
+    }
+
+    /// Si existe candidato VUR source, mantiene la precedencia actual de
+    /// VUR: el template gana sobre el build oficial.
+    #[test]
+    fn source_always_vur_source_existente_gana() {
+        let src = MockSource {
+            official: ["tool"].into(),
+            vur: [("tool", ("cnr", vur_info_ver("tool", "9.9", &["x86_64"])))]
+                .into_iter()
+                .collect(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_source_always(&["tool"]);
+        let plan = resolve(&targets(&["tool"]), &src, &opts).unwrap();
+        // El candidato VUR se procesa con la semántica de siempre: sin
+        // binario firmado -> Action::Build del template VUR.
+        assert!(plan.installs.is_empty());
+        assert_eq!(build_names(&plan), vec!["tool"]);
+        assert_eq!(plan.builds[0].action, Action::Build);
+        assert_ne!(plan.builds[0].action, Action::BuildOfficial);
+    }
+
+    /// Patrón `?` funciona; un `*` vacío también matchea el sufijo.
+    #[test]
+    fn source_always_patrones_question_star() {
+        let src = MockSource {
+            official: ["mesa-dri"].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_source_always(&["mesa-*"]);
+        let plan = resolve(&targets(&["mesa-dri"]), &src, &opts).unwrap();
+        assert_eq!(plan.builds[0].action, Action::BuildOfficial);
+        let opts = opts_con_source_always(&["mesa-?"]);
+        let plan = resolve(&targets(&["mesa-dri"]), &src, &opts).unwrap();
+        assert!(plan.builds.is_empty(), "? solo un carácter");
+    }
+
+    /// Contrato híbrida: `source_always` manda sobre el binario firmado VUR.
+    /// Con match, un candidato con binario disponible se compila de todos
+    /// modos (source build VUR); nunca sale VulBinary. Control: sin match el
+    /// binario gana, como en 0.4.0.
+    #[test]
+    fn source_always_nunca_vul_binario() {
+        let src = MockSource {
+            vur: [("tool", ("vup", vur_info_ver("tool", "9.9", &["x86_64"])))]
+                .into_iter()
+                .collect(),
+            binaries: [("vup", "tool")].into(),
+            ..MockSource::default()
+        };
+        let control = resolve(&targets(&["tool"]), &src, &ResolveOptions::default()).unwrap();
+        assert!(control.builds.is_empty());
+        assert_eq!(
+            control.installs[0].action,
+            Action::Install(BinarySource::VulBinary {
+                repo: "vup".to_string()
+            })
+        );
+        let opts = opts_con_source_always(&["tool"]);
+        let plan = resolve(&targets(&["tool"]), &src, &opts).unwrap();
+        assert!(
+            plan.installs.is_empty(),
+            "nunca VulBinary: {:?}",
+            plan.installs
+        );
+        assert_eq!(build_names(&plan), vec!["tool"]);
+        assert_eq!(plan.builds[0].action, Action::Build);
     }
 
     fn hyfetch_multi() -> MockSource {
@@ -1051,27 +1220,21 @@ mod tests {
     }
 
     /// Aceptación T-010 (mitad de 2/2): `--force-build` sobre official SIN
-    /// template VUR instala el official pero AVISA (nunca en silencio).
+    /// template VUR ahora COMPILA el oficial desde fuente (híbrida:
+    /// BuildOfficial, hoja). Antes avisaba e instalaba el binario; se
+    /// extiende la semántica según el contrato de compilación híbrida.
     #[test]
-    fn t010_force_build_sobre_official_sin_template_avisa() {
+    fn t010_force_build_sobre_official_sin_template_compila_oficial() {
         let src = MockSource {
             official: ["solo-official"].into(),
             ..MockSource::default()
         };
         let opts = opts_con_orden(true, true, CandidateOrder::PreferSource);
         let plan = resolve(&targets(&["solo-official"]), &src, &opts).unwrap();
-        assert!(plan.builds.is_empty());
-        assert_eq!(plan.installs.len(), 1);
-        assert_eq!(
-            plan.installs[0].action,
-            Action::Install(BinarySource::Official)
-        );
-        assert_eq!(plan.warnings.len(), 1);
-        assert!(
-            plan.warnings[0].contains("sin efecto"),
-            "aviso inesperado: {}",
-            plan.warnings[0]
-        );
+        assert!(plan.builds.len() == 1);
+        assert_eq!(plan.installs.len(), 0);
+        assert_eq!(plan.warnings.len(), 0, "nada que silenciar");
+        assert_eq!(plan.builds[0].action, Action::BuildOfficial);
     }
 
     /// `--no-prefer-binary` ordena la fuente primero aunque el binario sea
@@ -1135,10 +1298,11 @@ mod tests {
         );
     }
 
-    /// Comparador de versiones: numérico por token, no lexicográfico.
+    /// Comparador de versiones: numérico por token (no lexicográfico),
+    /// desempate por revisión, y los tres órdenes.
     #[test]
-    fn t010_cmp_pkgver_compara_tokens_numericos() {
-        assert_eq!(cmp_pkgver("2.1.0", 1, "2.0.5", 1), Ordering::Greater);
+    fn cmp_pkgver_tokens_revision_y_ordenes() {
+        use std::cmp::Ordering;
         assert_eq!(cmp_pkgver("1.10.0", 1, "1.9.0", 1), Ordering::Greater);
         assert_eq!(cmp_pkgver("1.0", 2, "1.0", 1), Ordering::Greater);
         assert_eq!(cmp_pkgver("1.0", 1, "1.0", 1), Ordering::Equal);

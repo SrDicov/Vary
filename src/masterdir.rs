@@ -6,6 +6,7 @@
 use crate::xbps::xbps_src;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub const VOID_PACKAGES_URL: &str = "https://github.com/void-linux/void-packages";
 
@@ -86,6 +87,31 @@ impl Masterdir {
             anyhow::bail!("xbps-src fetch {pkg} terminó con código {code}");
         }
         Ok(())
+    }
+
+    /// `./xbps-src show <pkg>` CAPTURADO (no hereda stdio: quien llama
+    /// parsea `version=`/`revision=`). Lectura pura del template evaluado,
+    /// sin chroot: corta y sin elevación.
+    pub fn show_pkg(&self, pkg: &str) -> Result<String> {
+        let script = self.path.join("xbps-src");
+        if !script.is_file() {
+            anyhow::bail!(
+                "`{}` no encontrado (¿clone de void-packages?: falta para xbps-src show)",
+                script.display()
+            );
+        }
+        let out = Command::new("./xbps-src")
+            .current_dir(&self.path)
+            .args(["show", pkg])
+            .output()
+            .with_context(|| format!("no se pudo invocar ./xbps-src show {pkg}"))?;
+        if !out.status.success() {
+            anyhow::bail!(
+                "./xbps-src show {pkg} terminó con código {:?}",
+                out.status.code()
+            );
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
 }
 

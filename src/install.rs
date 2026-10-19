@@ -287,6 +287,8 @@ fn assemble_source(
         } else {
             config.candidate_order
         },
+        // Híbrida: patrones de oficiales al resolver (BuildOfficial).
+        source_always: config.source_always.clone(),
     };
     (source, opts)
 }
@@ -418,8 +420,12 @@ pub fn print_plan(config: &Config) -> Result<i32> {
             .collect();
         let mut items = Vec::new();
         for it in plan.installs.iter().chain(plan.builds.iter()) {
-            // Oficiales omitidos (ver arriba: placeholder T-009).
-            if matches!(it.action, Action::Install(BinarySource::Official)) {
+            // Oficiales omitidos (ver arriba: placeholder T-009). Híbrida:
+            // BuildOfficial también (sin versión en el plan).
+            if matches!(
+                it.action,
+                Action::Install(BinarySource::Official) | Action::BuildOfficial
+            ) {
                 continue;
             }
             items.push((it.info.pkgname.clone(), it.info.pkgver()));
@@ -485,6 +491,12 @@ fn print_stable_plan(targets: &[String], plan: &crate::resolver::Plan) {
         println!("  level {n}:");
         for item in level {
             let real = &item.info.pkgname;
+            if matches!(item.action, Action::BuildOfficial) {
+                println!(
+                    "    {real} official-source (lo compila xbps-src, deps y artefactos incluidos)"
+                );
+                continue;
+            }
             if real == &item.name {
                 println!("    {real}/{}", item.info.pkgver());
             } else {
@@ -569,6 +581,8 @@ struct WorkerParams {
     log_file_default: Option<std::path::PathBuf>,
     sudo_bin: String,
     sudo_flags: Vec<String>,
+    /// Conf de xbps-src por invocación (captura owned de vary.conf).
+    conf: crate::conf::PkgConf,
 }
 
 /// Un build pendiente ya resuelto (main thread): repo por índice (los hilos
@@ -583,6 +597,11 @@ struct BuildJob {
     subs: Vec<String>,
     expected_parent: String,
     expected_subs: Vec<String>,
+    /// true = paquete OFICIAL compilado desde fuente (BuildOfficial): corre
+    /// con conf por invocación + `-c`, sin materialize/proyecto de VUR.
+    is_official: bool,
+    /// Para oficiales: `version_revision` del template leído por show.
+    ver_rev: String,
 }
 
 /// Vía secuencial INTACTA (0.4.0): mismo cuerpo que el loop histórico
@@ -602,6 +621,142 @@ fn build_one_sequential(
     let _ = repo.unproject_pkg(&md.srcpkgs_dir(), parent_pkg);
     res.with_context(|| format!("building {parent_pkg}"))?;
     Ok(())
+}
+
+/// `(version, revision)` evaluadas de un template OFICIAL vía
+/// `xbps-src show` (necesario para el nombre determinista del `.xbps`).
+fn official_ver_rev(md: &crate::masterdir::Masterdir, pkg: &str) -> Result<(String, u32)> {
+    let text = md
+        .show_pkg(pkg)
+        .with_context(|| format!("xbps-src show {pkg} (necesario para el build oficial)"))?;
+    crate::upgrade::parse_template_version(&text).ok_or_else(|| {
+        anyhow::anyhow!("la salida de `xbps-src show {pkg}` no trae version=/revision= parseables")
+    })
+}
+
+/// Especificación de un build OFICIAL (borrow; evita too_many_arguments).
+struct OfficialBuild<'a> {
+    /// Checkout donde corre xbps-src (masterdir real o merged del worker).
+    root: &'a Path,
+    /// hostdir/binpkgs donde debe quedar el artefacto.
+    binpkgs: &'a Path,
+    pkg: &'a str,
+    /// Nombre del `.xbps` esperado: `{pkg}-{ver_rev}.{arch}.xbps`.
+    artifact: &'a str,
+    conf: &'a crate::conf::PkgConf,
+    /// Id del conf (worker: `w<slot>`; secuencial: pid-contador).
+    id: String,
+    log: Option<&'a Path>,
+    makejobs: usize,
+}
+
+/// Compila UN paquete OFICIAL: conf de xbps-src por invocación (`-c`, RAII)
+/// y verificación del artefacto `.xbps`. Común a las vías secuencial y
+/// worker (mismo flujo; solo cambia root/log/id) — conserva el paralelismo.
+/// Devuelve el artefacto verificado.
+fn build_official(spec: &OfficialBuild) -> Result<std::path::PathBuf> {
+    if crate::signal::is_shutting_down() {
+        anyhow::bail!("interrumpido por señal antes de compilar {}", spec.pkg);
+    }
+    let conf_dir = spec.root.join("etc");
+    let (suffix, guard) = crate::conf::write(&conf_dir, &spec.id, spec.pkg, spec.conf)?;
+    tracing::info!(
+        "compilando {} (oficial) con xbps-src -c {suffix} (makejobs: {})...",
+        spec.pkg,
+        spec.makejobs
+    );
+    let res = crate::xbps::xbps_src(
+        spec.root,
+        &["-c", suffix.as_str(), "pkg", spec.pkg],
+        Some(spec.makejobs),
+        spec.log,
+    )
+    .with_context(|| format!("falló ./xbps-src -c {suffix} pkg {} (oficial)", spec.pkg));
+    drop(guard);
+    let code = res?;
+    if code != 0 {
+        anyhow::bail!(
+            "xbps-src pkg {} (oficial) terminó con código {}",
+            spec.pkg,
+            code
+        );
+    }
+    let expected = spec.binpkgs.join(spec.artifact);
+    if !expected.is_file() {
+        anyhow::bail!(
+            "el build de {} (oficial) terminó OK pero sin artefacto {}",
+            spec.pkg,
+            expected.display()
+        );
+    }
+    Ok(expected)
+}
+
+/// Si la DB registra `pkg` como Source, suelta el repolock ANTES de que un
+/// binario (oficial o VUR) lo pise. Best-effort: no aborta si falla (podía
+/// no estar bloqueado); solo warn.
+fn repounlock_if_source(config: &Config, db: &InstalledDb, pkg: &str) {
+    match db.get(pkg) {
+        Some(e) if e.install_type == InstallType::Source => {
+            if let Err(err) = xbps::pkgdb_mode(config, "repounlock", pkg) {
+                tracing::warn!("repounlock de '{pkg}' falló (podía no estar bloqueado): {err:#}");
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Bloque repetido de los builds oficiales: `show` → `ver_rev` → registro en
+/// `official_pkgver` → skip si ya está instalada EXACTAMENTE esa versión
+/// (salvo --force-build/force_rebuild). Devuelve el `ver_rev` listo para
+/// build, o None si se omitió el build.
+fn official_ver_rev_checked(
+    md: &crate::masterdir::Masterdir,
+    config: &Config,
+    pkg: &str,
+    official_pkgver: &mut HashMap<String, String>,
+    c: &crate::config::Colors,
+) -> Result<Option<String>> {
+    let (ver, rev) = official_ver_rev(md, pkg)?;
+    let ver_rev = format!("{ver}_{rev}");
+    official_pkgver.insert(pkg.to_string(), ver_rev.clone());
+    match crate::xbps::query_installed(pkg) {
+        Ok(Some(cur))
+            if cur.pkgver == format!("{pkg}-{ver_rev}")
+                && !config.force_rebuild
+                && !config.force_build =>
+        {
+            println!(
+                "{} {} ya instalado ({}) ; omitiendo build",
+                c.action.paint("::"),
+                c.bold.paint(pkg),
+                cur.pkgver
+            );
+            return Ok(None);
+        }
+        _ => {}
+    }
+    Ok(Some(ver_rev))
+}
+
+/// Build oficial VÍA SECUENCIAL con el helper común (root/log del masterdir).
+fn build_official_sequential(
+    md: &crate::masterdir::Masterdir,
+    config: &Config,
+    pkg: &str,
+    ver_rev: &str,
+    hyb_conf: &crate::conf::PkgConf,
+) -> Result<std::path::PathBuf> {
+    build_official(&OfficialBuild {
+        root: &md.path,
+        binpkgs: &md.hostdir_binpkgs_root(),
+        pkg,
+        artifact: &format!("{pkg}-{ver_rev}.{}.xbps", config.arch()),
+        conf: hyb_conf,
+        id: crate::conf::auto_id(),
+        log: md.log_file.as_deref(),
+        makejobs: config.makejobs,
+    })
 }
 
 /// Log del worker: dir de logs + sufijo de slot (`sb.log_file`); si no hay
@@ -639,6 +794,9 @@ fn build_one_in_sandbox(
     let parent_pkg = &job.parent_pkg;
     if crate::signal::is_shutting_down() {
         anyhow::bail!("interrumpido por señal antes de compilar {parent_pkg}");
+    }
+    if job.is_official {
+        return build_official_in_sandbox(sb, slot, job, params);
     }
     let srcpkgs = sb.srcpkgs_dir();
     repo.project_pkg(&srcpkgs, parent_pkg, job.explicit)?;
@@ -686,6 +844,35 @@ fn build_one_in_sandbox(
         }
     }
     Ok(arts)
+}
+
+/// Build OFICIAL dentro del sandbox del worker. El binpkgs del worker es
+/// privado (su upper): xbps-src lo indexa solo allí, sin carreras. La vista
+/// merged del worker muestra su conf de slot (vive en su upper) sin
+/// contaminar al resto.
+fn build_official_in_sandbox(
+    sb: &crate::masterdir::WorkerSandbox,
+    slot: usize,
+    job: &BuildJob,
+    params: &WorkerParams,
+) -> Result<Vec<std::path::PathBuf>> {
+    let binpkgs = sb.binpkgs_dir();
+    let log = worker_log_file(
+        params.logs_dir.as_deref(),
+        params.log_file_default.as_deref(),
+        sb,
+    );
+    let main = build_official(&OfficialBuild {
+        root: sb.checkout_root(),
+        binpkgs: &binpkgs,
+        pkg: &job.parent_pkg,
+        artifact: &job.expected_parent,
+        conf: &params.conf,
+        id: format!("w{slot}"),
+        log: log.as_deref(),
+        makejobs: params.makejobs,
+    })?;
+    Ok(vec![main])
 }
 
 /// Ejecuta UN nivel en paralelo (scope: ningún hilo escapa).
@@ -819,6 +1006,11 @@ pub fn install(config: &mut Config) -> Result<i32> {
         &config.git_bin,
     )?;
 
+    let hyb_conf = crate::conf::PkgConf::capture(config);
+    // `ver_rev` (`version_revision`) de los oficiales ya conocidos por show:
+    // alimenta artefactos y el registro DB con versión real (no placeholder).
+    let mut official_pkgver: HashMap<String, String> = HashMap::new();
+
     // 2. Load repos
     let repos_conf = ReposConf::load(config.repos_conf_path())?;
     let sorted = repos_conf.sorted_by_priority();
@@ -853,6 +1045,17 @@ pub fn install(config: &mut Config) -> Result<i32> {
 
     let plan = crate::resolver::resolve(&targets, &source, &opts)?;
 
+    // Conf: solo si el plan tiene builds (un -S de solo binarios no usa -c):
+    // warning si el usuario ya tiene `etc/conf`, que el conf generado
+    // reemplaza para esas invocaciones.
+    let existing_conf = md.path.join("etc").join("conf");
+    if !plan.builds.is_empty() && existing_conf.is_file() {
+        tracing::warn!(
+            "existe {}: el conf generado por vary lo reemplaza para las invocaciones con -c",
+            existing_conf.display()
+        );
+    }
+
     // P1-1: verificación contra vary.lock (avisos, solo si existe). Los
     // oficiales se omiten: xbps es su fuente de verdad y el plan lleva
     // placeholder sin versión (T-009); verificarlos daría falsos avisos.
@@ -863,7 +1066,12 @@ pub fn install(config: &mut Config) -> Result<i32> {
             .collect();
         let mut items = Vec::new();
         for it in plan.installs.iter().chain(plan.builds.iter()) {
-            if matches!(it.action, Action::Install(BinarySource::Official)) {
+            // Oficiales omitidos: xbps es su fuente de verdad y el plan lleva
+            // placeholder sin versión (T-009). Híbrida: BuildOfficial igual.
+            if matches!(
+                it.action,
+                Action::Install(BinarySource::Official) | Action::BuildOfficial
+            ) {
                 continue;
             }
             items.push((it.info.pkgname.clone(), it.info.pkgver()));
@@ -917,6 +1125,10 @@ pub fn install(config: &mut Config) -> Result<i32> {
         println!("\n{} Packages to build (source):", c.bold.paint("::"));
         for item in &plan.builds {
             let real = &item.info.pkgname;
+            if matches!(item.action, Action::BuildOfficial) {
+                println!("  {real} (build oficial desde fuente; las deps las resuelve xbps-src)");
+                continue;
+            }
             if real == &item.name {
                 println!("  {real}/{}", item.info.pkgver());
             } else {
@@ -1109,7 +1321,18 @@ pub fn install(config: &mut Config) -> Result<i32> {
         // Vía HISTÓRICA VERBATIM: orden, mensajes intercalados y errores
         // idénticos a 0.4.0. Cualquier cambio aquí debe justificarse como
         // fix, nunca como refactor.
-        for item in &plan.builds {
+        for item in plan.builds.iter() {
+            // Híbrida: oficial desde fuente (sin repo VUR: sin materialize).
+            let parent_pkg = item.info.pkgname.clone();
+            if matches!(item.action, Action::BuildOfficial) {
+                if let Some(ver_rev) =
+                    official_ver_rev_checked(&md, config, &parent_pkg, &mut official_pkgver, &c)?
+                {
+                    build_official_sequential(&md, config, &parent_pkg, &ver_rev, &hyb_conf)?;
+                    built_names.push(parent_pkg);
+                }
+                continue;
+            }
             // Ya instalada EXACTAMENTE esa versión => omitir compilación
             // (--force-build / force_rebuild la fuerzan).
             if !config.force_rebuild && !config.force_build {
@@ -1162,6 +1385,28 @@ pub fn install(config: &mut Config) -> Result<i32> {
         let mut key_to_job: std::collections::HashMap<(String, String), usize> =
             std::collections::HashMap::new();
         for item in plan.builds.iter() {
+            // Híbrida: oficial desde fuente (show + skip por versión; sin
+            // repo VUR ni materialize).
+            if matches!(item.action, Action::BuildOfficial) {
+                let parent_pkg = item.info.pkgname.clone();
+                let Some(ver_rev) =
+                    official_ver_rev_checked(&md, config, &parent_pkg, &mut official_pkgver, &c)?
+                else {
+                    continue;
+                };
+                key_to_job.insert((item.name.clone(), item.info.pkgname.clone()), jobs.len());
+                jobs.push(BuildJob {
+                    parent_pkg,
+                    repo_idx: 0,
+                    explicit: targets.iter().any(|t| t == &item.info.pkgname),
+                    subs: Vec::new(),
+                    expected_parent: format!("{}-{ver_rev}.{arch}.xbps", item.info.pkgname),
+                    expected_subs: Vec::new(),
+                    is_official: true,
+                    ver_rev,
+                });
+                continue;
+            }
             // Ya instalada EXACTAMENTE esa versión => omitir compilación
             // (--force-build / force_rebuild la fuerzan).
             if !config.force_rebuild && !config.force_build {
@@ -1217,6 +1462,8 @@ pub fn install(config: &mut Config) -> Result<i32> {
                     .collect(),
                 expected_parent,
                 expected_subs,
+                is_official: false,
+                ver_rev: String::new(),
             });
         }
         // Niveles sobre jobs (los ya-instalados simplemente no están).
@@ -1245,6 +1492,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             log_file_default: md.log_file.clone(),
             sudo_bin: config.sudo_bin.clone(),
             sudo_flags: config.sudo_flags.clone(),
+            conf: hyb_conf.clone(),
         };
         // Sandboxes perezosos: se crean al primer nivel que los necesite; si la
         // creación falla, ese nivel (y los siguientes) van en secuencial.
@@ -1256,6 +1504,17 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 // Vía secuencial intacta (1 item, slots==1 o sin capacidad).
                 for pos in level {
                     let job = &jobs[*pos];
+                    if job.is_official {
+                        build_official_sequential(
+                            &md,
+                            config,
+                            &job.parent_pkg,
+                            &job.ver_rev,
+                            &hyb_conf,
+                        )?;
+                        built_names.push(job.parent_pkg.clone());
+                        continue;
+                    }
                     let repo = &repos[job.repo_idx];
                     build_one_sequential(
                         repo,
@@ -1306,6 +1565,17 @@ pub fn install(config: &mut Config) -> Result<i32> {
                     // Reintento secuencial del nivel (materialize ya hecho: vale).
                     for pos in level {
                         let job = &jobs[*pos];
+                        if job.is_official {
+                            build_official_sequential(
+                                &md,
+                                config,
+                                &job.parent_pkg,
+                                &job.ver_rev,
+                                &hyb_conf,
+                            )?;
+                            built_names.push(job.parent_pkg.clone());
+                            continue;
+                        }
                         let repo = &repos[job.repo_idx];
                         build_one_sequential(
                             repo,
@@ -1409,6 +1679,9 @@ pub fn install(config: &mut Config) -> Result<i32> {
     } // fin camino paralelo (else de !parallel_armed)
 
     // 8. Installs
+    // DB cargada ANTES: la decisión de repounlock (binario oficial sobre
+    // fuente anclada) y el registro final comparten la misma carga.
+    let mut db = InstalledDb::load(config.installed_db_path())?;
     let mut all_install_names: Vec<String> = Vec::new();
     let mut binary_repos_configured: HashSet<String> = HashSet::new();
 
@@ -1431,8 +1704,16 @@ pub fn install(config: &mut Config) -> Result<i32> {
         // H-046: instalar por nombre real (oficiales: info.pkgname == name).
         let real = item.info.pkgname.clone();
         match &item.action {
-            Action::Install(BinarySource::Official) => all_install_names.push(real),
+            Action::Install(BinarySource::Official) => {
+                // Binario oficial sobre un paquete anclado (repolock):
+                // soltar el lock ANTES de la transacción. Best-effort.
+                repounlock_if_source(config, &db, &real);
+                all_install_names.push(real);
+            }
             Action::Install(BinarySource::VulBinary { repo }) => {
+                // Binario VUR sobre fuente anclada: soltar el lock también
+                // aquí (mismo contrato best-effort que el oficial).
+                repounlock_if_source(config, &db, &real);
                 if !binary_repos_configured.contains(repo) {
                     if let Some(r) = repos.iter().find(|r| &r.name == repo) {
                         let entry = repos_conf.vur.get(repo).ok_or_else(|| {
@@ -1529,10 +1810,17 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 &config.sudo_flags,
             );
         }
+        // Contrato híbrido: todo lo instalado desde fuente (oficial o VUR)
+        // queda anclado a su origen con repolock. Si falla, es un error
+        // accionable: la protección es parte del contrato, no un extra.
+        for name in &built_names {
+            xbps::pkgdb_mode(config, "repolock", name).with_context(|| {
+                format!("repolock de {name} falló: el paquete quedó instalado desde fuente SIN anclar a su repo")
+            })?;
+        }
     }
 
     // 9. Record in db
-    let mut db = InstalledDb::load(config.installed_db_path())?;
     for item in plan.installs.iter().chain(plan.builds.iter()) {
         // Only VUR packages (por nombre real: lo pedido puede ser virtual).
         let real = &item.info.pkgname;
@@ -1540,16 +1828,24 @@ pub fn install(config: &mut Config) -> Result<i32> {
         // ficción. Solo Build y VulBinary dejan rastro. P0-5: los VulBinary
         // registran por su repo de acción (el gate `is_vur` los dejaba fuera
         // al no tener template en el clon, contradiciendo la regla T-005).
+        // Híbrida: BuildOfficial SÍ deja rastro (repo "official") porque el
+        // upgrade lo necesita para recompilar con template más nuevo.
         let repo_name: Option<String> = match &item.action {
             Action::Install(BinarySource::VulBinary { repo }) => Some(repo.clone()),
             Action::Build => vur_map_lookup_repo(real, &repos, &mut cache).ok(),
             Action::Install(BinarySource::Official) => None,
+            Action::BuildOfficial => Some("official".to_string()),
         };
         let (Some(repo_name), Some(itype)) = (repo_name, track_action(&item.action)) else {
             continue;
         };
         // P0-5: pins best-effort (nunca fatales) + aviso de drift.
-        let version = item.info.pkgver();
+        // Híbrida: los oficiales llevan la versión real leída por show;
+        // los VUR su pkgver().
+        let version = official_pkgver
+            .get(real)
+            .map(|vr| format!("{real}-{vr}"))
+            .unwrap_or_else(|| item.info.pkgver());
         let repo_commit = repo_head_commit(&config.vurs_dir().join(&repo_name), &config.git_bin);
         let artifact_sha256 = package_artifact_hash(&binpkgs_root, &version, &arch);
         for w in crate::db::drift_warnings(db.get(real), &version, &repo_commit, &artifact_sha256) {
@@ -1613,7 +1909,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
 fn track_action(action: &Action) -> Option<InstallType> {
     match action {
         Action::Install(BinarySource::VulBinary { .. }) => Some(InstallType::Binary),
-        Action::Build => Some(InstallType::Source),
+        Action::Build | Action::BuildOfficial => Some(InstallType::Source),
         _ => None,
     }
 }
@@ -1822,6 +2118,10 @@ mod tests {
         // T-005: los oficiales no dejan rastro (xbps manda); Build y
         // VulBinary sí, con su tipo correspondiente.
         assert_eq!(track_action(&Action::Build), Some(InstallType::Source));
+        assert_eq!(
+            track_action(&Action::BuildOfficial),
+            Some(InstallType::Source)
+        );
         assert_eq!(
             track_action(&Action::Install(BinarySource::VulBinary {
                 repo: "vup".to_string()

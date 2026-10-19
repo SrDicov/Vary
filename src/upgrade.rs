@@ -6,6 +6,99 @@ use crate::vur_client::VurRepo;
 use crate::xbps;
 use anyhow::{Context, Result};
 
+/// Parsea `version=` y `revision=` de la salida de `xbps-src show <pkg>`.
+/// Pura y testeable con fixtures; `revision` ausente o no numérica => 1
+/// (el default del template histórico); sin `version=` => None.
+pub(crate) fn parse_template_version(text: &str) -> Option<(String, u32)> {
+    let mut version = None;
+    let mut revision = 1u32;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(v) = line.strip_prefix("version=") {
+            version = Some(v.trim().to_string());
+        } else if let Some(r) = line.strip_prefix("revision=") {
+            revision = r.trim().parse().unwrap_or(1);
+        }
+    }
+    version.filter(|v| !v.is_empty()).map(|v| (v, revision))
+}
+
+/// `name-<ver>_<rev>` de xbps => `(ver, rev)`. Puro y testeable.
+fn split_installed_pkgver(name: &str, pkgver: &str) -> Option<(String, u32)> {
+    let rest = pkgver.strip_prefix(name)?.strip_prefix('-')?;
+    let (ver, rev) = rest.rsplit_once('_')?;
+    Some((ver.to_string(), rev.parse().ok()?))
+}
+
+/// Fase híbrida del upgrade: oficiales registrados como Source en la DB que
+/// matcheen `source_always` y cuyo template del clon (vía `xbps-src show`)
+/// sea MÁS NUEVO que lo instalado se acumulan en `targets` — el plan los
+/// emite como `BuildOfficial` y `xbps-src` resuelve sus deps y el artefacto.
+/// Best-effort por paquete: fallo de show/parseo/xbps => warn y omitir.
+fn add_official_source_upgrades(
+    config: &Config,
+    db: &InstalledDb,
+    vur_managed: &std::collections::HashSet<String>,
+    targets: &mut Vec<String>,
+) {
+    if config.source_always.is_empty() {
+        return;
+    }
+    let md = crate::masterdir::Masterdir::new(config.void_packages_dir());
+    for (name, entry) in db.entries_snapshot() {
+        if entry.install_type != InstallType::Source
+            || !config
+                .source_always
+                .iter()
+                .any(|p| crate::config::matches_glob(p, &name))
+            || vur_managed.contains(&name)
+            || targets.contains(&name)
+        {
+            continue;
+        }
+        // Solo oficial: gestionado por un VUR lo maneja la fase VUR normal.
+        let installed = match xbps::query_installed(&name) {
+            Ok(Some(cur)) => cur,
+            _ => {
+                tracing::warn!(
+                    "'{name}': no consultable vía xbps-query; omitido del upgrade híbrido"
+                );
+                continue;
+            }
+        };
+        let Some((iver, irev)) = split_installed_pkgver(&name, &installed.pkgver) else {
+            tracing::warn!(
+                "'{name}': pkgver instalado '{}' no parseable; omitido",
+                installed.pkgver
+            );
+            continue;
+        };
+        let (tver, trev) = match md
+            .show_pkg(&name)
+            .ok()
+            .as_deref()
+            .and_then(parse_template_version)
+        {
+            Some(v) => v,
+            None => {
+                tracing::warn!(
+                    "'{name}': `xbps-src show` falló o sin version=/revision=; omitido del upgrade híbrido"
+                );
+                continue;
+            }
+        };
+        // Template más nuevo que lo instalado => recompilar desde fuente.
+        if crate::resolver::cmp_pkgver(&tver, trev, &iver, irev) != std::cmp::Ordering::Greater {
+            continue;
+        }
+        println!(
+            "  {} (oficial desde fuente) {}_{irev} -> {tver}_{trev}",
+            name, iver
+        );
+        targets.push(name);
+    }
+}
+
 /// Diff de template pendiente de revisión en un upgrade (A3).
 struct TemplateDiff {
     pkg: String,
@@ -136,6 +229,27 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
 }
 
 pub fn upgrade(config: &mut Config) -> Result<i32> {
+    // Fase híbrida previa: anclar (repolock) todo lo instalado desde fuente
+    // ANTES de `-Su`, para que el binario oficial no pise un paquete que
+    // vary gestiona como Source. Idempotente y best-effort (warn, no aborte).
+    {
+        let db = InstalledDb::load(config.installed_db_path())?;
+        for (name, entry) in db.entries_snapshot() {
+            if entry.install_type != InstallType::Source {
+                continue;
+            }
+            // Entrada Source ya desinstalada (DB desactualizada): se salta
+            // en silencio; evita warnings por residuos que ya no existen.
+            if matches!(xbps::query_installed(&name), Ok(None)) {
+                tracing::debug!("repolock de '{name}' omitido: ya no está instalado");
+                continue;
+            }
+            if let Err(err) = xbps::pkgdb_mode(config, "repolock", &name) {
+                tracing::warn!("repolock de '{name}' falló (best-effort): {err:#}");
+            }
+        }
+    }
+
     // Phase 1: official upgrade
     println!(":: Upgrading official packages...");
     let mut extra = vec!["-u".to_string()];
@@ -284,6 +398,17 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         }
     }
 
+    // Fase híbrida, después de la detección de builds VUR: oficiales Source
+    // (DB) que matcheen `source_always` con template más nuevo que el
+    // instalado. Se añaden a los targets del MISMO plan (sin reordenar
+    // fases): el resolver los emite como BuildOfficial y el install reusa
+    // el flujo de fuente. Se ejecuta ANTES del early-return para que un
+    // upgrade solo-oficial también proceda.
+    {
+        let vur_managed: std::collections::HashSet<String> = current_map.keys().cloned().collect();
+        add_official_source_upgrades(config, &db, &vur_managed, &mut outdated);
+    }
+
     if outdated.is_empty() {
         println!("VUR packages up to date.");
         return Ok(0);
@@ -349,6 +474,56 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
 mod tests {
     use super::*;
     use crate::config::Config;
+
+    // --- parseo/comparación de versión para la fase híbrida (fixtures) ---
+
+    #[test]
+    fn parse_template_version_minimo() {
+        let text = "version=6.6.4\nrevision=1\n";
+        assert_eq!(parse_template_version(text), Some(("6.6.4".to_string(), 1)));
+        // revision sin definir => 1; con líneas de ruido intercaladas.
+        let text = "# deps: xbps\nversion=156.1\nother=x\n";
+        assert_eq!(parse_template_version(text), Some(("156.1".to_string(), 1)));
+        // Revisión no numérica => default 1.
+        assert_eq!(
+            parse_template_version("version=1.0\nrevision=raro\n"),
+            Some(("1.0".to_string(), 1))
+        );
+        // Sin version => None (el paquete se omite con warn).
+        assert_eq!(parse_template_version("revision=2\n"), None);
+        assert_eq!(parse_template_version(""), None);
+        assert_eq!(parse_template_version("version=\n"), None);
+    }
+
+    #[test]
+    fn split_installed_pkgver_separa_version_revision() {
+        assert_eq!(
+            split_installed_pkgver("linux", "linux-6.6.4_1"),
+            Some(("6.6.4".to_string(), 1))
+        );
+        assert_eq!(
+            split_installed_pkgver("mesa-dri", "mesa-dri-24.0.1_2"),
+            Some(("24.0.1".to_string(), 2))
+        );
+        assert_eq!(split_installed_pkgver("linux", "otro-1.0_1"), None);
+        assert_eq!(
+            split_installed_pkgver("linux", "linux-1.0"),
+            None,
+            "sin _rev"
+        );
+    }
+
+    /// Fixture end-to-end del flujo: show -> (tver, trev) vs instalado
+    /// (parse/split/comparación juntos; cmp_pkgver directo lo cubre el resolver).
+    #[test]
+    fn comparador_version_revision_template_mas_nuevo_que_instalado() {
+        let (tver, trev) = parse_template_version("version=156.1\nrevision=3\n").expect("parse");
+        let (iver, irev) = split_installed_pkgver("pkg", "pkg-155.0_1").expect("split");
+        assert_eq!(
+            crate::resolver::cmp_pkgver(&tver, trev, &iver, irev),
+            std::cmp::Ordering::Greater
+        );
+    }
 
     #[test]
     fn diff_identico_da_none_cambio_da_patch() {
