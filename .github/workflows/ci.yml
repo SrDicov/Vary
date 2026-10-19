@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [vary-mvp, master]
+    branches: [main, testing]
     tags: ['v*']
     paths-ignore:
       - 'audit/**'

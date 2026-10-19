@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest commit on `vary-mvp` receives security fixes during the MVP phase.
+Only the latest commit on `main` receives security fixes during the MVP phase.
 
 ## Reporting a vulnerability
 

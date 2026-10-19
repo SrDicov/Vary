@@ -10,7 +10,7 @@ Its core piece is the **VUR** protocol: distributed Git repositories that combin
 
 ## Status
 
-**MVP under development.** The `vary-mvp` branch contains a partial, unstable implementation: command interfaces and formats may change without notice.
+**MVP under development.** Only `main` (stable) and `testing` (integration) exist; installed on `testing`: command interfaces and formats may change without notice.
 
 ## Requirements
 

@@ -10,7 +10,7 @@ Su pieza central es el protocolo **VUR**: repos Git distribuidos que combinan pl
 
 ## Estado
 
-**MVP en desarrollo.** La rama `vary-mvp` contiene una implementación parcial e inestable: la interfaz de comandos y los formatos pueden cambiar sin previo aviso.
+**MVP en desarrollo.** Solo existen `main` (estable) y `testing` (integración); se instala desde `testing`: la interfaz de comandos y los formatos pueden cambiar sin previo aviso.
 
 ## Requisitos
 
