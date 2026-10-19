@@ -1326,7 +1326,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             let parent_pkg = item.info.pkgname.clone();
             if matches!(item.action, Action::BuildOfficial) {
                 if let Some(ver_rev) =
-                    official_ver_rev_checked(&md, config, &parent_pkg, &mut official_pkgver, &c)?
+                    official_ver_rev_checked(&md, config, &parent_pkg, &mut official_pkgver, c)?
                 {
                     build_official_sequential(&md, config, &parent_pkg, &ver_rev, &hyb_conf)?;
                     built_names.push(parent_pkg);
@@ -1390,7 +1390,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             if matches!(item.action, Action::BuildOfficial) {
                 let parent_pkg = item.info.pkgname.clone();
                 let Some(ver_rev) =
-                    official_ver_rev_checked(&md, config, &parent_pkg, &mut official_pkgver, &c)?
+                    official_ver_rev_checked(&md, config, &parent_pkg, &mut official_pkgver, c)?
                 else {
                     continue;
                 };

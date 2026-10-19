@@ -91,10 +91,7 @@ fn add_official_source_upgrades(
         if crate::resolver::cmp_pkgver(&tver, trev, &iver, irev) != std::cmp::Ordering::Greater {
             continue;
         }
-        println!(
-            "  {} (oficial desde fuente) {}_{irev} -> {tver}_{trev}",
-            name, iver
-        );
+        println!("  {name} (oficial desde fuente) {iver}_{irev} -> {tver}_{trev}");
         targets.push(name);
     }
 }

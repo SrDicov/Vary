@@ -463,7 +463,7 @@ impl<'a> Ctx<'a> {
         // Contrato híbrida: un nombre que matchee `source_always` nunca se
         // satisface con un binario VUR firmado -> se compila el template
         // (un candidato SOURCE VUR sí puede ganar, via normal para acá).
-        let binary_ok = !self.force_source(&name, &info)
+        let binary_ok = !self.force_source(name, &info)
             && !self.opts.force_build
             && self.opts.prefer_binary
             && self.source.vul_binary_available(&repo, &info, &self.arch);
