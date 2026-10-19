@@ -604,7 +604,8 @@ mod tests {
         assert!(matches_glob("*", ""));
         assert!(!matches_glob("", "x"));
         assert!(matches_glob("a*b*c", "a-b-c"));
-        assert!(!matches_glob("a*b*c", "abc"));
+        assert!(matches_glob("a*b*c", "abc"), "glob * casa vacío");
+        assert!(!matches_glob("a*b*c", "abd"));
     }
 
     #[test]
