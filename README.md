@@ -166,7 +166,7 @@ For every source build (official or VUR), vary injects your own content into the
 
 Behavior:
 
-- Managed as a transactional overlay: on build success, failure or interruption, the source package is restored to its previous state. Directories you didn't have (`patches/` / `files/`) are removed if the build leaves them empty, and anything the build itself left unused there is not touched.
+- Managed as a transactional overlay: the source package is restored on normal exit, errors, and controlled `SIGINT`/`SIGTERM` interrupts (RAII restoration, running at scope exit). On `SIGKILL`/abort the restoration cannot run and leftovers are possible. Directories you didn't have (`patches/` / `files/`) are removed if the build leaves them empty, and anything the build itself left unused there is not touched.
 - Only regular files are copied; symlinks and directories in your config dirs are skipped with a warning (nothing escapes config into `srcpkgs/` via `../..` or links pointing to `/etc`).
 - Empty or missing your dirs = no-op: the tree is untouched.
 - Works on all build paths: sequential, experimental parallel workers, recursive builds and `--challenge`.

@@ -167,7 +167,7 @@ Para cada build desde fuente (oficial o VUR), vary inyecta tu contenido propio e
 
 Comportamiento:
 
-- Se gestiona como overlay transaccional: ante éxito, fallo o interrupción del build, el source package se restaura a su estado previo. Los dirs que no tenías (`patches/` / `files/`) se eliminan si el build los deja vacíos, y todo lo que el propio build deje sin usar ahí no se toca.
+- Se gestiona como overlay transaccional: el source package se restaura en salida normal, errores e interrupciones controladas (`SIGINT`/`SIGTERM`; restauración RAII al salir del ámbito). Con `SIGKILL`/abort no se ejecuta la restauración (no hay `Drop`) y pueden quedar restos. Los dirs que no tenías (`patches/` / `files/`) se eliminan si el build los deja vacíos, y todo lo que el propio build deje sin usar ahí no se toca.
 - Solo se copian ficheros regulares; symlinks y dirs en tus dirs de configuración se saltan con aviso (nada escapa del config a `srcpkgs/` vía `../..` ni via enlaces apuntando a `/etc`).
 - Dirs vacíos o dirs ausentes = no-op: no se toca el árbol.
 - Funciona en todos los caminos de build: secuencial, workers paralelos experimentales, builds recursivos y `--challenge`.

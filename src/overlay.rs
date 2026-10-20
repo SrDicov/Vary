@@ -27,6 +27,14 @@ pub struct UserOverlay {
     srcpkg_dir: PathBuf,
 }
 
+/// Nombre de backup para `dst`: un `.vary-bak.<pid>.<nombre>` junto al destino.
+fn backup_name(dst: &Path, pid: u32) -> PathBuf {
+    let name = dst
+        .file_name()
+        .expect("overlay: dst de backup siempre es user_dir.join(name)");
+    dst.with_file_name(format!(".vary-bak.{pid}.{}", name.to_string_lossy()))
+}
+
 /// Copia los contenidos de `user_dir` según `kind` (`"patches"` prefija el
 /// nombre destino, `"files"` respalda/reemplaza), apilando acciones.
 /// Devuelve cuántos ficheros copió.
@@ -38,11 +46,16 @@ fn apply_dir(
 ) -> Result<usize> {
     let target = srcpkg_dir.join(kind);
     let mut n = 0;
+    // Orden determinista: iterar por nombre, no al orden del FS (arbitrario).
+    let mut entries = Vec::new();
     for entry in
         fs::read_dir(user_dir).with_context(|| format!("leyendo {}", user_dir.display()))?
     {
         let entry = entry.with_context(|| format!("iterando {}", user_dir.display()))?;
-        // file_name(): nunca la ruta completa (prohíbe escapes tipo ../..).
+        entries.push(entry);
+    }
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
         let name = entry.file_name();
         let src = entry.path();
         // symlink_metadata: mirar el ENLACE, no seguirlo a /etc o donde sea.
@@ -76,7 +89,12 @@ fn apply_dir(
                 bail!("overlay: destino ya existe: {}", dst.display());
             }
             // Backup con pid+nombre: improbable chocar entre procesos.
-            let backup = target.join(format!(".vary-bak.{}.{}", std::process::id(), dst_name));
+            let backup = backup_name(&dst, std::process::id());
+            // Falla cerrado si el backup ya existe: sobrescribirlo significa
+            // destruir la copia de seguridad de un run anterior.
+            if backup.exists() {
+                bail!("overlay: backup ya existe: {}", backup.display());
+            }
             fs::rename(&dst, &backup)
                 .with_context(|| format!("respaldando {} → {}", dst.display(), backup.display()))?;
             actions.push(Action::Restore {
@@ -121,6 +139,9 @@ pub fn apply(srcpkg_dir: &Path, config_dir: &Path, pkg: &str) -> Result<UserOver
         match apply_dir(srcpkg_dir, &user_dir, kind, &mut actions) {
             Ok(c) => *count = c,
             Err(err) => {
+                // Drop drena en orden de inserción; se invierte para deshacer
+                // LIFO (sino RemoveDirIfEmpty corre antes de borrar los ficheros).
+                actions.reverse();
                 drop(UserOverlay {
                     actions,
                     srcpkg_dir: srcpkg_dir.to_path_buf(),
@@ -288,5 +309,89 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         let r = apply(&base.path().join("nope"), &base.path(), "pepa");
         assert!(r.is_err());
+    }
+
+    /// Rollback parcial LIFO: `patches/` se crea e inyecta `a.patch` ok, pero
+    /// `files/` falla después (colisión de backup) → el guard drop POR COMPLETO
+    /// lo acumulado en orden inverso. Antes de invertir en el Err, el Drop
+    /// drenaba en orden de inserción: `RemoveDirIfEmpty(patches)` corría antes
+    /// que `Remove` y dejaba `patches/` huérfano y vacío.
+    #[test]
+    fn partial_rollback_removes_fresh_dir_and_injected_files() {
+        let (base, srcpkg, cfg) = setup();
+        let up = cfg.join("patches").join("foo");
+        fs::create_dir_all(&up).unwrap();
+        write_to(&up, "a.patch", "user patch");
+        let uf = cfg.join("files").join("foo");
+        fs::create_dir_all(&uf).unwrap();
+        write_to(&uf, "config.h", "user file");
+        fs::create_dir_all(srcpkg.join("files")).unwrap();
+        write_to(&srcpkg, "files/config.h", "official");
+        let bomb = backup_name(&srcpkg.join("files/config.h"), std::process::id());
+        fs::write(&bomb, "old backup").unwrap();
+
+        let r = apply(&srcpkg, &cfg, "foo");
+        assert!(r.is_err(), "colisión de backup debe fallar");
+        // rollback del sello: parche inyectado fuera y dir creado sin huérfano
+        assert!(!srcpkg.join("patches/999-vary-user-a.patch").exists());
+        assert!(
+            !srcpkg.join("patches").exists(),
+            "patches/ creado por apply queda huérfano"
+        );
+        // original y backup previo intactos (fail-closed, sin sobrescribir)
+        assert_eq!(
+            fs::read_to_string(srcpkg.join("files/config.h")).unwrap(),
+            "official"
+        );
+        assert_eq!(fs::read_to_string(&bomb).unwrap(), "old backup");
+        drop(base);
+    }
+
+    /// Backup existente: falla cerrado, ni toca el original ni el backup.
+    #[test]
+    fn backup_collision_fails_closed() {
+        let (base, srcpkg, cfg) = setup();
+        fs::create_dir_all(srcpkg.join("files")).unwrap();
+        write_to(&srcpkg, "files/config.h", "official");
+        let uf = cfg.join("files").join("foo");
+        fs::create_dir_all(&uf).unwrap();
+        write_to(&uf, "config.h", "user file");
+        let bomb = backup_name(&srcpkg.join("files/config.h"), std::process::id());
+        fs::write(&bomb, "old backup").unwrap();
+
+        let r = apply(&srcpkg, &cfg, "foo");
+        assert!(r.is_err());
+        assert_eq!(
+            fs::read_to_string(srcpkg.join("files/config.h")).unwrap(),
+            "official"
+        );
+        assert_eq!(fs::read_to_string(&bomb).unwrap(), "old backup");
+        drop(base);
+    }
+
+    /// Colisión en `patches/`: bail ruidoso y el guard deshace lo copiado antes
+    /// del choque. El orden es determinista (apply_dir ordena por nombre);
+    /// nombrando `a.patch` y `z-dup.patch` copiamos primero y chocamos después.
+    #[test]
+    fn patch_collision_bails_and_keeps_official() {
+        let (base, srcpkg, cfg) = setup();
+        let up = cfg.join("patches").join("foo");
+        fs::create_dir_all(&up).unwrap();
+        write_to(&up, "a.patch", "user patch");
+        write_to(&up, "z-dup.patch", "dup");
+        let off = srcpkg.join("patches");
+        fs::create_dir_all(&off).unwrap();
+        // dst del dup ya existe (tras prefijo): 999-vary-user-z-dup.patch.
+        write_to(&off, "999-vary-user-z-dup.patch", "official");
+
+        let r = apply(&srcpkg, &cfg, "foo");
+        assert!(r.is_err());
+        // nada inyectado queda y lo oficial sigue intacto
+        assert!(!off.join("999-vary-user-a.patch").exists());
+        assert_eq!(
+            fs::read_to_string(off.join("999-vary-user-z-dup.patch")).unwrap(),
+            "official"
+        );
+        drop(base);
     }
 }
