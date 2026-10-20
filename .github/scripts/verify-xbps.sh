@@ -32,4 +32,15 @@ printf '%s\n' "$out" | grep -Eq '^vary [0-9]+\.[0-9]+\.[0-9]+$'
 vary -h > /dev/null
 vary --repo list
 
+# Hybrid plan smoke: sets + deep flag + guard de template.
+# En un contenedor limpio no hay checkout de void-packages: --force-build
+# debe degradar a binario oficial con aviso, no abortar.
+vary -Sp @system > /dev/null
+vary -Sp --deep --force-build @system > /dev/null
+# @preserved-rebuild sin DB/pins debe fallar claro (set vacío), no colgar.
+if vary -Sp @preserved-rebuild > /dev/null 2>&1; then
+    echo "ERROR: @preserved-rebuild vacío debió fallar" >&2
+    exit 1
+fi
+
 echo "OK: vary .xbps ($LIBC) installed and functional"
