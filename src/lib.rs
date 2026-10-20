@@ -236,6 +236,14 @@ fn handle_sync(config: &mut Config) -> Result<i32> {
     if config.args.has_arg("log", "log") {
         bail!("--log no se combina con -S: usa `vary --log [pkg]`");
     }
+    // Flags que dominan consultas: debe saberse ANTES de expandir sets
+    // (-Ss/-Si no son targets de instalación, la expansión los rompería).
+    let has_search = config.args.has_arg("s", "search");
+    let has_info = config.args.has_arg("i", "info");
+    let has_print = config.args.has_arg("p", "print");
+    if config.targets.iter().any(|t| sets::is_set(t)) && !has_print && (has_search || has_info) {
+        bail!("los sets @... solo se usan con -S/-Syu, no con -Ss/-Si: pasa nombres explícitos");
+    }
     // Sets `@name`: se expanden ANTES de print/install (el plan congelado
     // `-p` debe reflejar la expansión). Sin targets no hay nada que expandir
     // (y `-Syu` sin targets no se toca: no es una operación con sets).
@@ -245,12 +253,10 @@ fn handle_sync(config: &mut Config) -> Result<i32> {
     }
     // P0-4: -p imprime el plan congelado sin mutar (ver install::print_plan,
     // que valida su propia forma). Domina sobre el resto de consultas sync.
-    if config.args.has_arg("p", "print") {
+    if has_print {
         return install::print_plan(config);
     }
 
-    let has_search = config.args.has_arg("s", "search");
-    let has_info = config.args.has_arg("i", "info");
     let has_refresh = config.args.has_arg("y", "refresh");
     let has_upgrade = config.args.has_arg("u", "sysupgrade");
     let has_downloadonly = config.args.has_arg("w", "downloadonly");

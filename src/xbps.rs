@@ -394,16 +394,17 @@ pub fn query_manual_names() -> Result<Vec<String>> {
 }
 
 /// Segunda columna de una salida de lista (`-l`): pkgver => nombre canónico.
+/// Descarta líneas malformadas (< 2 columnas: `ii` desnudo, una sola col).
 /// Pura y testeable sin xbps.
 pub fn installed_names_from_output(text: &str) -> Vec<String> {
     text.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
-        .map(|l| {
+        .filter_map(|l| {
             let mut cols = l.split_whitespace();
-            let first = cols.next().unwrap_or_default();
-            let pkgver = cols.next().unwrap_or(first);
-            split_pkgver_name(pkgver).to_string()
+            let _status = cols.next()?;
+            let pkgver = cols.next()?;
+            Some(split_pkgver_name(pkgver).to_string())
         })
         .collect()
 }
@@ -864,7 +865,8 @@ mod tests {
         assert_eq!(split_pkgver_name("foo-1.0_1"), "foo");
         assert_eq!(split_pkgver_name("glibc"), "glibc");
         assert_eq!(
-            installed_names_from_output("ii foo-1.0_1 desc\nii glibc-2.41_1 x\n"),
+            // "ii" desnudo y "iisolo" (1 columna) se descartan.
+            installed_names_from_output("ii foo-1.0_1 desc\nii\niisolo\nii glibc-2.41_1 x\n",),
             vec!["foo".to_owned(), "glibc".to_owned()]
         );
     }

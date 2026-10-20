@@ -8,7 +8,7 @@
 //! |--------------|---------------------------------------------|
 //! | `@selected`  | paquetes instalados manualmente (`xbps-query -m`) |
 //! | `@installed` | todos los instalados (`xbps-query -l`)      |
-//! | `@system`    | `base-system` (con `--deep`, xbps-src construye su árbol de dependencias desde fuente) |
+//! | `@system`    | `base-system` (árbol completo de deps desde fuente: `--deep` pendiente) |
 //! | `@world`     | unión de `@selected` + `@system` (dedup)    |
 //! | `@optimized` | paquetes `InstallType::Source` de la DB (compilados por vary: oficiales y VUR) |
 //! | `@vur`       | paquetes con origen VUR en la DB (fuera los compuestos `official`) |
@@ -77,32 +77,55 @@ pub fn expand_from(
     Ok(names)
 }
 
-/// Expande UN set con datos del sistema real: `xbps-query -m`/`-l` y la DB
-/// de vary (la fuente de dónde se compiló cada paquete).
+/// Expande UN set con datos del sistema real: consulta SOLO la fuente que
+/// el set necesita (`xbps-query` o la DB de vary, dónde se compiló cada
+/// paquete); las listas no usadas quedan vacías.
 pub fn expand(name: &str, _config: &Config, db: &InstalledDb) -> Result<Vec<String>> {
-    // Validar PRIMERO (sin tocar xbps): un set desconocido es error claro
-    // incluso si xbps-query no está disponible.
+    // Validar PRIMERO (sin tocar xbps ni la DB): un set desconocido es error
+    // claro incluso si xbps-query no está disponible.
     if !VALID_SETS.contains(&name) {
         bail!(
             "set '{name}' desconocido; sets válidos: {}",
             VALID_SETS.join(", ")
         );
     }
-    let selected = crate::xbps::query_manual_names()
-        .with_context(|| format!("no se pudo listar lo instalado manualmente (set '{name}')"))?;
-    let installed = crate::xbps::query_installed_names()
-        .with_context(|| format!("no se pudo listar los paquetes instalados (set '{name}')"))?;
-    let snap = db.entries_snapshot();
-    let sources: Vec<String> = snap
-        .iter()
-        .filter(|(_, e)| e.install_type == InstallType::Source)
-        .map(|(n, _)| n.clone())
-        .collect();
-    let vurs: Vec<String> = snap
-        .iter()
-        .filter(|(_, e)| e.vur != "official")
-        .map(|(n, _)| n.clone())
-        .collect();
+    let (selected, installed, sources, vurs) = match name {
+        // @selected y @world: solo `-m`; @system: un literal, ni xbps ni DB.
+        "@selected" | "@world" => (
+            crate::xbps::query_manual_names().with_context(|| {
+                format!("no se pudo listar lo instalado manualmente (set '{name}')")
+            })?,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        // @installed: solo `-l`.
+        "@installed" => (
+            Vec::new(),
+            crate::xbps::query_installed_names().with_context(|| {
+                format!("no se pudo listar los paquetes instalados (set '{name}')")
+            })?,
+            Vec::new(),
+            Vec::new(),
+        ),
+        // @optimized y @vur: solo DB (entries_snapshot), sin xbps.
+        "@optimized" | "@vur" => {
+            let snap = db.entries_snapshot();
+            let sources: Vec<String> = snap
+                .iter()
+                .filter(|(_, e)| e.install_type == InstallType::Source)
+                .map(|(n, _)| n.clone())
+                .collect();
+            let vurs: Vec<String> = snap
+                .iter()
+                .filter(|(_, e)| e.vur != "official")
+                .map(|(n, _)| n.clone())
+                .collect();
+            (Vec::new(), Vec::new(), sources, vurs)
+        }
+        // name ∈ VALID_SETS ya validado arriba; cubre solo "@system".
+        _ => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+    };
     expand_from(name, &selected, &installed, &sources, &vurs)
 }
 
@@ -231,20 +254,23 @@ mod tests {
     }
 
     #[test]
+    fn expand_system_funciona_sin_xbps_ni_db() {
+        // @system es un literal: no necesita xbps-query ni DB del host.
+        let out = expand("@system", &Config::default(), &InstalledDb::default()).unwrap();
+        assert_eq!(out, vec!["base-system"]);
+    }
+
+    #[test]
     fn targets_mezcla_sets_nombres_y_dedupe_total() {
         // Orden de primera aparición gana; el nombre literal aparece una vez.
+        // @system no toca xbps, así que expand_targets corre en el host de test.
         let cfg = Config::default();
         let db = InstalledDb::default();
-        // Sin xbps en el entorno de test NO se puede llamar expand (consulta
-        // real): probamos la dedupe total con el núcleo + el orden del
-        // wrapper vía un set estático.
-        let (sel, ins, src, vur) = s(&[], &[], &[], &[]);
-        let set = expand_from("@system", &sel, &ins, &src, &vur).unwrap();
-        let mut out = vec!["git".to_string()];
-        out.extend(set);
-        out.push("git".to_string());
-        let total = crate::sets::dedup(out);
-        assert_eq!(total, vec!["git", "base-system"]);
+        let targets = strs(&["foo", "@system", "foo"]);
+        assert_eq!(
+            expand_targets(&targets, &cfg, &db).unwrap(),
+            vec!["foo", "base-system"]
+        );
         // expand_targets rechaza sets desconocidos con error claro.
         let targets = strs(&["git", "@noexiste"]);
         let err = format!("{:#}", expand_targets(&targets, &cfg, &db).unwrap_err());
