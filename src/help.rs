@@ -38,7 +38,7 @@ pub fn help() {
     println!();
     println!("Vary options:");
     println!("    --force-build           Force build from source even if binary exists");
-    println!("    --deep-build            Pass -N to xbps-src (no remote repos: dependencies are built from source; may fail if a source/distfile is missing)");
+    println!("    --deep-build (--deep)   Pass -N to xbps-src (no remote repos: dependencies are built from source; may fail if a source/distfile is missing)");
     println!("    --prefer-binary         Prefer binary repos when available (default)");
     println!("    --no-prefer-binary      Always build from source");
     println!("    --sudo <bin>            privilege escalation tool: sudo, doas or run0 (default: auto-detected; unused as root)");

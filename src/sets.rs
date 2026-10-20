@@ -8,7 +8,7 @@
 //! |--------------|---------------------------------------------|
 //! | `@selected`  | paquetes instalados manualmente (`xbps-query -m`) |
 //! | `@installed` | todos los instalados (`xbps-query -l`)      |
-//! | `@system`    | `base-system` (árbol completo de deps desde fuente: `--deep` pendiente) |
+//! | `@system`    | `base-system` (árbol completo de deps desde fuente: `--deep` pasa `-N` a xbps-src (deps desde fuente)) |
 //! | `@world`     | unión de `@selected` + `@system` (dedup)    |
 //! | `@optimized` | paquetes `InstallType::Source` de la DB (compilados por vary: oficiales y VUR) |
 //! | `@vur`       | paquetes con origen VUR en la DB (fuera los compuestos `official`) |
