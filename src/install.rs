@@ -598,6 +598,8 @@ struct WorkerParams {
     sudo_flags: Vec<String>,
     /// Conf de xbps-src por invocación (captura owned de vary.conf).
     conf: crate::conf::PkgConf,
+    /// ~/.config/vary: origen del overlay de parches/archivos de usuario.
+    config_dir: PathBuf,
 }
 
 /// Un build pendiente ya resuelto (main thread): repo por índice (los hilos
@@ -625,14 +627,19 @@ struct BuildJob {
 fn build_one_sequential(
     repo: &VurRepo,
     md: &crate::masterdir::Masterdir,
+    config: &Config,
     parent_pkg: &str,
     explicit: bool,
-    makejobs: usize,
-    deep: bool,
 ) -> Result<()> {
     repo.materialize_pkg(parent_pkg)?;
     repo.project_pkg(&md.srcpkgs_dir(), parent_pkg, explicit)?;
-    let res = md.build_pkg(parent_pkg, makejobs, deep);
+    let overlay = crate::overlay::apply(
+        &md.srcpkgs_dir().join(parent_pkg),
+        &config.config_dir,
+        parent_pkg,
+    )?;
+    let res = md.build_pkg(parent_pkg, config.makejobs, config.deep_build);
+    drop(overlay);
     // Always unproject (proyectamos parent_pkg)
     let _ = repo.unproject_pkg(&md.srcpkgs_dir(), parent_pkg);
     res.with_context(|| format!("building {parent_pkg}"))?;
@@ -660,6 +667,8 @@ struct OfficialBuild<'a> {
     /// Nombre del `.xbps` esperado: `{pkg}-{ver_rev}.{arch}.xbps`.
     artifact: &'a str,
     conf: &'a crate::conf::PkgConf,
+    /// ~/.config/vary: origen del overlay de parches/archivos de usuario.
+    config_dir: &'a Path,
     /// Id del conf (worker: `w<slot>`; secuencial: pid-contador).
     id: String,
     log: Option<&'a Path>,
@@ -677,6 +686,13 @@ fn build_official(spec: &OfficialBuild) -> Result<std::path::PathBuf> {
     }
     let conf_dir = spec.root.join("etc");
     let (suffix, guard) = crate::conf::write(&conf_dir, &spec.id, spec.pkg, spec.conf)?;
+    // Overlay transaccional: parches/archivos del usuario invertidos al soltar
+    // (éxito, error o Drop); Drop cubre también el `?` de `res`.
+    let overlay = crate::overlay::apply(
+        &spec.root.join("srcpkgs").join(spec.pkg),
+        spec.config_dir,
+        spec.pkg,
+    )?;
     tracing::info!(
         "compilando {} (oficial) con xbps-src -c {suffix} (makejobs: {})...",
         spec.pkg,
@@ -689,6 +705,7 @@ fn build_official(spec: &OfficialBuild) -> Result<std::path::PathBuf> {
         spec.log,
     )
     .with_context(|| format!("falló ./xbps-src -c {suffix} pkg {} (oficial)", spec.pkg));
+    drop(overlay);
     drop(guard);
     let code = res?;
     if code != 0 {
@@ -770,6 +787,7 @@ fn build_official_sequential(
         pkg,
         artifact: &format!("{pkg}-{ver_rev}.{}.xbps", config.arch()),
         conf: hyb_conf,
+        config_dir: &config.config_dir,
         id: crate::conf::auto_id(),
         log: md.log_file.as_deref(),
         makejobs: config.makejobs,
@@ -818,6 +836,7 @@ fn build_one_in_sandbox(
     }
     let srcpkgs = sb.srcpkgs_dir();
     repo.project_pkg(&srcpkgs, parent_pkg, job.explicit)?;
+    let overlay = crate::overlay::apply(&srcpkgs.join(parent_pkg), &params.config_dir, parent_pkg)?;
     let binpkgs = sb.binpkgs_dir();
     tracing::info!(
         "compilando {parent_pkg} con xbps-src en worker w{slot} (makejobs: {})...",
@@ -838,6 +857,7 @@ fn build_one_in_sandbox(
         log.as_deref(),
     )
     .with_context(|| format!("falló ./xbps-src pkg {parent_pkg} en worker w{slot}"));
+    drop(overlay);
     // m4: desproyectar SIEMPRE (como el secuencial), antes del `?`.
     let _ = repo.unproject_pkg(&srcpkgs, parent_pkg);
     let code = res?;
@@ -886,6 +906,7 @@ fn build_official_in_sandbox(
         pkg: &job.parent_pkg,
         artifact: &job.expected_parent,
         conf: &params.conf,
+        config_dir: &params.config_dir,
         id: format!("w{slot}"),
         log: log.as_deref(),
         makejobs: params.makejobs,
@@ -1383,7 +1404,13 @@ pub fn install(config: &mut Config) -> Result<i32> {
             });
             repo.materialize_pkg(&parent_pkg)?;
             repo.project_pkg(&md.srcpkgs_dir(), &parent_pkg, explicit)?;
+            let overlay = crate::overlay::apply(
+                &md.srcpkgs_dir().join(&parent_pkg),
+                &config.config_dir,
+                &parent_pkg,
+            )?;
             let res = md.build_pkg(&parent_pkg, config.makejobs, config.deep_build);
+            drop(overlay);
             // Always unproject (proyectamos parent_pkg)
             let _ = repo.unproject_pkg(&md.srcpkgs_dir(), &parent_pkg);
             res.with_context(|| format!("building {parent_pkg}"))?;
@@ -1513,6 +1540,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             sudo_bin: config.sudo_bin.clone(),
             sudo_flags: config.sudo_flags.clone(),
             conf: hyb_conf.clone(),
+            config_dir: config.config_dir.clone(),
         };
         // Sandboxes perezosos: se crean al primer nivel que los necesite; si la
         // creación falla, ese nivel (y los siguientes) van en secuencial.
@@ -1536,14 +1564,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                         continue;
                     }
                     let repo = &repos[job.repo_idx];
-                    build_one_sequential(
-                        repo,
-                        &md,
-                        &job.parent_pkg,
-                        job.explicit,
-                        wparams.makejobs,
-                        config.deep_build,
-                    )?;
+                    build_one_sequential(repo, &md, config, &job.parent_pkg, job.explicit)?;
                     // H-046: registrar el nombre REAL.
                     built_names.push(job.parent_pkg.clone());
                     for sub in &job.subs {
@@ -1598,14 +1619,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             continue;
                         }
                         let repo = &repos[job.repo_idx];
-                        build_one_sequential(
-                            repo,
-                            &md,
-                            &job.parent_pkg,
-                            job.explicit,
-                            wparams.makejobs,
-                            config.deep_build,
-                        )?;
+                        build_one_sequential(repo, &md, config, &job.parent_pkg, job.explicit)?;
                         built_names.push(job.parent_pkg.clone());
                         for sub in &job.subs {
                             if !built_names.contains(sub) {

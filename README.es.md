@@ -158,6 +158,22 @@ Comportamiento:
 
 Límites: `RUSTFLAGS`/`CFLAGS` no se propagan nativamente (`RUSTFLAGS` lo desarma xbps-src en build nativo y no existe `XBPS_RUSTFLAGS`); vary no las emite. `makejobs` sigue en `[build]`. Los subpaquetes de un build oficial se compilan pero solo se instalan si el paquete principal los arrastra; si no, corre `vary -S <sub>` de nuevo. `source_always` debe apuntar a nombres de **sourcepkg** (los subpaquetes se construyen con su padre; matchear solo el nombre de un subpaquete no hace nada).
 
+## Parches y archivos de usuario
+
+Para cada build desde fuente (oficial o VUR), vary inyecta tu contenido propio en el source package justo antes de compilar y lo revierte después:
+
+- `~/.config/vary/patches/<sourcepkg>/*` → `srcpkgs/<sourcepkg>/patches/999-vary-user-<nombre>`. El prefijo `999-` hace que tus parches corran **después** de los del template. Si ese destino ya existe, el build aborta con error (el prefijo hace improbable la colisión).
+- `~/.config/vary/files/<sourcepkg>/*` → `srcpkgs/<sourcepkg>/files/<nombre>`. Los ficheros que ya existían en el template se respaldan como `.vary-bak.<pid>.<nombre>` y se restauran al final; los que no existían se copian y se borran después.
+
+Comportamiento:
+
+- Se gestiona como overlay transaccional: ante éxito, fallo o interrupción del build, el source package se restaura a su estado previo. Los dirs que no tenías (`patches/` / `files/`) se eliminan si el build los deja vacíos, y todo lo que el propio build deje sin usar ahí no se toca.
+- Solo se copian ficheros regulares; symlinks y dirs en tus dirs de configuración se saltan con aviso (nada escapa del config a `srcpkgs/` vía `../..` ni via enlaces apuntando a `/etc`).
+- Dirs vacíos o dirs ausentes = no-op: no se toca el árbol.
+- Funciona en todos los caminos de build: secuencial, workers paralelos experimentales, builds recursivos y `--challenge`.
+
+Límites: la clave es el nombre del **sourcepkg** (los subpaquetes heredan el build de su padre). No se registra nada en la base de datos de paquetes instalados — si quieres auditar qué overlay corrió sobre un binario dado, mantén tu `~/.config/vary/patches|files` bajo control de versiones.
+
 ## Arquitectura
 
 ```mermaid

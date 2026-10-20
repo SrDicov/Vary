@@ -336,6 +336,7 @@ mod info;
 mod init;
 mod install;
 mod journal;
+mod overlay;
 mod review;
 mod search;
 mod upgrade;

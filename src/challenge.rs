@@ -233,7 +233,9 @@ pub fn challenge(config: &crate::config::Config, pkg: &str) -> Result<i32> {
     )?;
     repo.materialize_pkg(pkg)?;
     repo.project_pkg(&md.srcpkgs_dir(), pkg, true)?;
+    let overlay = crate::overlay::apply(&md.srcpkgs_dir().join(pkg), &config.config_dir, pkg)?;
     let res = md.build_pkg(pkg, config.makejobs, config.deep_build);
+    drop(overlay);
     let _ = repo.unproject_pkg(&md.srcpkgs_dir(), pkg);
     res.with_context(|| format!("reconstruyendo {pkg}"))?;
 

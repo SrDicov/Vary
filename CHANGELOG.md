@@ -4,6 +4,16 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **Overlay de parches y archivos de usuario:** antes de cada build desde
+  fuente, vary copia `~/.config/vary/patches/<sourcepkg>/*` a
+  `srcpkgs/<sourcepkg>/patches/` con prefijo `999-vary-user-` (para que tus
+  parches corran después de los oficiales del template), y
+  `~/.config/vary/files/<sourcepkg>/*` a `srcpkgs/<sourcepkg>/files/`
+  (respaldando con `.vary-bak.<pid>.<nombre>` los ficheros que ya existían).
+  Al terminar el build —éxito, error o interrupción— el árbol se restaura a
+  su estado previo; se ignora todo lo que no sea fichero regular (symlinks y
+  dirs no se copian). Sin registro en la base de datos; el restore no toca
+  nada que el build haya dejado extra en esos dirs.
 - **`--deep` / `--deep-build`:** pasa `-N` a xbps-src (`xbps-src -N`): construye
   sin repos remotos, compilando las dependencias que falten desde fuente y
   reutilizando el repo local `hostdir/binpkgs` ya indexado (viaja por las
