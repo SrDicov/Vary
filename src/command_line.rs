@@ -406,6 +406,9 @@ impl Config {
                 self.force_build = true;
                 self.candidate_order = crate::resolver::CandidateOrder::PreferSource;
             }
+            Arg::Long("deep") | Arg::Long("deep-build") => {
+                self.deep_build = true;
+            }
             Arg::Long("prefer-binary") => {
                 self.prefer_binary = true;
                 self.candidate_order = crate::resolver::CandidateOrder::PreferBinary;
@@ -552,9 +555,10 @@ impl Config {
             Arg::Long(a) if !arg.is_pacman_arg() && !arg.is_pacman_global() => {
                 // Allow vary-specific long opts already handled above
                 match a {
-                    "force-build" | "prefer-binary" | "no-prefer-binary" | "interactive"
-                    | "sudo" | "sudoflags" | "git" | "curl" | "arch" | "help" | "version"
-                    | "noconfirm" | "yes" | "confirm" | "color" | "verbose" | "quiet" => {}
+                    "force-build" | "deep" | "deep-build" | "prefer-binary"
+                    | "no-prefer-binary" | "interactive" | "sudo" | "sudoflags" | "git"
+                    | "curl" | "arch" | "help" | "version" | "noconfirm" | "yes" | "confirm"
+                    | "color" | "verbose" | "quiet" => {}
                     _ => bail!(format!("unknown option --{a}")),
                 }
             }
@@ -883,5 +887,15 @@ mod tests {
             config.candidate_order,
             crate::resolver::CandidateOrder::PreferSource
         );
+    }
+
+    #[test]
+    fn deep_acepta_alias_y_fija_deep_build() {
+        for alias in ["--deep", "--deep-build"] {
+            let mut config = Config::default();
+            parse_args(&mut config, &["-S", "foo", alias]).expect("parse");
+            assert!(config.deep_build, "{alias} debe fijar deep_build");
+            assert!(!config.force_build);
+        }
     }
 }

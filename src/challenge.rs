@@ -233,7 +233,7 @@ pub fn challenge(config: &crate::config::Config, pkg: &str) -> Result<i32> {
     )?;
     repo.materialize_pkg(pkg)?;
     repo.project_pkg(&md.srcpkgs_dir(), pkg, true)?;
-    let res = md.build_pkg(pkg, config.makejobs);
+    let res = md.build_pkg(pkg, config.makejobs, config.deep_build);
     let _ = repo.unproject_pkg(&md.srcpkgs_dir(), pkg);
     res.with_context(|| format!("reconstruyendo {pkg}"))?;
 

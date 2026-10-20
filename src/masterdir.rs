@@ -57,9 +57,10 @@ impl Masterdir {
         self.path.join("hostdir").join("binpkgs")
     }
 
-    /// Compila un paquete: `./xbps-src pkg <pkg>` dentro del masterdir de
+    /// Compila un paquete: `./xbps-src [pkg <pkg>]` dentro del masterdir de
     /// forma secuencial y determinista, pasando `makejobs` a `XBPS_MAKEJOBS`.
-    pub fn build_pkg(&self, pkg: &str, makejobs: usize) -> Result<()> {
+    /// `deep` antepone `-N` (deps desde fuente, sin repos remotos).
+    pub fn build_pkg(&self, pkg: &str, makejobs: usize, deep: bool) -> Result<()> {
         if crate::signal::is_shutting_down() {
             anyhow::bail!("interrumpido por señal antes de compilar {pkg}");
         }
@@ -67,7 +68,7 @@ impl Masterdir {
         tracing::info!("compilando {pkg} con xbps-src (makejobs: {makejobs})...");
         let code = xbps_src(
             &self.path,
-            &["pkg", pkg],
+            &crate::xbps::src_args(&["pkg", pkg], deep),
             Some(makejobs),
             self.log_file.as_deref(),
         )
@@ -516,7 +517,7 @@ mod tests {
     fn build_pkg_falla_si_no_existe_xbps_src() {
         let dir = tempfile::tempdir().unwrap();
         let md = Masterdir::new(dir.path());
-        let res = md.build_pkg("dummy-pkg", 2);
+        let res = md.build_pkg("dummy-pkg", 2, false);
         assert!(res.is_err());
         assert!(format!("{:#}", res.unwrap_err()).contains("no encontrado"));
     }

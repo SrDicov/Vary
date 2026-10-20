@@ -4,6 +4,13 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **`--deep` / `--deep-build`:** pasa `-N` a xbps-src (`xbps-src -N`): construye
+  sin repos remotos, compilando las dependencias que falten desde fuente y
+  reutilizando el repo local `hostdir/binpkgs` ya indexado (viaja por las
+  vías secuencial y paralela, incluidos builds oficiales). Puede fallar si
+  falta la fuente o el distfile de alguna dependencia; flag solo de CLI
+  (sin opción en `vary.conf`). Con esto se cierra el `--deep` que los sets
+  dejaban pendiente. Detalles en README.
 - **Sets `@name` en `-S`:** targets `@selected`, `@installed`, `@system`,
   `@world`, `@optimized` y `@vur` se expanden a listas de paquetes antes de
   resolver (mezclables con nombres literales, dedup preservando orden;

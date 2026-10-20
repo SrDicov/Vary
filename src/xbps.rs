@@ -522,6 +522,16 @@ pub fn pkgdb_mode(config: &Config, mode: &str, pkg: &str) -> Result<()> {
 /// el observador nunca salga sin conocer al hijo (H-016). Los builds cortos e
 /// interactivos (`install`/`remove_recursive`) quedan en el grupo de vary.
 ///
+/// Args para `xbps-src`: con `deep` antepone `-N` (sin repos remotos, deps
+/// desde fuente reutilizando hostdir/binpkgs), preservando el orden del resto.
+pub fn src_args<'a>(args: &[&'a str], deep: bool) -> Vec<&'a str> {
+    if deep {
+        std::iter::once("-N").chain(args.iter().copied()).collect()
+    } else {
+        args.to_vec()
+    }
+}
+
 /// Con `log_file = Some(path)` (H-020) la salida deja de inundar la consola:
 /// stdout/stderr se canalizan a ese archivo (append) y la terminal muestra
 /// solo un spinner `indicatif` (oculto automáticamente fuera de TTY). Con
@@ -704,6 +714,19 @@ fn user_spinner(msg: &str) -> indicatif::ProgressBar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---------- src_args ----------
+
+    #[test]
+    fn src_args_preserva_orden_segun_deep() {
+        let base = ["-c", "conf", "pkg", "foo"];
+        assert_eq!(src_args(&base, false), vec!["-c", "conf", "pkg", "foo"]);
+        assert_eq!(
+            src_args(&base, true),
+            vec!["-N", "-c", "conf", "pkg", "foo"]
+        );
+        assert!(src_args(&[], true).len() == 1 && src_args(&[], true)[0] == "-N");
+    }
 
     // ---------- parse_search_line ----------
 

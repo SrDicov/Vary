@@ -135,6 +135,8 @@ pub struct Config {
     pub pkg_options: BTreeMap<String, Vec<String>>,
 
     // Flags runtime
+    /// Activa `-N` en xbps-src (sin repos remotos: deps desde fuente).
+    pub deep_build: bool,
     pub force_build: bool,
     pub prefer_binary: bool,
     /// P1-2: habilita funciones en validación (`challenge`).
@@ -335,6 +337,7 @@ impl Config {
             make: MakeSettings::default(),
             pkg_options: BTreeMap::new(),
             force_build: false,
+            deep_build: false,
             prefer_binary: true,
             experimental: false,
             candidate_order: crate::resolver::CandidateOrder::Legacy,

@@ -58,7 +58,13 @@ Instead of package names, `-S` accepts special targets that `@`-expand into list
 vary -S --force-build @installed
 ```
 
-Notes: an empty set is an error (nothing actionable to install). `-Syu` without targets does not expand sets (sets are install targets, not upgrade ones). `@system` is literally `base-system`; building its full dependency tree from source (`--deep`) is pending.
+Notes: an empty set is an error (nothing actionable to install). `-Syu` without targets does not expand sets (sets are install targets, not upgrade ones). `@system` is literally `base-system`; to build its full dependency tree from source, use `--deep`:
+
+```sh
+vary -S --deep --force-build @installed
+```
+
+`--deep` (alias `--deep-build`) passes `-N` to xbps-src: it builds without remote repositories, compiling missing dependencies from source while reusing the local repo (`hostdir/binpkgs`) for what was already built. It can fail if any dependency's source or distfile is not available; CLI flag only (no `vary.conf` option).
 
 ## Configuration
 

@@ -591,6 +591,7 @@ fn official_exists_remote(name: &str, exclude: &str) -> bool {
 /// (Sin `arch`: el layout de binpkgs es plano, ver `binpkgs_dir`.)
 struct WorkerParams {
     makejobs: usize,
+    deep: bool,
     logs_dir: Option<std::path::PathBuf>,
     log_file_default: Option<std::path::PathBuf>,
     sudo_bin: String,
@@ -627,10 +628,11 @@ fn build_one_sequential(
     parent_pkg: &str,
     explicit: bool,
     makejobs: usize,
+    deep: bool,
 ) -> Result<()> {
     repo.materialize_pkg(parent_pkg)?;
     repo.project_pkg(&md.srcpkgs_dir(), parent_pkg, explicit)?;
-    let res = md.build_pkg(parent_pkg, makejobs);
+    let res = md.build_pkg(parent_pkg, makejobs, deep);
     // Always unproject (proyectamos parent_pkg)
     let _ = repo.unproject_pkg(&md.srcpkgs_dir(), parent_pkg);
     res.with_context(|| format!("building {parent_pkg}"))?;
@@ -662,6 +664,7 @@ struct OfficialBuild<'a> {
     id: String,
     log: Option<&'a Path>,
     makejobs: usize,
+    deep: bool,
 }
 
 /// Compila UN paquete OFICIAL: conf de xbps-src por invocación (`-c`, RAII)
@@ -681,7 +684,7 @@ fn build_official(spec: &OfficialBuild) -> Result<std::path::PathBuf> {
     );
     let res = crate::xbps::xbps_src(
         spec.root,
-        &["-c", suffix.as_str(), "pkg", spec.pkg],
+        &crate::xbps::src_args(&["-c", suffix.as_str(), "pkg", spec.pkg], spec.deep),
         Some(spec.makejobs),
         spec.log,
     )
@@ -770,6 +773,7 @@ fn build_official_sequential(
         id: crate::conf::auto_id(),
         log: md.log_file.as_deref(),
         makejobs: config.makejobs,
+        deep: config.deep_build,
     })
 }
 
@@ -829,7 +833,7 @@ fn build_one_in_sandbox(
     // bootstrap completo por worker).
     let res = crate::xbps::xbps_src(
         sb.checkout_root(),
-        &["pkg", parent_pkg],
+        &crate::xbps::src_args(&["pkg", parent_pkg], params.deep),
         Some(params.makejobs),
         log.as_deref(),
     )
@@ -885,6 +889,7 @@ fn build_official_in_sandbox(
         id: format!("w{slot}"),
         log: log.as_deref(),
         makejobs: params.makejobs,
+        deep: params.deep,
     })?;
     Ok(vec![main])
 }
@@ -1378,7 +1383,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             });
             repo.materialize_pkg(&parent_pkg)?;
             repo.project_pkg(&md.srcpkgs_dir(), &parent_pkg, explicit)?;
-            let res = md.build_pkg(&parent_pkg, config.makejobs);
+            let res = md.build_pkg(&parent_pkg, config.makejobs, config.deep_build);
             // Always unproject (proyectamos parent_pkg)
             let _ = repo.unproject_pkg(&md.srcpkgs_dir(), &parent_pkg);
             res.with_context(|| format!("building {parent_pkg}"))?;
@@ -1502,6 +1507,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             .and_then(|p| p.parent().map(Path::to_path_buf));
         let wparams = WorkerParams {
             makejobs: config.makejobs,
+            deep: config.deep_build,
             logs_dir,
             log_file_default: md.log_file.clone(),
             sudo_bin: config.sudo_bin.clone(),
@@ -1536,6 +1542,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                         &job.parent_pkg,
                         job.explicit,
                         wparams.makejobs,
+                        config.deep_build,
                     )?;
                     // H-046: registrar el nombre REAL.
                     built_names.push(job.parent_pkg.clone());
@@ -1597,6 +1604,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             &job.parent_pkg,
                             job.explicit,
                             wparams.makejobs,
+                            config.deep_build,
                         )?;
                         built_names.push(job.parent_pkg.clone());
                         for sub in &job.subs {
