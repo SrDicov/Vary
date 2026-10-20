@@ -22,6 +22,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::config::Config;
 use crate::db::{InstallType, InstalledDb};
+use crate::soname::{SonameDrift, SonamePins};
 
 pub const VALID_SETS: &[&str] = &[
     "@selected",
@@ -51,7 +52,7 @@ fn dedup(mut names: Vec<String>) -> Vec<String> {
 /// (en runtime, [`crate::soname::check_db_entry`]). Dedup preservando orden.
 pub fn preserved_from(
     entries: &[(String, crate::db::Entry)],
-    check: impl Fn(&str, &crate::soname::SonamePins) -> Vec<crate::soname::SonameDrift>,
+    check: impl Fn(&str, &SonamePins) -> Vec<SonameDrift>,
 ) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();

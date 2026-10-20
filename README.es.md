@@ -73,7 +73,7 @@ Al instalar un paquete **desde fuente**, vary graba qué proveedor instalado ser
 vary -S --force-build @preserved-rebuild
 ```
 
-Notas: solo aplica a compilados por vary (la DB no guarda pins de installs binarios) y solo si algún pin está en drift; set vacío = error. Todavía no preserva el `.so` viejo en disco: si el proveedor ya se actualizó, la ABI anterior pudo desaparecer — corre `-S @preserved-rebuild` en cuanto veas el aviso.
+Notas: solo aplica a compilados por vary (la DB no guarda pins de installs binarios) y solo si algún pin está en drift; set vacío = error. Todavía no preserva el `.so` viejo en disco: si el proveedor ya se actualizó, la ABI anterior pudo desaparecer — corre `-S --force-build @preserved-rebuild` en cuanto veas el aviso.
 
 `--deep` (alias `--deep-build`) pasa `-N` a xbps-src: construye sin repos remotos, compilando desde fuente las dependencias que falten y reutilizando el repo local (`hostdir/binpkgs`) para lo ya compilado. Puede fallar si falta la fuente o el distfile de alguna dependencia; flag solo de CLI (no existe opción en `vary.conf`).
 

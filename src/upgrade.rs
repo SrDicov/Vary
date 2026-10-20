@@ -391,7 +391,7 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     }
     if drift_pkgs > 0 {
         tracing::warn!(
-            "drift de sonames en {drift_pkgs} paquete(s); ejecuta `vary -S @preserved-rebuild` para recompilarlos (no se recompila automáticamente)"
+            "drift de sonames en {drift_pkgs} paquete(s); ejecuta `vary -S --force-build @preserved-rebuild` para recompilarlos (no se recompila automáticamente)"
         );
     }
 

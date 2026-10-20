@@ -88,8 +88,7 @@ criterios de aceptación.
   ✅ 0.4.0 con alcance aprobado: pin `shlibs_requires` al instalar + aviso en
   upgrade; **nunca auto-rebuild sin flag explícito** (compilar sin
   consentimiento es peligroso). Ver P2-soname abajo. **Set explícito
-  `@preserved-rebuild` implementado** (`-S @preserved-rebuild` con CI verde
-  2026-10-20): la política sin auto-rebuild queda intacta — el upgrade solo
+  `@preserved-rebuild` implementado** (`-S @preserved-rebuild`): la política sin auto-rebuild queda intacta — el upgrade solo
   avisa y sugiere el set. Pendiente P3: preservación física del `.so` viejo.
 
 ## P2-soname · Pin de sonames + aviso de drift ✅ CERRADO 0.4.0 (`feat P2-soname`)
