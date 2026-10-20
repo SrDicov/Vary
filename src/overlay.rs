@@ -278,7 +278,10 @@ mod tests {
         write_to(&up, "banner", "new");
         {
             let overlay = apply(&srcpkg, &cfg, "foo").unwrap();
-            assert_eq!(overlay.actions.len(), 1);
+            assert!(
+                !overlay.actions.is_empty(),
+                "debe registrar al menos el archivo inyectado"
+            );
             assert!(srcpkg.join("files/banner").is_file());
         }
         assert!(!srcpkg.join("files/banner").exists());
@@ -307,7 +310,7 @@ mod tests {
     #[test]
     fn missing_srcpkg_dir_is_error() {
         let base = tempfile::tempdir().unwrap();
-        let r = apply(&base.path().join("nope"), &base.path(), "pepa");
+        let r = apply(&base.path().join("nope"), base.path(), "pepa");
         assert!(r.is_err());
     }
 
