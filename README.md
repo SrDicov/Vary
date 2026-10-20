@@ -40,6 +40,26 @@ vary --repo add https://github.com/SrDicov/z-packages z-packages --branch master
 
 Other commands available in the MVP: `-Si` (detailed info), `-Sw` (download without installing), `-R` (remove), `--repo list|remove|rekey|re-trust` (re-trust re-affirms a rotated repo key), `--force-build` (build from source even if a binary exists: prefers source candidates across repositories and overrides the official bucket when a VUR template exists — warns explicitly when it can't) and `--prefer-binary` (prefer signed binaries, switching repositories when needed; `--no-prefer-binary` forces the source path). Without these flags the historical precedence applies (official first, then the merged VUR candidate). `--yes` is an alias of `--noconfirm` (note: `-y` means refresh, not yes); `--asdeps`/`--asexplicit` are rejected (vary always installs as explicit). `-Sp` prints the install plan (topological levels, single binary batch, estimated elevations) without changing anything: script-parseable, no lock, no elevation (the VUP index may refresh its cache read-only, like `-Sy`). `--lock` (re)generates `~/.config/vary/vary.lock` (repos + packages pinned); install/upgrade warn on divergence. `--challenge <pkg> --experimental` rebuilds and compares against installed files. `--why <pkg>` explains what pulls a package; `--log [pkg]` shows the operation history.
 
+## Package sets (`@name`)
+
+Instead of package names, `-S` accepts special targets that `@`-expand into lists of packages (deduplicated, first-seen order preserved, mixed with literal package names):
+
+| Set         | Expands to                                            |
+|-------------|-------------------------------------------------------|
+| `@selected` | manually installed packages (`xbps-query -m`)         |
+| `@installed`| every installed package (`xbps-query -l`)             |
+| `@system`   | `base-system`                                         |
+| `@world`    | `@selected` + `@system` (dedup)                       |
+| `@optimized`| packages vary has compiled from source (its DB)       |
+| `@vur`      | packages whose origin is a registered VUR (its DB)    |
+
+```sh
+# Rebuild from source everything currently installed
+vary -S --force-build @installed
+```
+
+Notes: an empty set is an error (nothing actionable to install). `-Syu` without targets does not expand sets (sets are install targets, not upgrade ones). `@system` is literally `base-system`; building its full dependency tree from source (`--deep`) is pending.
+
 ## Configuration
 
 User configuration lives in `~/.config/vary/vary.conf` (optional; full example in [`etc/vary.conf.example`](./etc/vary.conf.example)):

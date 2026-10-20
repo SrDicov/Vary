@@ -368,6 +368,46 @@ fn manual_names(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Lista los paquetes instalados: `xbps-query -l` (TODOS, no solo manuales).
+/// Cada línea rinde `ii pkgver desc` (igual que `-m`); los nombres canónicos
+/// los recorta [`installed_names_from_output`].
+pub fn query_installed_names() -> Result<Vec<String>> {
+    let out = run_capture(XBPS_QUERY, &["-l"])?;
+    Ok(installed_names_from_output(&stdout_text(&out)))
+}
+
+/// Pkgver -> nombre canónico: partido por el ÚLTIMO '-' (mismo criterio
+/// verificado de [`names_from_search_output`]: en pkgver `nombre-version_rev`
+/// la versión no lleva '-'). Pura, testeable sin xbps.
+pub fn split_pkgver_name(pkgver: &str) -> &str {
+    pkgver.rsplit_once('-').map(|(n, _)| n).unwrap_or(pkgver)
+}
+
+/// Nombres manuales instalados (`xbps-query -m`), canónicos y sin versión
+/// (úsalo como targets: la variante [`query_manual`] rinde pkgvers).
+pub fn query_manual_names() -> Result<Vec<String>> {
+    let pkgs = query_manual()?;
+    Ok(pkgs
+        .iter()
+        .map(|p| split_pkgver_name(p).to_string())
+        .collect())
+}
+
+/// Segunda columna de una salida de lista (`-l`): pkgver => nombre canónico.
+/// Pura y testeable sin xbps.
+pub fn installed_names_from_output(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            let mut cols = l.split_whitespace();
+            let first = cols.next().unwrap_or_default();
+            let pkgver = cols.next().unwrap_or(first);
+            split_pkgver_name(pkgver).to_string()
+        })
+        .collect()
+}
+
 /// Arquitectura objetivo del sistema. La usa:
 ///
 /// * el resolver, para filtrar entradas `.VURINFO.archs`, y
@@ -815,6 +855,17 @@ mod tests {
         assert_eq!(
             manual_names("\n   \nii a-1_1 x\nb-1_1\n"),
             vec!["a-1_1".to_owned(), "b-1_1".to_owned()]
+        );
+    }
+
+    #[test]
+    fn pkgver_split_y_nombres_de_lista() {
+        // nombre-version_rev => nombre (criterio rsplit_once('-')).
+        assert_eq!(split_pkgver_name("foo-1.0_1"), "foo");
+        assert_eq!(split_pkgver_name("glibc"), "glibc");
+        assert_eq!(
+            installed_names_from_output("ii foo-1.0_1 desc\nii glibc-2.41_1 x\n"),
+            vec!["foo".to_owned(), "glibc".to_owned()]
         );
     }
 

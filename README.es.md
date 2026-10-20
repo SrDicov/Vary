@@ -40,6 +40,26 @@ vary --repo add https://github.com/SrDicov/z-packages z-packages --branch master
 
 Otros comandos disponibles en el MVP: `-Si` (información detallada), `-Sw` (descargar sin instalar), `-R` (eliminar), `--repo list|remove|rekey|re-trust` (re-trust reafirma la llave rotada de un repo), `--force-build` (compilar desde fuente aunque exista binario: prefiere candidatos de fuente entre repositorios y evita el bucket official cuando hay template VUR — avisa explícitamente si no puede) y `--prefer-binary` (priorizar binarios firmados, cambiando de repositorio si hace falta; `--no-prefer-binary` fuerza la vía de fuente). Sin estos flags rige la precedencia histórica (official primero, luego el candidato VUR fusionado). `--yes` es alias de `--noconfirm` (ojo: `-y` significa refresh, no yes); `--asdeps`/`--asexplicit` se rechazan (vary instala siempre como explícito). `-Sp` imprime el plan de instalación (niveles topológicos, batch binaria única, elevaciones estimadas) sin cambiar nada: parseable por scripts, sin lock, sin elevación (el índice VUP puede refrescar su caché en solo-lectura, como `-Sy`). `--lock` (re)genera `~/.config/vary/vary.lock` (repos + paquetes pineados); install/upgrade avisan ante divergencias. `--challenge <pkg> --experimental` recompila y compara contra los ficheros instalados. `--why <pkg>` explica qué trae un paquete; `--log [pkg]` muestra el historial de operaciones.
 
+## Conjuntos de paquetes (`@name`)
+
+Además de nombres de paquetes, `-S` acepta targets especiales que se expanden a listas de paquetes (dedup, orden de primera aparición, mezclables con nombres literales):
+
+| Set         | Expande a                                             |
+|-------------|-------------------------------------------------------|
+| `@selected` | paquetes instalados manualmente (`xbps-query -m`)     |
+| `@installed`| todos los instalados (`xbps-query -l`)                |
+| `@system`   | `base-system`                                         |
+| `@world`    | `@selected` + `@system` (dedup)                       |
+| `@optimized`| paquetes que vary compiló desde fuente (su DB)        |
+| `@vur`      | paquetes con origen en un VUR registrado (su DB)      |
+
+```sh
+# Recompilar desde fuente todo lo instalado
+vary -S --force-build @installed
+```
+
+Notas: un set vacío es error (nada accionable que instalar). `-Syu` sin targets no expande sets (los sets son targets de instalación, no de upgrade). `@system` es literalmente `base-system`; construir su árbol completo de dependencias desde fuente (`--deep`) está pendiente.
+
 ## Configuración
 
 Configuración de usuario en `~/.config/vary/vary.conf` (opcional; ejemplo completo en [`etc/vary.conf.example`](./etc/vary.conf.example)):

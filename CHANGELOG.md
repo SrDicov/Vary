@@ -2,6 +2,16 @@
 
 All notable changes to vary will be documented in this file.
 
+## Unreleased
+
+- **Sets `@name` en `-S`:** targets `@selected`, `@installed`, `@system`,
+  `@world`, `@optimized` y `@vur` se expanden a listas de paquetes antes de
+  resolver (mezclables con nombres literales, dedup preservando orden;
+  set vacío = error). Guardia de template en `BuildOfficial`: un oficial a
+  compilar sin `srcpkgs/<pkg>/template` en el checkout degrada a binario
+  official con warning. `@system` = `base-system`; construir su árbol de
+  dependencias desde fuente (`--deep`) pendiente. Detalles en README.
+
 ## 0.4.1 (2026-09-07) — P1-3 + pulido (pendiente tag)
 
 - **Compilación híbrida oficial:** `[build] source_always` (globs) emite

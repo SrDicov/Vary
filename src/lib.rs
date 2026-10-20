@@ -19,6 +19,7 @@ mod remove;
 mod repo;
 mod reposconf;
 mod resolver;
+mod sets;
 mod signal;
 mod soname;
 mod template_audit;
@@ -29,6 +30,7 @@ mod why;
 mod xbps;
 
 use crate::config::{Config, Op};
+use crate::db::InstalledDb;
 
 use std::env;
 use std::path::PathBuf;
@@ -233,6 +235,13 @@ fn handle_sync(config: &mut Config) -> Result<i32> {
     }
     if config.args.has_arg("log", "log") {
         bail!("--log no se combina con -S: usa `vary --log [pkg]`");
+    }
+    // Sets `@name`: se expanden ANTES de print/install (el plan congelado
+    // `-p` debe reflejar la expansión). Sin targets no hay nada que expandir
+    // (y `-Syu` sin targets no se toca: no es una operación con sets).
+    if config.targets.iter().any(|t| sets::is_set(t)) {
+        let db = InstalledDb::load(config.installed_db_path())?;
+        config.targets = sets::expand_targets(&config.targets, config, &db)?;
     }
     // P0-4: -p imprime el plan congelado sin mutar (ver install::print_plan,
     // que valida su propia forma). Domina sobre el resto de consultas sync.
