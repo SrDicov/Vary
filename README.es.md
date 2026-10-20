@@ -52,6 +52,7 @@ Además de nombres de paquetes, `-S` acepta targets especiales que se expanden a
 | `@world`    | `@selected` + `@system` (dedup)                       |
 | `@optimized`| paquetes que vary compiló desde fuente (su DB)        |
 | `@vur`      | paquetes con origen en un VUR registrado (su DB)      |
+| `@preserved-rebuild` | compilados por vary con pins de sonames en drift (su DB) |
 
 ```sh
 # Recompilar desde fuente todo lo instalado
@@ -63,6 +64,16 @@ Notas: un set vacío es error (nada accionable que instalar). `-Syu` sin targets
 ```sh
 vary -S --deep --force-build @installed
 ```
+
+### `@preserved-rebuild`
+
+Al instalar un paquete **desde fuente**, vary graba qué proveedor instalado servía cada `shlib` requerido (pins de sonames). En upgrade, si algún proveedor cambió de versión (o ya no provee el soname), vary emite un aviso consultivo — **nunca recompila solo** (compilar sin consentimiento explícito es peligroso). `@preserved-rebuild` se expande exactamente a esos paquetes en drift, para que los recompiles tú:
+
+```sh
+vary -S --force-build @preserved-rebuild
+```
+
+Notas: solo aplica a compilados por vary (la DB no guarda pins de installs binarios) y solo si algún pin está en drift; set vacío = error. Todavía no preserva el `.so` viejo en disco: si el proveedor ya se actualizó, la ABI anterior pudo desaparecer — corre `-S @preserved-rebuild` en cuanto veas el aviso.
 
 `--deep` (alias `--deep-build`) pasa `-N` a xbps-src: construye sin repos remotos, compilando desde fuente las dependencias que falten y reutilizando el repo local (`hostdir/binpkgs`) para lo ya compilado. Puede fallar si falta la fuente o el distfile de alguna dependencia; flag solo de CLI (no existe opción en `vary.conf`).
 

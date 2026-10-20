@@ -52,6 +52,7 @@ Instead of package names, `-S` accepts special targets that `@`-expand into list
 | `@world`    | `@selected` + `@system` (dedup)                       |
 | `@optimized`| packages vary has compiled from source (its DB)       |
 | `@vur`      | packages whose origin is a registered VUR (its DB)    |
+| `@preserved-rebuild` | source-built packages whose soname pins have drifted (its DB) |
 
 ```sh
 # Rebuild from source everything currently installed
@@ -63,6 +64,16 @@ Notes: an empty set is an error (nothing actionable to install). `-Syu` without 
 ```sh
 vary -S --deep --force-build @installed
 ```
+
+### `@preserved-rebuild`
+
+When vary installs a package **from source**, it records which installed provider served each required shared library (soname pins). On upgrade, if a provider bumped its version (or no longer provides the soname), vary prints a consultative warning — **it never rebuilds anything on its own** (rebuilding without explicit consent is dangerous). `@preserved-rebuild` expands to exactly those drifted packages so you can rebuild them explicitly:
+
+```sh
+vary -S --force-build @preserved-rebuild
+```
+
+Notes: only source-built packages (the DB carries no pins for binary installs), and only if any of their pins drifted; an empty set is an error. It does not yet preserve the old `.so` on disk — if a provider is upgraded, the old ABI may already be gone: run `-S @preserved-rebuild` promptly after such a warning.
 
 `--deep` (alias `--deep-build`) passes `-N` to xbps-src: it builds without remote repositories, compiling missing dependencies from source while reusing the local repo (`hostdir/binpkgs`) for what was already built. It can fail if any dependency's source or distfile is not available; CLI flag only (no `vary.conf` option).
 

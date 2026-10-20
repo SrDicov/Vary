@@ -4,6 +4,12 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **Set `@preserved-rebuild`:** recompilación explícita de los paquetes
+  compilados por vary cuyos pins de sonames reportan drift (P2-soname):
+  `vary -S --force-build @preserved-rebuild`. El aviso en `-Syu` ahora además
+  sugiere el set cuando hay drift. **No hay auto-rebuild** (compilar sin
+  consentimiento es peligroso); todavía no preserva el `.so` viejo en disco.
+  Detalles en README.
 - **Overlay de parches y archivos de usuario:** antes de cada build desde
   fuente, vary copia `~/.config/vary/patches/<sourcepkg>/*` a
   `srcpkgs/<sourcepkg>/patches/` con prefijo `999-vary-user-` (para que tus

@@ -87,7 +87,10 @@ criterios de aceptación.
 - Trigger preventivo de recompilación por drift de sonames (resto de H-029/A5)
   ✅ 0.4.0 con alcance aprobado: pin `shlibs_requires` al instalar + aviso en
   upgrade; **nunca auto-rebuild sin flag explícito** (compilar sin
-  consentimiento es peligroso). Ver P2-soname abajo.
+  consentimiento es peligroso). Ver P2-soname abajo. **Set explícito
+  `@preserved-rebuild` implementado** (`-S @preserved-rebuild` con CI verde
+  2026-10-20): la política sin auto-rebuild queda intacta — el upgrade solo
+  avisa y sugiere el set. Pendiente P3: preservación física del `.so` viejo.
 
 ## P2-soname · Pin de sonames + aviso de drift ✅ CERRADO 0.4.0 (`feat P2-soname`)
 
@@ -96,6 +99,9 @@ criterios de aceptación.
   implementación) en `installed.json`.
 - En upgrade, si los sonames requeridos ya no los provee la misma versión que
   al instalar → aviso CONSULTIVO que sugiere recompilar; jamás recompila solo.
+- ✅ 0.4.x: set explícito `@preserved-rebuild` (`-S`): expande a los
+  compilados por vary con pins en drift (`preserved_from` + `check_db_entry`,
+  never-fail). Sin set: mismo estado que antes — solo el aviso.
 - Sin baseline (paquetes pre-0.4.0) → sin aviso, sin ruido.
 - Aceptación: pin grabado al instalar; drift simulado avisa; sin flag no hay
   rebuild.
