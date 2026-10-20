@@ -129,6 +129,13 @@ pub trait PackageSource {
     fn repo_priority(&self, _repo: &str) -> i64 {
         100
     }
+    /// Guardia de template: ¿existe `srcpkgs/<pkg>/template` en el checkout
+    /// de void-packages? Solo se consulta antes de emitir
+    /// [`Action::BuildOfficial`]; default `true` (fakes de test y caminos
+    /// sin culprit de checkout no cambian de conducta).
+    fn has_template(&self, _name: &str) -> bool {
+        true
+    }
     /// arquitectura actual del sistema/masterdir (ej "x86_64")
     fn arch(&self) -> String;
 }
@@ -397,6 +404,26 @@ impl<'a> Ctx<'a> {
             // (nunca callar) y seguir con el binario official.
             if self.source.official_exists(name) {
                 if matches!(self.opts.order, CandidateOrder::PreferSource) || source_always {
+                    // Guardia de template: compilar un oficial sin template
+                    // en void-packages/srcpkgs/<pkg> es imposible
+                    // (xbps-src pkg fallaría). Avisar y degradar al binario
+                    // official (que official_exists ya garantiza).
+                    if !self.source.has_template(name) {
+                        tracing::warn!(
+                            "sin template en void-packages/srcpkgs/{name}: no se puede \
+                             compilar el oficial desde fuente; se instala el binario official"
+                        );
+                        self.warnings.push(format!(
+                            "sin template en el checkout de void-packages: '{name}' no se \
+                             puede compilar; instalando binario official"
+                        ));
+                        let item = Self::official_item(
+                            name,
+                            &self.arch,
+                            Action::Install(BinarySource::Official),
+                        );
+                        return Ok(self.push_item(item, dependent));
+                    }
                     let item = Self::official_item(name, &self.arch, Action::BuildOfficial);
                     return Ok(self.push_item(item, dependent));
                 }
@@ -644,6 +671,9 @@ mod tests {
         binaries: HashSet<(Repo, &'static str)>,
         /// T-010: prioridad por repo (ausente = 100, igual que producción).
         priorities: HashMap<Repo, i64>,
+        /// Guardia de template: nombres SIN `srcpkgs/<n>/template` (los tests
+        /// ejercitan la degradación a Install(Official)).
+        no_template: HashSet<&'static str>,
         arch: &'static str,
     }
 
@@ -656,6 +686,7 @@ mod tests {
                 provides: HashMap::new(),
                 binaries: HashSet::new(),
                 priorities: HashMap::new(),
+                no_template: HashSet::new(),
                 arch: "x86_64",
             }
         }
@@ -694,6 +725,9 @@ mod tests {
         }
         fn repo_priority(&self, repo: &str) -> i64 {
             self.priorities.get(repo).copied().unwrap_or(100)
+        }
+        fn has_template(&self, name: &str) -> bool {
+            !self.no_template.contains(name)
         }
         fn arch(&self) -> String {
             self.arch.to_string()
@@ -1399,5 +1433,67 @@ mod tests {
         };
         let plan = resolve(&targets(&["git"]), &src, &ResolveOptions::default()).unwrap();
         assert!(build_levels(&plan).is_empty());
+    }
+
+    // --- Guardia de template para BuildOfficial ---
+
+    /// Oficial + source_always CON template en el checkout => BuildOfficial.
+    #[test]
+    fn source_always_con_template_emite_build_oficial() {
+        let src = MockSource {
+            official: ["solo-official"].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_source_always(&["solo-official"]);
+        let plan = resolve(&targets(&["solo-official"]), &src, &opts).unwrap();
+        assert_eq!(plan.builds.len(), 1);
+        assert_eq!(plan.builds[0].action, Action::BuildOfficial);
+        assert!(plan.warnings.is_empty());
+    }
+
+    /// Oficial + source_always SIN template => degradación a Install(Official)
+    /// con warning (compilar sin template volvería a fallar en xbps-src).
+    #[test]
+    fn source_always_sin_template_degrada_a_install_oficial() {
+        let src = MockSource {
+            official: ["solo-official"].into(),
+            no_template: ["solo-official"].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_source_always(&["solo-official"]);
+        let plan = resolve(&targets(&["solo-official"]), &src, &opts).unwrap();
+        assert!(plan.builds.is_empty());
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
+        assert_eq!(plan.warnings.len(), 1);
+        assert!(plan.warnings[0].contains("sin template"));
+    }
+
+    /// Oficial sin source_always ni force-build => Install(Official) sin
+    /// consultar el template (no hay intención de compilar).
+    #[test]
+    fn oficial_sin_source_always_no_consulta_template() {
+        let src = MockSource {
+            official: ["git"].into(),
+            no_template: ["git"].into(),
+            ..MockSource::default()
+        };
+        let plan = resolve(&targets(&["git"]), &src, &ResolveOptions::default()).unwrap();
+        assert!(plan.builds.is_empty());
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
+        // El único warning posible es el de flags sin efecto, no el de template.
+        for w in &plan.warnings {
+            assert!(
+                w.starts_with("--force-build"),
+                "warning inesperado (guardia de template consultada): {w}"
+            );
+        }
     }
 }

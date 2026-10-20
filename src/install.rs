@@ -24,6 +24,8 @@ struct VurSource {
     binary_check: HashMap<String, bool>,
     arch: String,
     priority: HashMap<String, i64>,
+    /// Checkout de void-packages para la guardia de template (`has_template`).
+    checkout: PathBuf,
 }
 
 impl PackageSource for VurSource {
@@ -87,6 +89,17 @@ impl PackageSource for VurSource {
 
     fn arch(&self) -> String {
         self.arch.clone()
+    }
+
+    /// Guardia de template: el checkout materializa `srcpkgs/` con
+    /// sparse-checkout del paquete a compilar; si el template del paquete
+    /// oficial pedido no está materializado NO se puede compilar.
+    fn has_template(&self, name: &str) -> bool {
+        self.checkout
+            .join("srcpkgs")
+            .join(name)
+            .join("template")
+            .is_file()
     }
 }
 
@@ -275,6 +288,7 @@ fn assemble_source(
         binary_check: maps.binary_check,
         arch: arch.to_string(),
         priority: maps.priority_map,
+        checkout: config.void_packages_dir(),
     };
 
     let opts = ResolveOptions {
