@@ -77,7 +77,7 @@ oportunidad (contenedor Void o máquina real). Medición de I/O ya hecha en el c
 | Ítem | Trigger (evento observable) | Coste al disparar | Fecha |
 |------|----------------------------|-------------------|-------|
 | Preservación física de `.so` | primera actualización real en Void con consumidores binarios instalados que dispare el detector |medio: diseño + fixture + `ldconfig` + aprobación de root | 2026-10-21 |
-| Registro de subpaquetes de builds oficiales (+ repolock) | primera actualización oficial que sustituya un subpaquete compilado por vary (hoy: `gmpxx` sin repolock) | alto: parser `subpackages` + escritura de DB + repolock + auditoría + upgrade | 2026-10-21 |
+| Registro de subpaquetes de builds oficiales (+ repolock) | primera actualización oficial que sustituya un subpaquete compilado por vary (hoy: `gmpxx` sin repolock) | **medio-bajo** para el mínimo útil (parser `subpackages` + repolock al instalar: 2 módulos); medio-alto para el completo (con entradas y auditoría propias en la DB). Workaround manual mientras tanto (ver ORDEN v4/A) | 2026-10-21 |
 | Normalización subpkg→sourcepkg en el resolver | evidencia medida de trabajo duplicado (varios nodos de build del mismo sourcepkg en un plan real) | medio: identidad de nodos (plan, DB, lockfile, install) | 2026-10-21 |
 | Fallback dinámico del índice | primera resolución en frío de una plantilla `needs_dynamic` que no se resuelva por `xbps-src show` en el upgrade | bajo: llamada en paralelo con cap | 2026-10-21 |
 | Medición E2E del índice | próxima ventana de upgrade real | bajo: un comando | 2026-10-21 |
@@ -95,6 +95,53 @@ portdb: 15162 plantillas, 3 requieren resolución dinámica (vía xbps-src show 
   `warning: rebuild de 'gmp': banderas cambiadas` → el join funciona en real.
 - 15.162 entradas = 9.713 templates + los alias `-devel` (symlinks), que el
   índice también resuelve a su sourcepkg.
+
+### ORDEN v4 — Remates administrativos (2026-10-21)
+
+**A) Workaround documentado (sin código)**
+
+> Hasta que exista el registro de subpaquetes (diferido, con trigger): si
+> mantienes un build local de un paquete **con** subpaquetes, ejecuta
+> manualmente `xbps-pkgdb -m repolock <cada-subpaquete>` tras el build.
+> Sin eso, una actualización oficial puede sustituir ese binario compilado por
+> el genérico (medido: `repolock: gmp=yes`, `gmpxx/gmpxx-devel/gmp-devel=no`).
+
+**Coste REVISADO del diferido** (la estimación de 4 módulos era demasiado
+pesada): el índice de portdb **ya resuelve los alias `-devel` → sourcepkg**
+(15.162 entradas = 9.713 templates + alias), así que:
+
+| Alcance | Módulos | Coste |
+|---------|---------|-------|
+| **Mínimo útil**: extraer `subpackages="..."` (una clave literal más en el parser léxico) + repolockear esos subpaquetes al instalar | `portdb.rs` + `install.rs` | **medio-bajo** |
+| Completo: además registrar los subpaquetes en la DB (entradas propias) y auditarlos | + `db.rs` + `upgrade.rs` | medio-alto |
+| (No hace falta para el mínimo) normalización subpkg→sourcepkg en el resolver | `resolver.rs` | medio, y con riesgo de identidad de nodos |
+
+**B) Test de contrato del helper de sync — CANCELADO (y anotado por qué)**
+
+El helper `sync_source_index` **no es función pura**: hace I/O (`git pull`,
+índice en disco) y escribe a stdout; el formato de la línea vive inline en un
+`println!`. Alcanzarlo exigiría **extraer** el formato, y la orden prohíbe
+refactorizar para hacerlo testeable (y el cap de 15 min manda: cancelado).
+La línea **sí está verificada en Void real** (contenedor, `fd50af2`):
+`portdb: 15162 plantillas, 3 requieren resolución dinámica (vía xbps-src show en upgrade).`
+Si en el futuro se toca ese texto, el sitio a assert es la salida de `-Sy`, no
+un unit test.
+
+**C) Vigilancia de triggers (solo registrar, NO ejecutar)**
+
+| Trigger | Qué hacer | Dónde |
+|---------|-----------|-------|
+| El `tracing::warn!` de SONAME dispara en una upgrade real | capturar la salida **VERBATIM** (proveedor, soname viejo/nuevo, consumidores) en este documento: es la evidencia que justificará o matará la preservación `.so` | sección "Registro de roces" |
+| Ventana disponible | `cargo test -- --ignored portdb` y anotar el número E2E en 5.4 | 5.4 |
+| Primer build local real con subpaquetes | anotarlo (dispara el trigger del diferido de registro) | 5.5 |
+
+**D) Semana de uso — la ejecuta el usuario.** El trabajo de OpenCode durante la
+semana: **solo registrar**, no arreglar (salvo corrupción de datos o crash del
+camino de upgrade; con doble revisión si toca semántica de comparación/join).
+Cada roce → entrada con `fecha | comando | qué esperaba | qué pasó | severidad
+(bloquea / molesta / cosmético)`. **Prohibido** empezar features durante la
+semana: el siguiente arco se elige por **frecuencia de dolor**, no por
+interés.
 
 ### 5.6 — CIERRE DEL ARCO v2
 
