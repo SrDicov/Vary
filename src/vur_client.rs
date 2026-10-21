@@ -869,6 +869,61 @@ fn has_unclosed_quote(buf: &str) -> bool {
     in_double || in_single
 }
 
+/// Expande las variables de un valor de un template.
+///
+/// - Canónicas (`${sourcepkg}`, `${pkgname}`, `${version}`, `${revision}`):
+///   mismo criterio que usaba la expansión de los subpaquetes.
+/// - Variables del propio template (`${_llvmver}`): se resuelven con las
+///   asignaciones leídas del template (ejemplo real: el template de
+///   CastXML declara `_llvmver=21` y depende de `clang${_llvmver}` → el
+///   paquete real se llama `clang21`).
+///
+/// Lo que no se puede resolver se deja tal cual: el resolver lo dirá con
+/// nombre y token (mejor un fallo con el token crudo que un nombre
+/// inventado).
+fn expand_template_vars(
+    value: &str,
+    vars: &std::collections::HashMap<String, String>,
+    pkgname: &str,
+    version: &str,
+    revision: u32,
+) -> String {
+    let revision = revision.to_string();
+    let out = value
+        .replace("${sourcepkg}", pkgname)
+        .replace("$sourcepkg", pkgname)
+        .replace("${pkgname}", pkgname)
+        .replace("$pkgname", pkgname)
+        .replace("${version}", version)
+        .replace("$version", version)
+        .replace("${revision}", &revision)
+        .replace("$revision", &revision);
+    // Variables del template: `${nombre}`.
+    let mut rest = out.as_str();
+    let mut expanded = String::with_capacity(out.len());
+    while let Some(start) = rest.find("${") {
+        expanded.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let Some(end) = after.find('}') else {
+            expanded.push_str("${");
+            rest = after;
+            break;
+        };
+        match vars.get(&after[..end]) {
+            Some(value) => {
+                expanded.push_str(value);
+                rest = &after[end + 1..];
+            }
+            None => {
+                expanded.push_str("${");
+                rest = after;
+            }
+        }
+    }
+    expanded.push_str(rest);
+    expanded
+}
+
 fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     // Unir continuaciones con \ y manejar valores multilínea entre comillas
     let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -988,29 +1043,33 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                 continue;
             }
-            // Filtrar solo variables relevantes
-            let relevant = matches!(
-                key.as_str(),
-                "pkgname"
-                    | "version"
-                    | "revision"
-                    | "archs"
-                    | "only_for_archs"
-                    | "depends"
-                    | "hostmakedepends"
-                    | "makedepends"
-                    | "checkdepends"
-                    | "build_style"
-                    | "distfiles"
-                    | "checksum"
-                    | "provides"
-                    | "replaces"
-                    | "restricted"
-                    | "maintainer"
-                    | "short_desc"
-                    | "license"
-                    | "homepage"
-            );
+            // Filtrar solo variables relevantes, MÁS las auxiliares del
+            // propio template (`_llvmver`): un nombre de paquete puede
+            // depender de ellas (`clang${_llvmver}` → `clang21`) y antes el
+            // token crudo llegaba al DAG.
+            let relevant = key.starts_with('_')
+                || matches!(
+                    key.as_str(),
+                    "pkgname"
+                        | "version"
+                        | "revision"
+                        | "archs"
+                        | "only_for_archs"
+                        | "depends"
+                        | "hostmakedepends"
+                        | "makedepends"
+                        | "checkdepends"
+                        | "build_style"
+                        | "distfiles"
+                        | "checksum"
+                        | "provides"
+                        | "replaces"
+                        | "restricted"
+                        | "maintainer"
+                        | "short_desc"
+                        | "license"
+                        | "homepage"
+                );
             if !relevant {
                 continue;
             }
@@ -1080,9 +1139,19 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     // `$(vopt_if ...)` deben sobrevivir enteras para poder reducirse según
     // las opciones activas del usuario; con split por espacios se colarían
     // tokens basura (`$(vopt_if`) como nombres de paquete.
+    // El padre expande las MISMAS variables que los subpaquetes: antes sus
+    // `depends`/`hostmakedepends` llegaban crudos al DAG y el resolver
+    // fallaba con "paquete no encontrado" (`clang${_llvmver}`) con un
+    // template REAL de void-packages.
     let split_deps = |key: &str| -> Vec<String> {
         vars.get(key)
-            .map(|s| crate::use_reduce::split_deps(s))
+            .map(|s| {
+                let expanded = expand_template_vars(s, &vars, &pkgname, &version, revision);
+                crate::use_reduce::split_deps(&expanded)
+                    .into_iter()
+                    .filter(|d| !d.trim().is_empty())
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let split_list = |key: &str| -> Vec<String> {
@@ -1115,15 +1184,7 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         let sub_depends: Vec<String> = sub_vars
             .get("depends")
             .map(|s| {
-                let expanded = s
-                    .replace("${sourcepkg}", &pkgname)
-                    .replace("$sourcepkg", &pkgname)
-                    .replace("${pkgname}", &pkgname)
-                    .replace("$pkgname", &pkgname)
-                    .replace("${version}", &version)
-                    .replace("$version", &version)
-                    .replace("${revision}", &revision.to_string())
-                    .replace("$revision", &revision.to_string());
+                let expanded = expand_template_vars(s, &vars, &pkgname, &version, revision);
                 crate::use_reduce::split_deps(&expanded)
                     .into_iter()
                     .filter(|d| !d.trim().is_empty())
@@ -1143,6 +1204,12 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         });
     }
 
+    // Se calculan antes del literal: `split_deps` toma prestadas `version` y
+    // `revision`, que el literal mueve.
+    let depends = split_deps("depends");
+    let hostmakedepends = split_deps("hostmakedepends");
+    let makedepends = split_deps("makedepends");
+    let checkdepends = split_deps("checkdepends");
     let info = VurInfo {
         format_version: 1,
         pkgname: pkgname.clone(),
@@ -1150,10 +1217,10 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         revision,
         archs,
         subpackages,
-        depends: split_deps("depends"),
-        hostmakedepends: split_deps("hostmakedepends"),
-        makedepends: split_deps("makedepends"),
-        checkdepends: split_deps("checkdepends"),
+        depends,
+        hostmakedepends,
+        makedepends,
+        checkdepends,
         build_style: vars.get("build_style").cloned().filter(|s| !s.is_empty()),
         distfiles: split_list("distfiles"),
         checksum,
@@ -1541,6 +1608,55 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
             Some("Maintainer Name <user@example.org> # not a comment")
         );
         Ok(())
+    }
+
+    /// Template REAL de void-packages (CastXML): declara `_llvmver=21` y
+    /// depende de `clang${_llvmver}` (el paquete real se llama `clang21`).
+    /// Antes el token crudo llegaba al DAG y el resolver fallaba con
+    /// "paquete no encontrado" con un template válido de void-packages.
+    #[test]
+    fn expande_variables_del_template_en_las_dependencias_del_padre() {
+        let content = r#"pkgname=CastXML
+version=0.7.0
+revision=1
+build_style=cmake
+_llvmver=21
+hostmakedepends="clang${_llvmver} python3-Sphinx"
+makedepends="clang-tools-extra${_llvmver} llvm${_llvmver}-devel libedit-devel"
+depends="clang${_llvmver}"
+checkdepends="libxml2"
+"#;
+        let info = parse_template_text(content, "test:template").unwrap();
+        assert_eq!(info.depends, vec!["clang21".to_string()]);
+        assert_eq!(
+            info.hostmakedepends,
+            vec!["clang21".to_string(), "python3-Sphinx".to_string()]
+        );
+        assert_eq!(
+            info.makedepends,
+            vec![
+                "clang-tools-extra21".to_string(),
+                "llvm21-devel".to_string(),
+                "libedit-devel".to_string()
+            ]
+        );
+    }
+
+    /// Las variables canónicas se expanden igual que en los subpaquetes.
+    #[test]
+    fn expande_las_variables_canonicas_en_el_padre() {
+        let content = "pkgname=foo\nversion=1.0\nrevision=2\ndepends=\"bar-${version}\"\n";
+        let info = parse_template_text(content, "test:template").unwrap();
+        assert_eq!(info.depends, vec!["bar-1.0".to_string()]);
+    }
+
+    /// Una variable que NO existe se deja tal cual (no se inventa un
+    /// nombre): el resolver la acusará con el token crudo.
+    #[test]
+    fn variable_desconocida_queda_cruda() {
+        let content = "pkgname=foo\nversion=1.0\nrevision=1\ndepends=\"clang${_nada}\"\n";
+        let info = parse_template_text(content, "test:template").unwrap();
+        assert_eq!(info.depends, vec!["clang${_nada}".to_string()]);
     }
 
     #[test]
