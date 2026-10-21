@@ -778,17 +778,22 @@ fn build_official(spec: &OfficialBuild) -> Result<std::path::PathBuf> {
     Ok(expected)
 }
 
+/// ¿Este paquete debe soltar el repolock? Solo los instalados DESDE FUENTE:
+/// son los que vary compila, y un binario (oficial o VUR) no debe pisarlos
+/// sin que el repolock lo impida. Un binario no tiene nada que soltar.
+fn suelta_repolock(entry: Option<&crate::db::Entry>) -> bool {
+    matches!(entry, Some(e) if e.install_type == InstallType::Source)
+}
+
 /// Si la DB registra `pkg` como Source, suelta el repolock ANTES de que un
 /// binario (oficial o VUR) lo pise. Best-effort: no aborta si falla (podía
 /// no estar bloqueado); solo warn.
 fn repounlock_if_source(config: &Config, db: &InstalledDb, pkg: &str) {
-    match db.get(pkg) {
-        Some(e) if e.install_type == InstallType::Source => {
-            if let Err(err) = xbps::pkgdb_mode(config, "repounlock", pkg) {
-                tracing::warn!("repounlock de '{pkg}' falló (podía no estar bloqueado): {err:#}");
-            }
-        }
-        _ => {}
+    if !suelta_repolock(db.get(pkg)) {
+        return;
+    }
+    if let Err(err) = xbps::pkgdb_mode(config, "repounlock", pkg) {
+        tracing::warn!("repounlock de '{pkg}' falló (podía no estar bloqueado): {err:#}");
     }
 }
 
@@ -2346,6 +2351,34 @@ mod tests {
         config.newoptions = false;
         config.changed_flags = false;
         assert!(rebuild_candidates(&config).is_empty());
+    }
+
+    /// El criterio de "soltar el repolock" decide si el binario oficial puede
+    /// pisar un paquete de vary: SOLO los instalados desde fuente. Es un
+    /// camino S1 (un error aquí desancla todo sin error ni test en rojo).
+    #[test]
+    fn solo_los_instalados_desde_fuente_sueltan_el_repolock() {
+        let mut source = crate::db::Entry {
+            version: "pkg-1.0_1".to_string(),
+            vur: crate::db::OFFICIAL_REPO.to_string(),
+            install_date: 0,
+            build_date: None,
+            install_type: crate::db::InstallType::Source,
+            repo_commit: None,
+            artifact_sha256: None,
+            soname_pins: None,
+            active_options: None,
+            cflags: None,
+            cxxflags: None,
+            ldflags: None,
+            patches_sha256: None,
+            template_sha256: None,
+        };
+        assert!(suelta_repolock(Some(&source)));
+        source.install_type = crate::db::InstallType::Binary;
+        assert!(!suelta_repolock(Some(&source)));
+        // Sin entrada en la DB: nada que soltar.
+        assert!(!suelta_repolock(None));
     }
 
     /// WorkerSandbox mínimo sin montar (los paths no necesitan existir para
