@@ -486,6 +486,35 @@ mod tests {
         assert!(cache.is_file());
     }
 
+    /// Una caché CORRUPTA (truncada, editada a mano) no es un estado: es un
+    /// acierto de la cache → se re-descarga. Verificado con curl real: la
+    /// caché truncada a 20 bytes se ignora y el índice se vuelve a bajar.
+    #[test]
+    #[ignore = "requiere curl y un index.json servido por HTTP"]
+    fn la_cache_corrupta_se_re_descarga() {
+        let url = std::env::var("VUP_TEST_URL").expect("VUP_TEST_URL");
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("index.json");
+
+        // 1) descarga normal (deja la caché)
+        let idx = fetch_index("curl", &url, &cache, 3600).expect("primera descarga");
+        assert!(idx.packages.contains_key("bueno"));
+        assert!(cache.is_file());
+
+        // 2) la caché se corrompe (truncada a 20 bytes)
+        std::fs::write(&cache, b"{\"packages\":{\"bueno\"").unwrap();
+        assert!(std::fs::read(&cache).unwrap().len() < 30);
+
+        // 3) con la caché "fresca" pero inválida: se re-descarga y se arregla
+        let idx = fetch_index("curl", &url, &cache, 3600).expect("re-descarga");
+        assert!(idx.packages.contains_key("bueno"));
+        let bytes = std::fs::read(&cache).unwrap();
+        assert!(
+            parse_index_bytes(&bytes).is_ok(),
+            "la caché debería haberse reescrito con el índice válido"
+        );
+    }
+
     /// La URL del índice viene de repos.conf (dato): curl parsea opciones en
     /// cualquier posición, así que solo se admite http(s).
     #[test]
