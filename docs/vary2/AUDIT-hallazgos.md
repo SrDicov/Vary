@@ -394,15 +394,20 @@ diseño); overlay/masterdir con RAII + `cleanup_stale_sandboxes` + señales ✓.
   (`common.sh set_build_options`), pero Vary no las conoce: un `$(vopt_if vala
   vala)` se reduce a la rama OFF y la dep sale del DAG → el build falla.
   **1.685 templates** del clon real declaran `build_options_default`.
-- **Por qué NO se arregla aquí**: el arreglo correcto exige tocar el esquema
-  VURINFO v1 (`metadata.rs` + `vur_client.rs` + `scripts/vur-generator.sh` +
-  `scripts/vurinfo.jq` + `docs/VURINFO.md` + el resolver) → ≥4 módulos y un
-  cambio de schema: parada obligatoria (§8.1/§8.2). **Plan**: (1) añadir
-  `build_options_default` al `.VURINFO` (mismo criterio que `build_options`),
-  (2) la conf por build ya genera `etc/conf.<id>` con las opciones activas →
-  un único origen, (3) `use_reduce` recibe las defaults del paquete.
-  **Trigger**: un build de VUR falla por una dependencia que solo existe con
-  una opción por defecto.
+- **DECIDIDO el 2026-10-22 (medición, no opinión)**: regla aplicada = ¿su
+  ausencia produce un **build incorrecto** o una **comodidad ausente**?
+  Medido en el clon real: 1.199 templates con `build_options_default`, **409
+  casos en 374 paquetes** con `$(vopt_if X ...)` donde X ∈ defaults, 437 deps
+  "on" y **0 deps "on" sin paquete en el árbol** → **el build NUNCA falla**
+  (xbps-src las resuelve como binario oficial). Lo que falta es **control**
+  (no está en el DAG, no se ancla, no sale en el plan, no se recompila) →
+  **comodidad ausente → DIFERIDO con trigger**.
+  **Trigger**: el primer paquete de un VUR cuya compilación falle, o cuya
+  salida difiera del plan, por una opción activa **por defecto**.
+  **Coste si dispara**: `build_options_default` al esquema VURINFO v1
+  (`metadata.rs` + `vur_client.rs` + `scripts/vur-generator.sh` +
+  `scripts/vurinfo.jq` + `docs/VURINFO.md`) y pasarlo al reduce → ≥4 módulos +
+  schema (por eso fue PARADA §8.2).
 
 **ID: A5-03** (= A1-07) · **S3** · flags de pacman sin efecto → **DIFERIDO (CLI congelado)**.
 
