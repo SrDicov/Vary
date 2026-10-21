@@ -346,6 +346,18 @@ Reglas de la semana (sin excepciones):
 - Cada roce con severidad >= S2 se tria el mismo día (¿bug, característica,
   o uso incorrecto?); los S3 se anotan y se agrupan.
 
+**Leyes nuevas (de la propia auditoría):**
+
+1. **Artefacto mal identificado = dato podrido: hash antes de conclusión.** La
+   primera medición de fricción dio "sin cambios" porque el solver de xbps cogió
+   el `.xbps` VIEJO (mismo pkgver en dos repos a la vez): el entorno mentía
+   sobre el artefacto. El hash lo delató. Igual que el test que mentía sobre
+   la producción: **verifica el sujeto antes de concluir sobre él**.
+2. **`git add` con rutas explícitas cuando un directorio mezcla verdad y
+   planes.** `git add docs/vary2/` se llevó los planes al merge; se
+   devolvieron a untracked con un merge (sin reescribir historia publicada).
+   La historia es evidencia inmutable; el árbol es la verdad.
+
 Fricción **medida** entre el binario viejo (`8c14628`) y el nuevo (`f27bc64`)
 en un Void limpio (contenedor, artefactos de CI):
 
