@@ -124,7 +124,23 @@ impl InstalledDb {
             match std::fs::read_to_string(&path) {
                 Ok(text) => {
                     if let Ok(file_v2) = serde_json::from_str::<InstalledDbFile>(&text) {
-                        entries = file_v2.packages;
+                        if file_v2.schema_version > CURRENT_SCHEMA_VERSION {
+                            // Fichero escrito por una versión MÁS nueva: no lo
+                            // reinterpretamos con la semántica v3 (perderíamos
+                            // campos y acabaríamos guardándolo degradado).
+                            // Mismo camino que la corrupción: respaldo y vacío.
+                            tracing::warn!(
+                                "{} con schema_version {} (futuro, actual {}), preservando respaldo",
+                                path.display(),
+                                file_v2.schema_version,
+                                CURRENT_SCHEMA_VERSION
+                            );
+                            let corrupt_bak =
+                                path.with_extension(format!("corrupt.{}", now_epoch_secs()));
+                            let _ = std::fs::copy(&path, &corrupt_bak);
+                        } else {
+                            entries = file_v2.packages;
+                        }
                     } else if let Ok(legacy_v1) =
                         serde_json::from_str::<BTreeMap<String, Entry>>(&text)
                     {
