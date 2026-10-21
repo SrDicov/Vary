@@ -234,6 +234,32 @@ de template sin `files/`), A6-05 (mock sin arch), A6-09 (ruido del repounlock).
 módulos y el schema). **Congelados por el prompt:** todo cambio de CLI
 (A1-07/A5-03/A5-04/A5-08) y el formato del valor en `installed.json` (A5-10).
 
+### A5-02 — DECIDIDO con medición (2026-10-22): **comodidad ausente → DIFERIDO con trigger**
+
+Regla aplicada: ¿la ausencia produce un **build incorrecto** o una **comodidad
+ausente**? Medido en el clon real (`~/.cache/vary/void-packages`, 15.162
+templates):
+
+| Medición | Valor |
+|---|---|
+| templates con `build_options_default` | 1.199 |
+| `$(vopt_if X ...)` en líneas de deps con X ∈ defaults | 409 casos en **374 paquetes** |
+| deps "on" (las que xbps-src usaría) | 437 (66 únicas) |
+| deps "on" **sin paquete en el árbol** (o sea, builds que FALLARÍAN) | **0** |
+
+**Veredicto: el build nunca falla por esto.** xbps-src resuelve la dep "on"
+como binario oficial (todas existen) → el paquete compilado es correcto. Lo que
+falta es **control**: esa dep no está en el DAG de vary (no se compila desde
+fuente), no queda anclada (repolock), no aparece en el plan y no se recompila
+cuando cambia. Es la rama de **comodidad ausente** → se difiere.
+
+**Trigger (concreto):** el primer paquete de un VUR cuya compilación falle, o
+cuya salida difiera del plan, por una opción activa **por defecto** (no por el
+usuario). **Coste si dispara:** añadir `build_options_default` al esquema
+VURINFO v1 (`metadata.rs` + `vur_client.rs` + `scripts/vur-generator.sh` +
+`scripts/vurinfo.jq` + `docs/VURINFO.md`) y pasarlo al reduce → ≥4 módulos +
+schema (motivo de la PARADA §8.2).
+
 Salto de la auditoría: `8c14628` (la forma con palabras estilo kyoz ya estaba
 mergeada a main cuando empezó la auditoría).
 
@@ -296,3 +322,37 @@ El arco v2 está **cerrado**. Lo único que queda abierto son las ventanas de 5.
 matriz de cobertura sin agujeros y la tabla de hallazgos sin opiniones; después
 vuelve a mandar la semana de uso real (registrar roces, hotfix solo con
 corrupción o crash).
+
+### Semana de uso — REINICIADA con el binario nuevo (f27bc64)
+
+26 fixes cambiaron comportamiento: **la fricción contra el binario viejo es
+dato podrido**. Plantilla de registro (una fila por roce):
+
+```
+| Fecha | Comando | Qué esperaba | Qué pasó | Severidad |
+|-------|---------|--------------|----------|-----------|
+|       |         |              |          | S1/S2/S3   |
+```
+
+Reglas de la semana (sin excepciones):
+
+- **Hotfix solo con corrupción de datos o crash del upgrade.** Nada más.
+- **Features prohibidas**: el backlog lo escribe el dolor, no las ideas.
+- **Si dispara el detector de SONAME**: el log **verbatim** es la pieza más
+  valiosa que puede dar esta herramienta → pegarlo tal cual (sin resumir) en
+  este ledger.
+- **Ausencia de dato ≠ señal**: un roce sin evidencia (comando + salida) no
+  entra; entra como pregunta, no como hallazgo.
+- Cada roce con severidad >= S2 se tria el mismo día (¿bug, característica,
+  o uso incorrecto?); los S3 se anotan y se agrupan.
+
+Fricción **medida** entre el binario viejo (`8c14628`) y el nuevo (`f27bc64`)
+en un Void limpio (contenedor, artefactos de CI):
+
+| Camino | Viejo | Nuevo |
+|--------|-------|-------|
+| `vary --repo add` con un repo llamado `official` | se registraba | **error: nombre de repositorio reservado** |
+| `repos.conf` con `enabld = false` (typo) | se ignoraba en silencio (el repo quedaba ACTIVO) | **error: unknown field `enabld`** (nombra el campo) |
+| refresh de un VUR caído | solo el WARN en el log | **"aviso: no se pudo clonar el repo VUR 'x'"** en consola |
+| paquete con `pkgname=../escape` | rechazado con aviso | igual (el falso positivo A3-01: ya lo rechazaba) |
+| `vary -Q` | 95 paquetes | 95 (idéntico) |
