@@ -354,15 +354,32 @@ indisponibilidad del servicio de subagents, no un criterio del prompt.
 **Trigger de cierre (observado, no "cuando pueda"):** la primera sesión en la
 que una llamada subagent tenga éxito → se paga esta deuda antes que cualquier
 otra cosa.
-**Trigger CUMPLIDO (intento 7)**: la infra volvió y el **Revisor A** dio
-**OK CON SALVEDADES** (solo S4): la puerta es correcta y está en el punto de
-entrada único de datos remotos a nombres. Sus dos S4 están aplicadas: el aviso
-dice **qué repo** declara el nombre (`H1`) y hay un test con la **forma real**
-del `index.json` de VUP (`_meta` hermano de `packages`) (`H2`). Aportó además
-una medición que no tenía: la predicate contra los **15.162** nombres reales
-del clon de void-packages → **0 falsos positivos**. Revisor B: en curso.
-Hasta entonces, el checklist que el segundo par de ojos debía cubrir **ya está
-respondido con datos** (ver
+**Trigger CUMPLIDO (intentos 7 y 8):** la infra volvió y **la doble revisión
+de A8-03 está PAGADA**:
+
+- **Revisor A — OK CON SALVEDADES** (solo S4): la puerta es correcta y está en
+  el punto de entrada único de datos remotos a nombres. Sus dos S4 aplicadas: el
+  aviso dice **qué repo** declara el nombre (`H1`) y hay un test con la **forma
+  real** del `index.json` de VUP (`_meta` hermano de `packages`) (`H2`). Midió
+  además la predicate contra los **15.162** nombres reales del clon de
+  void-packages → **0 falsos positivos**.
+- **Revisor B — OK CON SALVEDADES** (sin S1/S2): 4 salvedades **aplicadas**
+  (`40bacc0`): los tres topes eran **fail-open** en su camino excepcional
+  (`H-B2` → fail-closed: si no se puede MEDIR, no se sigue sin tope); la
+  **versión** del índice no pasaba por `is_valid_version` (`H-B4` → ahora sí,
+  misma simetría que la vía .VURINFO); el huérfano por SIGKILL (`H-B1` → prefijo
+  reconocible + barrido **por EDAD**, que no reintroduce la carrera que el nombre
+  único evita); y `--max-filesize` solo actúa con Content-Length (`H-B3` →
+  `--limit-rate` acota los bytes + el comentario corregido para no sobreestimar
+  lo que cubre el flag).
+
+**La deuda de revisión queda CERRADA.** Y con ella la pregunta que la dejó
+abierta: el `schema_version` del `installed.json` se justifica (hay fichero que
+no se auto-repara) mientras que la caché del índice no lo lleva (se re-descarga
+sola) → el número de versión existe exactamente donde hace falta.
+
+El checklist que el segundo par de ojos debía cubrir **quedó respondido con
+datos** (ver
 `AUDIT-hallazgos.md`, sección A8): `split_pkgver` contra el código real de xbps
 0.60.7 (`lib/util.c:45-54` `is_revision`, `:119-143` `xbps_pkg_version`,
 `:249-282` `xbps_pkg_name`) + la medición en el clon real (0 versiones con "_"
