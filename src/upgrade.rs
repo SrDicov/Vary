@@ -255,6 +255,10 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
             git_bin: config.git_bin.clone(),
         };
         if let Err(e) = repo.ensure_cloned() {
+            // Aviso a CONSOLA: `tracing::warn` solo va al log, así que el
+            // fallo era invisible y el upgrade seguía con el índice viejo de
+            // ese repo ("VUR packages up to date" mentía).
+            eprintln!("aviso: no se pudo clonar el repo VUR '{name}': {e:#}");
             tracing::warn!("failed to clone VUR '{name}': {e}");
             any_failed = true;
             continue;
@@ -273,6 +277,7 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
                 }
             }
             Err(e) => {
+                eprintln!("aviso: no se pudo refrescar el repo VUR '{name}': {e:#}");
                 tracing::warn!("failed to pull VUR '{name}': {e}");
                 any_failed = true;
             }
@@ -382,7 +387,10 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
 
     // Phase 2: refresh VUR repos
     println!(":: Refreshing VUR repositories...");
-    refresh_repos(config)?;
+    // El código dice si algún repo falló (aviso por repo ya impreso): no se
+    // aborta (el resto del sistema sí puede subirse) pero el mensaje final
+    // no puede afirmar "up to date" para un repo con el índice viejo.
+    let refresh_code = refresh_repos(config)?;
 
     // Phase 3: detect VUR upgrades via installed.json
     let mut cache = CacheIndex::load(config.cache_index_path())?;
@@ -529,7 +537,11 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     }
 
     if outdated.is_empty() {
-        println!("VUR packages up to date.");
+        if refresh_code != 0 {
+            println!("VUR packages al día (salvo los repos sin refrescar: índice anterior).");
+        } else {
+            println!("VUR packages up to date.");
+        }
         return Ok(0);
     }
 
