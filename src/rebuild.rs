@@ -156,13 +156,16 @@ pub fn target_for(config: &Config, pkg: &str) -> BuildTarget {
     }
 }
 
+/// Lookup de versión en el árbol de fuentes (ITEM 2 lo alimenta).
+pub type VersionLookup<'a> = &'a dyn Fn(&str) -> Option<String>;
+
 /// Paquetes instalados desde fuente que hay que recompilar, con su motivo.
 ///
 /// `portdb_version` permite el cruce con el árbol de fuentes (ITEM 2); sin él
 /// solo se evalúan opciones/banderas/parches/template.
 pub fn candidates(
     config: &Config,
-    portdb_version: Option<&dyn Fn(&str) -> Option<String>>,
+    portdb_version: Option<VersionLookup<'_>>,
 ) -> BTreeMap<String, RebuildReason> {
     let mut out = BTreeMap::new();
     let Ok(db) = crate::db::InstalledDb::load(config.installed_db_path()) else {
