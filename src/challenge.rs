@@ -102,7 +102,7 @@ fn read_built_tree(xbps_path: &Path) -> Result<Vec<TreeEntry>> {
         .entries()
         .with_context(|| format!("leyendo tar de {}", xbps_path.display()))?
     {
-        let mut entry =
+        let entry =
             entry.with_context(|| format!("entrada corrupta en {}", xbps_path.display()))?;
         let raw = entry.path()?.to_string_lossy().to_string();
         // Normalizar a absoluta: el tar trae "./usr/..." o "usr/...".
@@ -122,9 +122,22 @@ fn read_built_tree(xbps_path: &Path) -> Result<Vec<TreeEntry>> {
                 state: FileState::Symlink(target),
             });
         } else if header.entry_type().is_file() {
+            // Límite de tamaño: un header de tar con `size` absurdo
+            // (artefacto corrupto por disco lleno o descarga cortada) hacía
+            // que `read_to_end` reservara esa cantidad en RAM → OOM.
+            const MAX_ENTRY_BYTES: u64 = 1 << 30; // 1 GiB por fichero
             let mut bytes = Vec::new();
             use std::io::Read;
-            entry.read_to_end(&mut bytes)?;
+            entry
+                .take(MAX_ENTRY_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .with_context(|| format!("leyendo entrada de {}", xbps_path.display()))?;
+            if bytes.len() as u64 > MAX_ENTRY_BYTES {
+                anyhow::bail!(
+                    "entrada de más de {MAX_ENTRY_BYTES} bytes en {} (artefacto corrupto)",
+                    xbps_path.display()
+                );
+            }
             out.push(TreeEntry {
                 path,
                 state: FileState::Content(sha256_hex(&bytes)),
