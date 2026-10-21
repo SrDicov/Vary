@@ -10,7 +10,8 @@
 //! - **Índice frío**: walk de `srcpkgs/` + parser LÉXICO de los templates.
 //!   Los templates son bash, pero las variables que interesan
 //!   (`version`, `revision`, `build_options`) son literales en la enorme
-//!   mayoría de los casos; los que no, se marcan `needs_dynamic`.
+//!   mayoría de los casos; los que no (versión o revisión no resueltas
+//!   estáticamente) se marcan `needs_dynamic`.
 //! - **Índice incremental**: el clon es shallow (`--depth 1`), así que NO
 //!   hay `git diff OLD NEW` (el SHA viejo no es alcanzable). Lo correcto es
 //!   `git diff-tree --no-commit-id --name-only -r <nuevo_sha>`: el diff de UN
@@ -39,7 +40,8 @@ pub struct PortEntry {
     pub build_options_default: Vec<String>,
     /// sha256 del template.
     pub template_sha256: String,
-    /// El parser estático no pudo resolverlo: requiere `xbps-src show`.
+    /// El parser estático no pudo resolver la versión/revisión: requiere
+    /// `xbps-src show` (o revisión manual).
     pub needs_dynamic: bool,
 }
 
@@ -82,15 +84,29 @@ impl PortDb {
     /// `VurInfo::pkgver()` y que la versión guardada en la DB de instalados
     /// (así la auditoría puede compararlos sin conversiones).
     pub fn pkgver_of(&self, pkg: &str) -> Option<String> {
-        self.entries
-            .get(pkg)
-            .map(|e| format!("{}-{}", e.name, e.pkgver()))
+        self.entries.get(pkg).and_then(|e| {
+            // Entrada `needs_dynamic` sin versión resuelta: NO hay dato, y
+            // sin dato no hay señal (un "_0" sintético dispararía un
+            // NewVersion falso).
+            if e.version.is_empty() {
+                return None;
+            }
+            Some(format!("{}-{}", e.name, e.pkgver()))
+        })
     }
 
     /// Paquete que provee un SONAME (`common/shlibs`).
+    ///
+    /// El índice guarda el pkgver completo (`pkg-ver_rev`); aquí se devuelve
+    /// el NOMBRE del proveedor (`pkg`).
     #[allow(dead_code)]
     pub fn providers(&self, soname: &str) -> Option<&str> {
-        self.shlibs.get(soname).map(|s| s.as_str())
+        self.shlibs
+            .get(soname)
+            .map(|pkgver| match pkgver.rsplit_once('-') {
+                Some((pkg, _)) => pkg,
+                None => pkgver.as_str(),
+            })
     }
 }
 
@@ -134,7 +150,8 @@ fn assignment(line: &str) -> Option<(String, String)> {
 /// Parser LÉXICO del template (no ejecuta bash).
 ///
 /// `None` cuando `version`/`revision` no son literales: entonces el paquete
-/// necesita `xbps-src show` (marcado `needs_dynamic`).
+/// necesita `xbps-src show` (marcado `needs_dynamic`: versión o revisión
+/// no resueltas estáticamente).
 fn parse_template_static(content: &str) -> Option<StaticTemplate> {
     let mut out = StaticTemplate::default();
     let mut lines: Vec<String> = Vec::new();
@@ -298,13 +315,10 @@ fn parse_shlibs(path: &Path) -> BTreeMap<String, String> {
         let (Some(soname), Some(pkgver)) = (fields.next(), fields.next()) else {
             continue;
         };
-        // `pkgver` = `pkg-version_revision` -> el paquete es lo anterior al
-        // primer guion del final.
-        let pkg = match pkgver.rsplit_once('-') {
-            Some((pkg, _)) => pkg.to_string(),
-            None => pkgver.to_string(),
-        };
-        out.entry(soname.to_string()).or_insert(pkg);
+        // Se guarda el PKGVER completo (`pkg-version_revision`): la auditoría
+        // de bumps compara nombre+versión+revisión contra el pin. Guardar solo
+        // el nombre hacía que la comparación nunca tuviese datos.
+        out.entry(soname.to_string()).or_insert(pkgver.to_string());
     }
     out
 }
@@ -354,7 +368,7 @@ pub fn update_incremental(checkout: &Path, git_bin: &str, db: &mut PortDb) -> Re
 
     let touched = git_changed_paths(checkout, git_bin, &head)?;
     let mut names: Vec<String> = Vec::new();
-    for path in touched {
+    for path in &touched {
         let mut parts = path.split('/');
         if parts.next() != Some("srcpkgs") {
             continue;
@@ -364,6 +378,12 @@ pub fn update_incremental(checkout: &Path, git_bin: &str, db: &mut PortDb) -> Re
                 names.push(name.to_string());
             }
         }
+    }
+    // El mapa de SONAMEs del árbol también es parte del índice: si el commit
+    // lo toca, se refresca (si no, el mapa queda congelado y los bumps
+    // nuevos no se ven hasta que cambie un helper).
+    if touched.iter().any(|p| p == "common/shlibs") {
+        db.shlibs = parse_shlibs(&checkout.join("common").join("shlibs"));
     }
     for name in names {
         let dir = checkout.join("srcpkgs").join(&name);
@@ -611,6 +631,11 @@ mod tests {
         assert!(e.template_sha256.starts_with("sha256:"));
         assert!(!e.needs_dynamic);
         assert_eq!(db.providers("libc.so.6"), Some("glibc"));
+        // El índice guarda el pkgver completo (lo necesita la auditoría).
+        assert_eq!(
+            db.shlibs.get("libc.so.6").map(String::as_str),
+            Some("glibc-2.41_1")
+        );
     }
 
     #[test]
@@ -744,6 +769,61 @@ mod tests {
         let all = virtuals(tmp.path());
         assert_eq!(all.get("ntp-daemon"), Some(&"chrony".to_string()));
         assert_eq!(all.get("foo"), Some(&"bar".to_string()));
+    }
+
+    /// El mapa de `common/shlibs` guarda el PKGVER completo: la auditoría de
+    /// bumps compara contra él. Con solo el nombre del proveedor, la
+    /// comparación no tenía datos y la detección NUNCA disparaba (bug
+    /// encontrado por revisión, no por CI: los tests feeds pkgvers
+    /// completos).
+    #[test]
+    fn shlibs_guarda_pkgver_y_la_auditoria_lo_detecta() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("shlibs");
+        std::fs::write(&path, "libpoppler.so.145 poppler-24.08.0_1\n").unwrap();
+        let map = parse_shlibs(&path);
+        assert_eq!(
+            map.get("libpoppler.so.145").map(String::as_str),
+            Some("poppler-24.08.0_1")
+        );
+        // El nombre del proveedor sigue disponible para consulta.
+        let db = PortDb {
+            shlibs: map.clone(),
+            ..PortDb::default()
+        };
+        assert_eq!(db.providers("libpoppler.so.145"), Some("poppler"));
+        // Y el cruce con la auditoría de bumps encuentra el cambio.
+        let pinned = crate::soname::SonamePins::from([(
+            "libpoppler.so.145".to_string(),
+            "poppler-24.08.0_1".to_string(),
+        )]);
+        let bumps = crate::soname::source_tree_bumps(&pinned, &map);
+        assert_eq!(bumps.len(), 1, "{bumps:?}");
+        assert_eq!(bumps[0].shlib, "libpoppler.so.145");
+    }
+
+    /// Entrada sin versión resuelta (`needs_dynamic`): sin dato, sin señal
+    /// (un pkgver sintético dispararía un NewVersion falso).
+    #[test]
+    fn pkgver_de_entrada_dinamica_es_none() {
+        let db = PortDb {
+            entries: [(
+                "dyn".to_string(),
+                PortEntry {
+                    name: "dyn".to_string(),
+                    sourcepkg: "dyn".to_string(),
+                    version: String::new(),
+                    revision: 0,
+                    needs_dynamic: true,
+                    ..PortEntry::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+            ..PortDb::default()
+        };
+        assert_eq!(db.pkgver_of("dyn"), None);
+        assert_eq!(db.pkgver_of("noexiste"), None);
     }
 
     #[test]

@@ -254,27 +254,6 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
     // congelado en el commit del clone) y el índice de fuentes se actualiza
     // de forma incremental (frío si no existe). Best-effort: un fallo aquí
     // no invalida la sincronización de los VURs.
-    match crate::portdb::sync_index(config) {
-        Ok(stats) if stats.reindexed > 0 => {
-            println!(
-                "void-packages indexado: {} paquete(s) ({}).",
-                stats.reindexed,
-                if stats.full_reindex {
-                    "índice completo"
-                } else {
-                    "incremental"
-                }
-            );
-            // 5.3: contador de plantillas que el parser estático no puede
-            // resolver (se resuelven por `xbps-src show` en el upgrade).
-            println!(
-                "portdb: {} plantillas, {} requieren resolución dinámica (vía xbps-src show en upgrade).",
-                stats.entries, stats.needs_dynamic
-            );
-        }
-        Ok(_) => {}
-        Err(e) => tracing::warn!("no se pudo actualizar el índice de fuentes: {e:#}"),
-    }
     if any_failed {
         Ok(1)
     } else {
@@ -312,6 +291,31 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     // del merge: entran en el plan de recompilación de esta misma
     // transacción (si se detectaran después, el binario oficial ya habría
     // pisado el paquete fuente).
+    //
+    // El índice de fuentes se refresca AQUÍ (no en la fase de sync): si se
+    // refrescase después, la detección usaría datos del ciclo anterior y el
+    // bump publicado hoy se vería en el próximo upgrade.
+    match crate::portdb::sync_index(config) {
+        Ok(stats) if stats.reindexed > 0 => {
+            println!(
+                "void-packages indexado: {} paquete(s) ({}).",
+                stats.reindexed,
+                if stats.full_reindex {
+                    "índice completo"
+                } else {
+                    "incremental"
+                }
+            );
+            // 5.3: contador de plantillas que el parser estático no puede
+            // resolver (se resuelven por `xbps-src show` en el upgrade).
+            println!(
+                "portdb: {} plantillas, {} requieren resolución dinámica (vía xbps-src show en upgrade).",
+                stats.entries, stats.needs_dynamic
+            );
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!("no se pudo actualizar el índice de fuentes: {e:#}"),
+    }
     let bump_consumers = {
         let db = InstalledDb::load(config.installed_db_path())?;
         soname_bump_consumers(config, &db)
@@ -478,15 +482,20 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     // ITEM 4: los consumidores de un bump de SONAME se recompilan (E14).
     // Rastro auditable (5.2): proveedor, soname viejo/nuevo y lista de
     // consumidores, vía tracing (sin infraestructura de log nueva).
-    let consumer_names: Vec<String> = bump_consumers.iter().map(|(n, _)| n.clone()).collect();
     for (name, bumps) in &bump_consumers {
         for bump in bumps {
+            // Solo los consumidores de ESE soname (no la lista global).
+            let affected: Vec<&str> = bump_consumers
+                .iter()
+                .filter(|(_, bs)| bs.iter().any(|b| b.shlib == bump.shlib))
+                .map(|(n, _)| n.as_str())
+                .collect();
             tracing::warn!(
                 "soname con bump: '{name}' requiere {} (proveedor {} -> {}); consumidores: {}",
                 bump.shlib,
                 bump.from,
                 bump.to,
-                consumer_names.join(", ")
+                affected.join(", ")
             );
         }
         if !outdated.contains(name) {
@@ -558,7 +567,10 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
             diffs.len()
         );
         let approved = review_template_diffs(config, &diffs)?;
-        outdated.retain(|n| approved.contains(n));
+        // Solo se caen los paquetes cuyo template cambió y NO se aprobó el
+        // diff: los consumidores de un bump de SONAME (ITEM 4) no tienen
+        // diff de template y deben seguir en el plan (E14).
+        outdated.retain(|n| !diffs.iter().any(|d| d.pkg == *n) || approved.contains(n));
         if outdated.is_empty() {
             println!("Sin upgrades aprobados.");
             return Ok(0);

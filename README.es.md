@@ -67,7 +67,7 @@ vary -S --deep --force-build @installed
 
 ### `@preserved-rebuild`
 
-Al instalar un paquete **desde fuente**, vary graba qué proveedor instalado servía cada `shlib` requerido (pins de sonames). En upgrade, si algún proveedor cambió de versión (o ya no provee el soname), vary emite un aviso consultivo — **nunca recompila solo** (compilar sin consentimiento explícito es peligroso). `@preserved-rebuild` se expande exactamente a esos paquetes en drift, para que los recompiles tú:
+Al instalar un paquete **desde fuente**, vary graba qué proveedor instalado servía cada `shlib` requerido (pins de sonames). En upgrade, si algún proveedor cambió de versión (o ya no provee el soname), vary emite un aviso consultivo — **nunca recompila solo** (compilar sin consentimiento explícito es peligroso). (La única excepción es el chequeo contra el *árbol de fuentes*: si `common/shlibs` muestra que el proveedor de un soname del que dependes subió de versión, los consumidores entran en el plan del upgrade y se recompilan en esa misma transacción, antes del merge.) `@preserved-rebuild` se expande exactamente a esos paquetes en drift, para que los recompiles tú:
 
 ```sh
 vary -S --force-build @preserved-rebuild
@@ -88,7 +88,7 @@ vary -S --changed-flags        # cambiaste CFLAGS en vary.conf
 vary -S --newoptions           # tocaste tus parches/opciones o el template
 ```
 
-Notas: la auditoría solo mira paquetes **compilados por vary** (los binarios oficiales nunca se recompilan por esto) y solo cuando hay baseline registrado — un paquete instalado antes de esta función no tiene baseline, así que no se toca (no se inventan rebuilds). El plan explica cada rebuild (`rebuild de 'linux': banderas cambiadas`). `--newoptions` no lleva short: `-N` ya significa "sin repos remotos" en xbps-src y lo usa `--deep`. La auditoría es una decisión **en tiempo de plan**: no recompila nada por su cuenta, tú sigue pidiendo la instalación.
+Notas: la auditoría solo mira paquetes **compilados por vary** (los binarios oficiales nunca se recompilan por esto) y solo cuando hay baseline registrado — un paquete instalado antes de esta función no tiene baseline, así que no se toca (no se inventan rebuilds). El baseline se registra para el **paquete fuente**: los subpaquetes de un build oficial desde fuente (`gmpxx`, `gmp-devel`, …) no tienen entrada propia y no se auditan individualmente (recompilar el padre los recompila a todos). El plan explica cada rebuild (`rebuild de 'linux': banderas cambiadas`). `--newoptions` no lleva short: `-N` ya significa "sin repos remotos" en xbps-src y lo usa `--deep`. La auditoría es una decisión **en tiempo de plan**: no recompila nada por su cuenta, tú sigue pidiendo la instalación.
 
 ## Conflictos de ficheros de configuración (`--conf-update`)
 

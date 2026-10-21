@@ -24,7 +24,8 @@ All notable changes to vary will be documented in this file.
   `/usr/lib` (requiere caso ABI real y aprobación explícita).
 
 - **Auditoría de rebuild (`--newoptions`, `--changed-flags -U`):** vary graba con
-  qué se compiló cada paquete instalado desde fuente (opciones activas,
+  qué se compiló cada paquete instalado desde fuente (el paquete padre: los
+  subpaquetes de builds oficiales no llevan entrada propia; opciones activas,
   banderas, hashes de los parches/ficheros de usuario y hash del template) y
   detecta cuándo quedó obsoleto aunque el `pkgver` no se mueva:
   `--newoptions` recompila por opciones/parches/template cambiados,

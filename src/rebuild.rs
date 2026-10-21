@@ -146,6 +146,23 @@ pub fn template_hash(void_packages: &Path, pkg: &str) -> Option<String> {
 ///
 /// `with_hashes`: si es falso NO se leen ficheros (los hashes solo se
 /// necesitan cuando hay baseline con el que comparar).
+///
+/// ## Por qué el join (Entry ↔ objetivo) aguanta
+///
+/// La DB registra el PAQUETE FUENTE de un build oficial (el padre), no sus
+/// subpaquetes: la entrada del padre lleva el baseline de flags/opciones y
+/// el hash del template, y un rebuild del padre reconstruye TODOS sus
+/// subpaquetes (una sola invocación de `xbps-src pkg <padre>`). El template
+/// de un subpaquete con symlink en `srcpkgs/` (p.ej. `openssl-devel`) se
+/// alcanza por el symlink, así que su hash coincide con el del padre.
+///
+/// LÍMITE CONOCIDO (sonda 5.1, 2026-10-21): vary NO registra los
+/// subpaquetes de los builds oficiales (la ruta oficial usa un VurInfo
+/// placeholder sin `subpackages`), así que un subpaquete NO tiene entrada en
+/// la DB → ni auditoría ni repolock → una actualización oficial puede
+/// sustituir un binario compilado por vary por el genérico. No se corrige
+/// aquí: cerrarlo toca la escritura de la DB + repolock + auditoría +
+/// upgrade (ver `docs/vary2/PROGRESS.md`, ítem diferido con su trigger).
 pub fn target_for(config: &Config, pkg: &str, with_hashes: bool) -> BuildTarget {
     BuildTarget {
         active_options: effective_options(config, pkg),

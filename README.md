@@ -67,7 +67,7 @@ vary -S --deep --force-build @installed
 
 ### `@preserved-rebuild`
 
-When vary installs a package **from source**, it records which installed provider served each required shared library (soname pins). On upgrade, if a provider bumped its version (or no longer provides the soname), vary prints a consultative warning — **it never rebuilds anything on its own** (rebuilding without explicit consent is dangerous). `@preserved-rebuild` expands to exactly those drifted packages so you can rebuild them explicitly:
+When vary installs a package **from source**, it records which installed provider served each required shared library (soname pins). On upgrade, if a provider bumped its version (or no longer provides the soname), vary prints a consultative warning — **it never rebuilds anything on its own** (rebuilding without explicit consent is dangerous). (The only exception is the *source-tree* bump check: when `common/shlibs` shows that the provider of a soname you depend on moved to a newer version, the consumers enter the upgrade plan and are rebuilt in that same transaction, before the merge.) `@preserved-rebuild` expands to exactly those drifted packages so you can rebuild them explicitly:
 
 ```sh
 vary -S --force-build @preserved-rebuild
@@ -88,7 +88,7 @@ vary -S --changed-flags        # cambiaste CFLAGS en vary.conf
 vary -S --newoptions           # tocaste tus parches/opciones o el template
 ```
 
-Notes: the audit only considers packages **built by vary** (official binaries are never rebuilt for this) and only when there is a baseline recorded — a package installed before this feature has no baseline, so it is not touched (no invented rebuilds). The plan explains each rebuild (`rebuild de 'linux': banderas cambiadas`). There is no short flag for `--newoptions`: `-N` already means "no remote repositories" in xbps-src and is used by `--deep`. The audit is a **plan-time** decision: it never rebuilds anything on its own, you still have to ask for the install.
+Notes: the audit only considers packages **built by vary** (official binaries are never rebuilt for this) and only when there is a baseline recorded — a package installed before this feature has no baseline, so it is not touched (no invented rebuilds). The baseline is recorded for the **source package**: the subpackages of an official source build (`gmpxx`, `gmp-devel`, …) get no entry of their own, so they are not audited individually (rebuilding the parent rebuilds them all). The plan explains each rebuild (`rebuild de 'linux': banderas cambiadas`). There is no short flag for `--newoptions`: `-N` already means "no remote repositories" in xbps-src and is used by `--deep`. The audit is a **plan-time** decision: it never rebuilds anything on its own, you still have to ask for the install.
 
 ## Config file conflicts (`--conf-update`)
 
