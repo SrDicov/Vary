@@ -19,16 +19,16 @@ Su pieza central es el protocolo **VUR**: repos Git distribuidos que combinan pl
 
 ## Inicio rápido
 
-No hay pasos manuales de bootstrap: en el primer `vary -Syu`, vary clona automáticamente `void-packages` en `~/.cache/vary/void-packages`, prepara el *masterdir* de `xbps-src` y crea sus cachés locales.
+No hay pasos manuales de bootstrap: cuando hay algo que compilar o instalar (`vary -S <pkg>`, o una actualización con paquetes que recompilar), vary clona automáticamente `void-packages` en `~/.cache/vary/void-packages`, prepara el *masterdir* de `xbps-src` y crea sus cachés locales. Un `vary -Syu` sin nada que actualizar no necesita (ni hace) nada de eso.
 
 ```sh
-# Sincronizar/bootstrap inicial (clona void-packages y prepara xbps-src)
-vary -Syu
+# Sincronizar los repositorios VUR
+vary -Sy
 
 # Buscar en los repos oficiales y en los VUR registrados
 vary -Ss firefox
 
-# Instalar un paquete
+# Instalar un paquete (esto es lo que hace el bootstrap de void-packages)
 vary -S firefox
 
 # Registrar un repo VUR remoto (se clona en ~/.local/share/vary/vurs/ y se
@@ -263,7 +263,7 @@ Usa `-v`/`-vv` para salida DEBUG/TRACE en consola (`RUST_LOG` los precede); `log
 
 ## Hoja de ruta
 
-- **Fase 2 — builds concurrentes:** compilaciones paralelas limitadas por `max_concurrent_builds` mediante `tokio::sync::Semaphore` (hoy los builds son secuenciales).
+- **Builds concurrentes (ya implementado, opt-in):** las compilaciones corren por niveles en sandboxes en paralelo (overlayfs) con `--experimental` y `max_concurrent_builds > 1`; por defecto son secuenciales (sin tokio ni runtime asíncrono: el planificador son hilos y `waitpid`).
 - **Fase 2 — `regen-aur` automatizado:** comando tipo `vary --repo regen-aur <pkg>` para refrescar plantillas derivadas del AUR sin pasos manuales (ver [`docs/AUR2XBPS.md`](./docs/AUR2XBPS.md)).
 
 ## Licencia y créditos

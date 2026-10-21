@@ -19,11 +19,14 @@ Its core piece is the **VUR** protocol: distributed Git repositories that combin
 
 ## Quick start
 
-There are no manual bootstrap steps: on the first `vary -Syu`, vary automatically clones `void-packages` into `~/.cache/vary/void-packages`, prepares the `xbps-src` *masterdir*, and creates its local caches.
+There are no manual bootstrap steps: whenever there is something to build or install (`vary -S <pkg>`, or an upgrade with packages to rebuild), vary automatically clones `void-packages` into `~/.cache/vary/void-packages`, prepares the `xbps-src` *masterdir*, and creates its local caches. A `vary -Syu` with nothing to upgrade does not need (and does not do) any of that.
 
 ```sh
-# Initial sync/bootstrap (clones void-packages and prepares xbps-src)
-vary -Syu
+# Sync the VUR repositories
+vary -Sy
+
+# Install a package (this is what bootstraps void-packages and the masterdir)
+vary -S firefox
 
 # Search official repos and registered VURs
 vary -Ss firefox
@@ -262,7 +265,7 @@ Use `-v`/`-vv` for DEBUG/TRACE console output (`RUST_LOG` overrides them); `log_
 
 ## Roadmap
 
-- **Phase 2 — concurrent builds:** parallel builds limited by `max_concurrent_builds` via `tokio::sync::Semaphore` (today builds are sequential).
+- **Concurrent builds (shipped, opt-in):** builds run level by level in parallel sandboxes (overlayfs) when `--experimental` and `max_concurrent_builds > 1`; by default builds are sequential (no tokio, no async runtime: the scheduler is plain threads and `waitpid`).
 - **Phase 2 — automated `regen-aur`:** a `vary --repo regen-aur <pkg>` style command to refresh AUR-derived templates without manual steps (see [`docs/AUR2XBPS.md`](./docs/AUR2XBPS.md)).
 
 ## License & credits
