@@ -335,6 +335,16 @@ pub fn read_repo_plist_text(repo_path: &Path) -> Result<String> {
         "el repo no incluye llave pública en keys/*.plist; \
          sin ella no se pueden verificar los binarios",
     )?;
+    // T3: el plist lo publica el repo remoto. El tope va ANTES de leer:
+    // leerlo entero a RAM y luego rechazar es tarde (el pico ya ocurrió).
+    if let Ok(meta) = std::fs::metadata(&key_path) {
+        anyhow::ensure!(
+            meta.len() <= MAX_PLIST_BYTES,
+            "el plist {} ocupa {} bytes (tope {MAX_PLIST_BYTES}): se rechaza",
+            key_path.display(),
+            meta.len()
+        );
+    }
     std::fs::read_to_string(&key_path).with_context(|| format!("leyendo {}", key_path.display()))
 }
 
@@ -367,6 +377,24 @@ pub fn read_repo_plist_text_git(git_bin: &str, repo_path: &Path) -> Result<Strin
         "el repo no incluye llave pública en keys/*.plist (HEAD); \
          sin ella no se pueden verificar los binarios",
     )?;
+    // T3: `git show` metería el plist entero en RAM; `cat-file -s` dice el
+    // tamaño SIN leerlo → el tope protege el pico, no solo el decode.
+    let size = Command::new(git_bin)
+        .arg("-C")
+        .arg(repo_path)
+        .args(["cat-file", "-s", &format!("HEAD:{first}")])
+        .output()
+        .with_context(|| format!("no se pudo ejecutar git cat-file -s HEAD:{first}"))?;
+    if size.status.success() {
+        let bytes: u64 = String::from_utf8_lossy(&size.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(0);
+        anyhow::ensure!(
+            bytes <= MAX_PLIST_BYTES,
+            "el plist {first} del repo ocupa {bytes} bytes (tope {MAX_PLIST_BYTES}): se rechaza"
+        );
+    }
     let show = Command::new(git_bin)
         .arg("-C")
         .arg(repo_path)
