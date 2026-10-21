@@ -459,3 +459,63 @@ diseño); overlay/masterdir con RAII + `cleanup_stale_sandboxes` + señales ✓.
 **ID: A6-08** · **S4** · `test/RESULTS.md` con un conteo de tests ignorados que ya no cuadra → **nota**: es un registro histórico.
 
 **ID: A6-09** · **S4** · el `warn` de repounlock dispara en el caso normal → **NO ARREGLADO**: ruido de log; no toca el estado. Trigger: un repounlock que falle por motivo real y haya que distinguirlo.
+
+---
+
+## A7 — Código muerto y redundancia
+
+**Nota de proceso**: el primer informe de A7 (subagent) salió **degenerado**
+(texto sin evidencia, pseudo-código inventado). Se **descartó** y el dominio
+se repitió con un brief estrecho ("cita el código literal"); la segunda vuelta
+(A7b) sí aportó file:line y texto real.
+
+**ID: A7b-01** · **S4** · `src/config.rs:33-36` → **ARREGLADO**: `Colors.enabled` y
+`Colors.error` no tenían ningún lector (el `#[allow(dead_code)]` los tapaba).
+
+**ID: A7b-02** · **S4** · `src/portdb.rs` (`get`, `sourcepkg`, `providers`) → **ARREGLADO**:
+los tres accesores solo los usaban sus propios tests (el comentario del
+archivo describía "consumidores" que nunca llegaron). `soname.rs` tiene su
+propio `provider_parts` (nombre+versión+revisión) ✓ no era duplicado.
+
+**ID: A7b-03** · **S4** · `src/db.rs::get_build_date` → **ARREGLADO**: solo un test lo usaba.
+
+**ID: A7b-04** · **S4** · `src/signal.rs` (3) + `src/db.rs` (1) → **ARREGLADO**: cuatro
+`#[allow(dead_code)]` sobre código **vivo** (montajes, `InstalledDb::get`): el
+atributo mentía ("esto está muerto a propósito" sobre código en producción).
+
+**ID: A7b-05** · **S3** · `src/metadata.rs` (`VurInfo.checkdepends`, `VurInfo.distfiles`)
+→ **ARREGLADO**: se parseaban y se escribían, nadie los leía. `VurInfo` nunca se
+serializa (solo se parsea) → borrarlos no cambia ningún formato en disco.
+
+**ID: A7b-06** · **S3** (el subagent loRated S2) · `README.md:22` / `README.es.md:22`
+→ **ARREGLADO**: el README promete bootstrap automático "en el primer
+`vary -Syu`"; el código solo lo hace cuando hay algo que compilar o instalar
+(`upgrade → install::install → initialize_environment`), no en un `-Syu` sin
+trabajo. **Corrección del fusor**: la Severity baja a S3 porque la ruta
+`upgrade → install::install` SÍ hace bootstrap (el subagent solo miró
+`upgrade.rs`).
+
+**ID: A7b-07** · **S3** · `README.md:265` / `README.es.md:266` → **ARREGLADO**: la hoja de
+ruta anuncia builds concurrentes "vía `tokio::sync::Semaphore`" — **no hay
+tokio** (ni lo hubo); los builds por niveles con sandboxes existen desde 0.4.1
+(`--experimental` + `max_concurrent_builds > 1`).
+
+**ID: A7b-08** · **S3** · `docs/CONTRATO.md` → **ARREGLADO (nota)**: es un ensayo
+comparativo point-in-time (septiembre 2026) que describe un vary secuencial
+y con `.VURINFO` estricto. Reescribir un ensayo no es un fix: se le añade una
+cabecera que declara su desfase y remite a README/VURINFO.md.
+
+**ID: A7b-09** · **S3** · `src/args.rs` (43 de 64 flags de pacman) → **DIFERIDO (CLI congelado)**
+
+- Se aceptan y se registran, y nadie los consulta; además, `takes_value()` no
+  exige valor para ellos, así que el valor siguiente cae como **paquete**
+  posicional (`vary -S --assume-installed 1.0 foo` → "1.0" y "foo" son
+  targets). El daño real es un error confuso, no una instalación equivocada.
+- **No se arregla en la auditoría**: el arreglo es una lista de rechazo o un
+  reenvío real a xbps → cambio de CLI (congelado) y decisión de producto.
+  **Trigger**: un script migrado de pacman/xbps que use `--ignore`,
+  `--overwrite`, `--needed` o `--assume-installed`.
+
+**Sin hallazgos A7**: los 20 crates de `Cargo.toml` tienen call site en
+PRODUCCIÓN (no solo en tests) → ninguno se elimina ni se mueve a
+`dev-dependencies`.
