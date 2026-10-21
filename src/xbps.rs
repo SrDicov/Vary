@@ -233,7 +233,7 @@ fn parse_installed_props(name: &str, text: &str) -> Option<PkgInfo> {
 /// filtran las líneas que no producen resultados (vacías o malformadas). Un
 /// rc != 0 se tolera: salida sin hits equivale a `Ok(vec![])`.
 pub fn search_remote(pattern: &str) -> Result<Vec<PkgInfo>> {
-    let out = run_capture(XBPS_QUERY, &["-Rs", "--", pattern])?;
+    let out = run_capture(XBPS_QUERY, &search_args(pattern))?;
     Ok(stdout_text(&out)
         .lines()
         .filter_map(parse_search_line)
@@ -276,6 +276,18 @@ pub fn official_repo_urls() -> Vec<String> {
 /// que los builds locales de vary no contaminen la búsqueda federada.
 ///
 /// Sin URLs oficiales detectadas => degrada a [`search_remote`] normal.
+/// Args de búsqueda: el patrón va tras `--` para que un patrón que empiece
+/// por `-` NO lo interprete el getopt de xbps-query como opción.
+fn search_args<'a>(pattern: &'a str) -> Vec<&'a str> {
+    vec!["-Rs", "--", pattern]
+}
+
+/// Args de `xbps-pkgdb -m <mode> <pkg>`: el nombre va tras `--` (mismo
+/// motivo: es un dato, y este argv va elevado).
+fn pkgdb_args<'a>(mode: &'a str, pkg: &'a str) -> Vec<&'a str> {
+    vec!["-m", mode, "--", pkg]
+}
+
 pub fn search_official(pattern: &str) -> Result<Vec<PkgInfo>> {
     let urls = official_repo_urls();
     if urls.is_empty() {
@@ -286,8 +298,7 @@ pub fn search_official(pattern: &str) -> Result<Vec<PkgInfo>> {
         args.push("--repository");
         args.push(u);
     }
-    args.push("-Rs");
-    args.push(pattern);
+    args.extend(search_args(pattern));
     let out = run_capture(XBPS_QUERY, &args)?;
     Ok(stdout_text(&out)
         .lines()
@@ -500,7 +511,7 @@ fn status_code(cmd: &mut Command) -> Result<i32> {
 /// el llamador añade el contexto accionable.
 pub fn pkgdb_mode(config: &Config, mode: &str, pkg: &str) -> Result<()> {
     let mut cmd = crate::elevate::elevate(&config.sudo_bin, &config.sudo_flags, "xbps-pkgdb")?;
-    cmd.args(["-m", mode, pkg]);
+    cmd.args(pkgdb_args(mode, pkg));
     let status = cmd
         .status()
         .with_context(|| "no se pudo invocar xbps-pkgdb")?;
@@ -714,6 +725,21 @@ fn user_spinner(msg: &str) -> indicatif::ProgressBar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---------- argv con datos, no opciones ----------
+    /// El patrón de búsqueda y el nombre de paquete son DATOS: van tras `--`
+    /// para que un valor que empiece por `-` no lo consuma el getopt.
+    #[test]
+    fn los_datos_van_tras_doble_guion() {
+        assert_eq!(
+            search_args("--repository=file:///tmp/evil"),
+            vec!["-Rs", "--", "--repository=file:///tmp/evil"]
+        );
+        assert_eq!(
+            pkgdb_args("repolock", "-a"),
+            vec!["-m", "repolock", "--", "-a"]
+        );
+    }
 
     // ---------- src_args ----------
 

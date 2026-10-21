@@ -103,11 +103,18 @@ pub fn fetch_index(
     if url.is_empty() {
         anyhow::bail!("index_url vacío");
     }
+    // La URL viene de repos.conf: es un DATO. curl parsea opciones en
+    // cualquier posición, así que una URL tipo `-K /tmp/evil` se comía un
+    // fichero de configuración externo.
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        anyhow::bail!("index_url debe ser http(s): '{url}'");
+    }
 
     let tmp_path = cache_path.with_extension("tmp");
     let status = Command::new(curl_bin)
         .args(["-fsSL", "--max-time", "60", "-o"])
         .arg(&tmp_path)
+        .arg("--")
         .arg(url)
         .status()
         .with_context(|| {
@@ -308,6 +315,23 @@ pub fn read_repo_plist_text_git(git_bin: &str, repo_path: &Path) -> Result<Strin
 
 #[cfg(test)]
 mod tests {
+    /// La URL del índice viene de repos.conf (dato): curl parsea opciones en
+    /// cualquier posición, así que solo se admite http(s).
+    #[test]
+    fn index_url_no_http_s_es_rechazada() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("index.json");
+        for url in [
+            "-K /tmp/evil",
+            "-o /tmp/evil",
+            "file:///tmp/evil",
+            "ftp://x/y",
+        ] {
+            let err = fetch_index("curl", url, &cache, 0).unwrap_err();
+            assert!(err.to_string().contains("http(s)"), "url {url}: {err:#}");
+        }
+    }
+
     use super::*;
 
     const SAMPLE_INDEX: &str = r#"{

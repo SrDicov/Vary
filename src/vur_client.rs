@@ -32,6 +32,15 @@ pub(crate) fn skipped_index_warning(
     format!("advertencia: se ignoró {kind} en {location}: {err:#}")
 }
 
+/// Un refname de git utilizable como refspec: no vacío, sin guiones
+/// iniciales (git los tomaría como opciones del fetch) y sin espacios ni
+/// caracteres de control.
+fn is_safe_refname(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('-')
+        && !name.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
 pub fn is_safe_git_url(url: &str) -> bool {
     if url.contains('\n') || url.contains('\r') || url.chars().any(|c| c.is_control()) {
         return false;
@@ -162,7 +171,8 @@ impl VurRepo {
                 let rest = rest.trim();
                 if let Some(branch) = rest.strip_prefix("refs/heads/") {
                     let branch = branch.split_whitespace().next().unwrap_or(branch);
-                    if !branch.is_empty() {
+                    // Dato del remoto: solo si es un refname usable.
+                    if is_safe_refname(branch) {
                         return Some(branch.to_string());
                     }
                 }
@@ -190,11 +200,18 @@ impl VurRepo {
 
     pub fn pull(&self) -> Result<String> {
         let branch = self.entry.branch_or_default();
+        // La rama viene del remoto (`ls-remote`) o de repos.conf: es un DATO.
+        if !is_safe_refname(branch) {
+            anyhow::bail!("rama de repo no válida: '{branch}'");
+        }
         // Fetch sin tocar worktree
         let fetch_out = Command::new(&self.git_bin)
             .arg("-C")
             .arg(&self.path)
-            .args(["fetch", "--depth", "1", "origin", branch])
+            // La rama viene del remoto (o de repos.conf): es un DATO. Sin
+            // `--`, una rama que empiece por `-` la consumía git como
+            // opción del fetch (`--dry-run`, `-o/--server-option`...).
+            .args(["fetch", "--depth", "1", "origin", "--", branch])
             .output()
             .context("no se pudo ejecutar git fetch")?;
         if !fetch_out.status.success() {
@@ -1534,6 +1551,19 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
         assert_eq!(info.pkgname, "broken");
         assert_eq!(info.version, "0.1.0");
         Ok(())
+    }
+
+    /// La rama del remoto es un DATO: una refname con guiones iniciales la
+    /// consumía git como opción del fetch.
+    #[test]
+    fn refname_no_utilizable_se_rechaza() {
+        assert!(is_safe_refname("main"));
+        assert!(is_safe_refname("pro/issues-1"));
+        assert!(!is_safe_refname("--dry-run"));
+        assert!(!is_safe_refname("-o"));
+        assert!(!is_safe_refname(""));
+        assert!(!is_safe_refname("con espacio"));
+        assert!(!is_safe_refname("con\ncontrol"));
     }
 
     #[test]
