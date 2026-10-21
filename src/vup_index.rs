@@ -231,16 +231,26 @@ pub fn split_pkgver(pkgver: &str) -> Option<(String, u32)> {
 
 /// Convierte una entrada del índice en `VurInfo` sintético para `arch`.
 ///
+/// `repo`: el nombre del repo VUR (solo para los avisos: el índice remoto es
+/// la fuente del nombre y el aviso tiene que decir de dónde sale).
+///
 /// Devuelve también la URL del repo binario que sirve ese paquete en esa
 /// arquitectura. `None` si el paquete no soporta `arch`, no declara URL
 /// para ella o su versión no parsea.
-pub fn to_vur_info(name: &str, pkg: &VupPackage, arch: &str) -> Option<(VurInfo, String)> {
+pub fn to_vur_info(
+    repo: &str,
+    name: &str,
+    pkg: &VupPackage,
+    arch: &str,
+) -> Option<(VurInfo, String)> {
     // T3/T5: la clave del mapa "packages" la decide el repo remoto. Sin
     // validar, un nombre tipo "../../etc/x" entra en el plan, en la DB de
     // instalados y en el nombre del artefacto. La vía .VURINFO sí valida
     // (metadata::validate): aquí faltaba la misma puerta.
     if !crate::metadata::is_valid_pkgname(name) {
-        tracing::warn!("el índice remoto declara un nombre de paquete inválido: '{name}'");
+        // Diga QUÉ repo lo declara: sin eso el aviso no es accionable
+        // (puede haber varios índices VUR en vuelo).
+        tracing::warn!("el repo VUR '{repo}' declara un nombre de paquete inválido: '{name}'");
         return None;
     }
     if !pkg.archs.iter().any(|a| a == arch) {
@@ -428,13 +438,44 @@ mod tests {
             archs: vec!["x86_64".to_string()],
             repo_urls: BTreeMap::from([("x86_64".to_string(), "https://x/y".to_string())]),
         };
-        assert!(to_vur_info("bueno", &pkg, "x86_64").is_some());
+        assert!(to_vur_info("repo", "bueno", &pkg, "x86_64").is_some());
         for malo in ["../../etc/x", "-guion", "con espacio", ""] {
             assert!(
-                to_vur_info(malo, &pkg, "x86_64").is_none(),
+                to_vur_info("repo", malo, &pkg, "x86_64").is_none(),
                 "el nombre {malo:?} debería rechazarse"
             );
         }
+    }
+
+    /// Forma REAL del `index.json` de VUP (la que genera `generate_index.py`):
+    /// raíz con "packages" y una clave hermana "_meta" (sources/base_url). La
+    /// puerta tiene que seguir descartando el nombre hostil con esa forma
+    /// exacta, y "_meta" no puede colarse como si fuera un paquete.
+    #[test]
+    fn la_puerta_sobrevive_a_la_forma_real_del_indice_vup() {
+        let json = r#"{
+            "_meta": {
+                "sources": {"vup": "https://example.org/vup"},
+                "base_url": "https://example.org/"
+            },
+            "packages": {
+                "bueno": {
+                    "category": "cat", "version": "1.0_1", "archs": ["x86_64"],
+                    "repo_urls": {"x86_64": "https://example.org/y"}
+                },
+                "../../etc/x": {
+                    "category": "cat", "version": "1.0_1", "archs": ["x86_64"],
+                    "repo_urls": {"x86_64": "https://example.org/y"}
+                }
+            }
+        }"#;
+        let idx = parse_index_bytes(json.as_bytes()).expect("index.json válido");
+        // "_meta" es una clave hermana de "packages": no es un paquete.
+        assert!(!idx.packages.contains_key("_meta"));
+        let bueno = idx.packages.get("bueno").unwrap();
+        assert!(to_vur_info("repo", "bueno", bueno, "x86_64").is_some());
+        let hostil = idx.packages.get("../../etc/x").unwrap();
+        assert!(to_vur_info("repo", "../../etc/x", hostil, "x86_64").is_none());
     }
 
     /// La versión de un pkgver no puede llevar "_" (delimita el pkgver).
@@ -480,8 +521,8 @@ mod tests {
         assert!(idx.packages.contains_key("bueno"));
         // El nombre lo decide el remoto: el inválido NO puede llegar al plan.
         let pkg = idx.packages.get("bueno").unwrap();
-        assert!(to_vur_info("bueno", pkg, "x86_64").is_some());
-        assert!(to_vur_info("../../etc/x", pkg, "x86_64").is_none());
+        assert!(to_vur_info("repo", "bueno", pkg, "x86_64").is_some());
+        assert!(to_vur_info("repo", "../../etc/x", pkg, "x86_64").is_none());
         // La caché se escribió (y con el temporal ya renombrado).
         assert!(cache.is_file());
     }
@@ -557,7 +598,7 @@ mod tests {
         assert_eq!(idx.packages.len(), 2);
 
         let vlang = idx.packages.get("vlang").unwrap();
-        let (info, url) = to_vur_info("vlang", vlang, "x86_64").expect("vlang en x86_64");
+        let (info, url) = to_vur_info("repo", "vlang", vlang, "x86_64").expect("vlang en x86_64");
         assert_eq!(info.pkgname, "vlang");
         assert_eq!(info.version, "0.5.0");
         assert_eq!(info.revision, 1);
@@ -570,8 +611,8 @@ mod tests {
 
         // odin no soporta x86_64 en este índice
         let odin = idx.packages.get("odin").unwrap();
-        assert!(to_vur_info("odin", odin, "x86_64").is_none());
-        assert!(to_vur_info("odin", odin, "aarch64").is_some());
+        assert!(to_vur_info("repo", "odin", odin, "x86_64").is_none());
+        assert!(to_vur_info("repo", "odin", odin, "aarch64").is_some());
     }
 
     #[test]

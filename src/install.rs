@@ -221,7 +221,7 @@ fn load_source_maps(
                     Ok(idx) => {
                         for (pkgname, vpkg) in &idx.packages {
                             let Some((info, repo_url)) =
-                                crate::vup_index::to_vur_info(pkgname, vpkg, arch)
+                                crate::vup_index::to_vur_info(&repo.name, pkgname, vpkg, arch)
                             else {
                                 continue;
                             };

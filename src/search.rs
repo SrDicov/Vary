@@ -119,7 +119,8 @@ pub fn search(config: &Config) -> Result<i32> {
                 config.ttl_cache_seconds,
             ) {
                 for (pkgname, vpkg) in &idx.packages {
-                    let Some((info, _url)) = crate::vup_index::to_vur_info(pkgname, vpkg, &arch)
+                    let Some((info, _url)) =
+                        crate::vup_index::to_vur_info(&repo.name, pkgname, vpkg, &arch)
                     else {
                         continue;
                     };

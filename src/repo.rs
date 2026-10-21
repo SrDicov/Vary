@@ -406,7 +406,8 @@ fn retrust_vup_urls(config: &Config, repo: &VurRepo, entry: &RepoEntry) -> Resul
     )?;
     let mut urls = Vec::new();
     for (pkgname, vpkg) in &idx.packages {
-        if let Some((_, repo_url)) = crate::vup_index::to_vur_info(pkgname, vpkg, &arch) {
+        if let Some((_, repo_url)) = crate::vup_index::to_vur_info(&repo.name, pkgname, vpkg, &arch)
+        {
             if !repo_url.trim().is_empty() && !urls.contains(&repo_url) {
                 urls.push(repo_url);
             }
