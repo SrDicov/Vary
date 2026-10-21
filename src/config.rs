@@ -30,10 +30,6 @@ impl fmt::Display for Op {
 pub struct Colors {
     // Superficie de vary.conf ([colors]/--color); el estilo se aplica vía
     // los campos Style y la detección de TTY de From<&str>.
-    #[allow(dead_code)]
-    pub enabled: bool,
-    #[allow(dead_code)]
-    pub error: Style,
     pub warning: Style,
     pub bold: Style,
     pub action: Style,
@@ -58,8 +54,6 @@ impl Default for Colors {
         // T-001: el modo sin color (never / no-TTY) no aplica NADA, ni bold:
         // antes ss_name conservaba bold y `--color never` mentía.
         Colors {
-            enabled: false,
-            error: Style::new(),
             warning: Style::new(),
             bold: Style::new(),
             action: Style::new(),
@@ -74,8 +68,6 @@ impl Colors {
     pub fn new() -> Colors {
         use ansiterm::Color::*;
         Colors {
-            enabled: true,
-            error: Style::new().fg(Red),
             warning: Style::new().fg(Yellow),
             bold: Style::new().bold(),
             action: Style::new().fg(Blue).bold(),

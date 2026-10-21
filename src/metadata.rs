@@ -17,11 +17,7 @@ pub struct VurInfo {
     #[serde(default)]
     pub makedepends: Vec<String>,
     #[serde(default)]
-    pub checkdepends: Vec<String>,
-    #[serde(default)]
     pub build_style: Option<String>,
-    #[serde(default)]
-    pub distfiles: Vec<String>,
     #[serde(default)]
     pub checksum: Vec<String>,
     #[serde(default)]
@@ -268,9 +264,7 @@ mod tests {
         assert_eq!(v.depends, vec!["libbar>=2.0"]);
         assert_eq!(v.hostmakedepends, vec!["pkg-config", "ninja"]);
         assert_eq!(v.makedepends, vec!["libbar-devel"]);
-        assert!(v.checkdepends.is_empty());
         assert_eq!(v.build_style.as_deref(), Some("cmake"));
-        assert_eq!(v.distfiles, vec!["https://example.com/foo-1.2.3.tar.gz"]);
         assert_eq!(v.checksum, vec!["sha256:abc123"]);
         assert_eq!(v.provides, vec!["libfoo.so.1"]);
         assert_eq!(v.replaces, vec!["old-foo"]);
@@ -295,9 +289,7 @@ mod tests {
         assert!(v.depends.is_empty());
         assert!(v.hostmakedepends.is_empty());
         assert!(v.makedepends.is_empty());
-        assert!(v.checkdepends.is_empty());
         assert_eq!(v.build_style, None);
-        assert!(v.distfiles.is_empty());
         assert!(v.checksum.is_empty());
         assert!(v.provides.is_empty());
         assert!(v.replaces.is_empty());
@@ -316,7 +308,6 @@ mod tests {
         assert!(full.depends.is_empty());
         assert!(full.hostmakedepends.is_empty());
         assert!(full.makedepends.is_empty());
-        assert!(full.checkdepends.is_empty());
         assert_eq!(full.build_style, None);
         assert!(full.provides.is_empty());
         assert!(full.replaces.is_empty());

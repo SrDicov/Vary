@@ -43,8 +43,6 @@ pub struct MountCleanup {
 
 impl MountCleanup {
     /// Constructor con binarios por defecto (`umount`, `fusermount3`).
-    /// Hoy solo lo usan tests (overlays durmientes hasta P1-3).
-    #[allow(dead_code)]
     pub fn new(
         merged: PathBuf,
         sudo_bin: String,
@@ -149,14 +147,12 @@ pub fn is_shutting_down() -> bool {
     GOT_SIGNAL.load(Ordering::SeqCst) != 0
 }
 
-#[allow(dead_code)]
 pub fn register_mount(c: MountCleanup) {
     if let Ok(mut r) = REGISTRY.lock() {
         r.push(c);
     }
 }
 
-#[allow(dead_code)]
 pub fn unregister_mount(merged: &Path) {
     if let Ok(mut r) = REGISTRY.lock() {
         r.retain(|c| c.merged != merged);

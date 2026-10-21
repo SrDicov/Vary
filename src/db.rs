@@ -272,14 +272,8 @@ impl InstalledDb {
         entry.template_sha256 = facts.template_sha256.clone();
     }
 
-    #[allow(dead_code)]
     pub fn get(&self, name: &str) -> Option<&Entry> {
         self.entries.get(name)
-    }
-
-    #[allow(dead_code)]
-    pub fn get_build_date(&self, name: &str) -> Option<u64> {
-        self.entries.get(name).and_then(|e| e.build_date)
     }
 
     /// P2-soname: guarda la baseline de proveedores (solo si no es vacía).
@@ -506,7 +500,7 @@ mod tests {
         assert_eq!(hello.vur, "mi-repo");
         assert_eq!(hello.install_type, InstallType::Source);
         assert!(hello.build_date.is_some());
-        assert!(reloaded.get_build_date("hello-vur").unwrap() > 1_500_000_000_000);
+        assert!(reloaded.get("hello-vur").unwrap().build_date.unwrap() > 1_500_000_000_000);
 
         let kernel = reloaded.get("kernel-vur").unwrap();
         assert_eq!(kernel.install_type, InstallType::Binary);

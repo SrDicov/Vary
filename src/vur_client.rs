@@ -1230,7 +1230,6 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     let depends = split_deps("depends");
     let hostmakedepends = split_deps("hostmakedepends");
     let makedepends = split_deps("makedepends");
-    let checkdepends = split_deps("checkdepends");
     let info = VurInfo {
         format_version: 1,
         pkgname: pkgname.clone(),
@@ -1241,9 +1240,7 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         depends,
         hostmakedepends,
         makedepends,
-        checkdepends,
         build_style: vars.get("build_style").cloned().filter(|s| !s.is_empty()),
-        distfiles: split_list("distfiles"),
         checksum,
         provides: split_list("provides"),
         replaces: split_list("replaces"),
@@ -1615,13 +1612,6 @@ maintainer="Maintainer Name <user@example.org> # not a comment" # comentario rea
         assert_eq!(info.version, "1.2.3");
         assert_eq!(info.revision, 2);
         assert_eq!(info.archs, vec!["x86_64", "aarch64"]);
-        assert_eq!(
-            info.distfiles,
-            vec![
-                "https://example.org/tar1.tar.gz",
-                "https://example.org/tar2.tar.gz"
-            ]
-        );
         assert_eq!(info.makedepends, vec!["rust", "cargo", "pkg-config"]);
         assert_eq!(info.depends, vec!["libssl", "glibc"]);
         assert_eq!(

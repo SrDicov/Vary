@@ -66,20 +66,6 @@ pub struct PortDb {
 }
 
 impl PortDb {
-    /// Entrada de un paquete (por su nombre en `srcpkgs/`).
-    // ITEM 3/4: consumidores de esta API (normalización de subpaquetes y
-    // detección de SONAME). Patrón `#[allow(dead_code)]` ya usado en db.rs.
-    #[allow(dead_code)]
-    pub fn get(&self, pkg: &str) -> Option<&PortEntry> {
-        self.entries.get(pkg)
-    }
-
-    /// Paquete fuente real de un nombre (normaliza subpaquetes `-devel`).
-    #[allow(dead_code)]
-    pub fn sourcepkg(&self, pkg: &str) -> Option<&str> {
-        self.entries.get(pkg).map(|e| e.sourcepkg.as_str())
-    }
-
     /// `pkgname-version_revision` en el árbol de fuentes: MISMO formato que
     /// `VurInfo::pkgver()` y que la versión guardada en la DB de instalados
     /// (así la auditoría puede compararlos sin conversiones).
@@ -99,20 +85,6 @@ impl PortDb {
             }
             Some(format!("{}-{}", e.sourcepkg, e.pkgver()))
         })
-    }
-
-    /// Paquete que provee un SONAME (`common/shlibs`).
-    ///
-    /// El índice guarda el pkgver completo (`pkg-ver_rev`); aquí se devuelve
-    /// el NOMBRE del proveedor (`pkg`).
-    #[allow(dead_code)]
-    pub fn providers(&self, soname: &str) -> Option<&str> {
-        self.shlibs
-            .get(soname)
-            .map(|pkgver| match pkgver.rsplit_once('-') {
-                Some((pkg, _)) => pkg,
-                None => pkgver.as_str(),
-            })
     }
 }
 
@@ -645,14 +617,20 @@ mod tests {
         fixture(tmp.path());
         let db = index_checkout(tmp.path()).unwrap();
         assert_eq!(db.entries.len(), 3);
-        let e = db.get("pkg1").unwrap();
+        let e = db.entries.get("pkg1").unwrap();
         assert_eq!(e.version, "1.0");
         assert_eq!(e.revision, 2);
         assert_eq!(e.build_options, vec!["a", "b"]);
         assert_eq!(e.build_options_default, vec!["a"]);
         assert!(e.template_sha256.starts_with("sha256:"));
         assert!(!e.needs_dynamic);
-        assert_eq!(db.providers("libc.so.6"), Some("glibc"));
+        // El proveedor sale del pkgver guardado (mismo criterio que `soname.rs`).
+        assert_eq!(
+            db.shlibs
+                .get("libc.so.6")
+                .and_then(|v| v.rsplit_once('-').map(|(p, _)| p)),
+            Some("glibc")
+        );
         // El índice guarda el pkgver completo (lo necesita la auditoría).
         assert_eq!(
             db.shlibs.get("libc.so.6").map(String::as_str),
@@ -666,8 +644,8 @@ mod tests {
         fixture(tmp.path());
         std::os::unix::fs::symlink("pkg0", tmp.path().join("srcpkgs/pkg0-devel")).unwrap();
         let db = index_checkout(tmp.path()).unwrap();
-        assert_eq!(db.sourcepkg("pkg0-devel"), Some("pkg0"));
-        assert_eq!(db.get("pkg0-devel").unwrap().version, "1.0");
+        assert_eq!(db.entries.get("pkg0-devel").unwrap().sourcepkg, "pkg0");
+        assert_eq!(db.entries.get("pkg0-devel").unwrap().version, "1.0");
     }
 
     /// El pkgver de un subpaquete es el del PAQUETE FUENTE: es lo que guarda
@@ -695,7 +673,7 @@ mod tests {
         )
         .unwrap();
         let db = index_checkout(tmp.path()).unwrap();
-        assert!(db.get("dyn").unwrap().needs_dynamic);
+        assert!(db.entries.get("dyn").unwrap().needs_dynamic);
     }
 
     /// Incremental: un commit que toca UN template reindexa EXACTAMENTE uno.
@@ -719,11 +697,14 @@ mod tests {
         let stats = update_incremental(tmp.path(), "git", &mut db).unwrap();
         assert!(!stats.full_reindex);
         assert_eq!(stats.reindexed, 1, "{stats:?}");
-        assert_eq!(db.get("pkg1").unwrap().version, "2.0");
-        assert_eq!(db.get("pkg1").unwrap().revision, 3);
-        assert_eq!(db.get("pkg1").unwrap().build_options, vec!["a", "b", "c"]);
+        assert_eq!(db.entries.get("pkg1").unwrap().version, "2.0");
+        assert_eq!(db.entries.get("pkg1").unwrap().revision, 3);
+        assert_eq!(
+            db.entries.get("pkg1").unwrap().build_options,
+            vec!["a", "b", "c"]
+        );
         // Los demás no se tocan.
-        assert_eq!(db.get("pkg0").unwrap().version, "1.0");
+        assert_eq!(db.entries.get("pkg0").unwrap().version, "1.0");
     }
 
     /// Si cambia un helper global -> reindex COMPLETO.
@@ -837,7 +818,12 @@ mod tests {
             shlibs: map.clone(),
             ..PortDb::default()
         };
-        assert_eq!(db.providers("libpoppler.so.145"), Some("poppler"));
+        assert_eq!(
+            db.shlibs
+                .get("libpoppler.so.145")
+                .and_then(|v| v.rsplit_once('-').map(|(p, _)| p)),
+            Some("poppler")
+        );
         // Y el cruce con la auditoría de bumps encuentra el cambio.
         let pinned = crate::soname::SonamePins::from([(
             "libpoppler.so.145".to_string(),
@@ -881,7 +867,7 @@ mod tests {
         save(&db, &path).unwrap();
         let back = load(&path).unwrap();
         assert_eq!(back.entries.len(), db.entries.len());
-        assert_eq!(back.get("pkg2").unwrap().version, "1.0");
+        assert_eq!(back.entries.get("pkg2").unwrap().version, "1.0");
     }
 
     /// Índice corrupto: se preserva respaldo y se arranca vacío (así el
