@@ -103,6 +103,34 @@ fn add_official_source_upgrades(
     }
 }
 
+/// Refresca el índice de fuentes e informa del resultado (contador de
+/// plantillas dinámicas). Usado por `-Sy` y por el upgrade (antes de la
+/// detección de bumps: si el índice se refrescara después, la detección
+/// usaría datos del ciclo anterior).
+fn sync_source_index(config: &Config) {
+    match crate::portdb::sync_index(config) {
+        Ok(stats) if stats.reindexed > 0 => {
+            println!(
+                "void-packages indexado: {} paquete(s) ({}).",
+                stats.reindexed,
+                if stats.full_reindex {
+                    "índice completo"
+                } else {
+                    "incremental"
+                }
+            );
+            // 5.3: contador de plantillas que el parser estático no puede
+            // resolver (se resuelven por `xbps-src show` en el upgrade).
+            println!(
+                "portdb: {} plantillas, {} requieren resolución dinámica (vía xbps-src show en upgrade).",
+                stats.entries, stats.needs_dynamic
+            );
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!("no se pudo actualizar el índice de fuentes: {e:#}"),
+    }
+}
+
 /// ITEM 4: paquetes instalados desde fuente que requieren un SONAME cuyo
 /// proveedor cambió en el árbol de fuentes (`common/shlibs`).
 ///
@@ -254,6 +282,8 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
     // congelado en el commit del clone) y el índice de fuentes se actualiza
     // de forma incremental (frío si no existe). Best-effort: un fallo aquí
     // no invalida la sincronización de los VURs.
+    // El índice de fuentes se refresca también en el sync suelto (`-Sy`).
+    sync_source_index(config);
     if any_failed {
         Ok(1)
     } else {
@@ -291,31 +321,7 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     // del merge: entran en el plan de recompilación de esta misma
     // transacción (si se detectaran después, el binario oficial ya habría
     // pisado el paquete fuente).
-    //
-    // El índice de fuentes se refresca AQUÍ (no en la fase de sync): si se
-    // refrescase después, la detección usaría datos del ciclo anterior y el
-    // bump publicado hoy se vería en el próximo upgrade.
-    match crate::portdb::sync_index(config) {
-        Ok(stats) if stats.reindexed > 0 => {
-            println!(
-                "void-packages indexado: {} paquete(s) ({}).",
-                stats.reindexed,
-                if stats.full_reindex {
-                    "índice completo"
-                } else {
-                    "incremental"
-                }
-            );
-            // 5.3: contador de plantillas que el parser estático no puede
-            // resolver (se resuelven por `xbps-src show` en el upgrade).
-            println!(
-                "portdb: {} plantillas, {} requieren resolución dinámica (vía xbps-src show en upgrade).",
-                stats.entries, stats.needs_dynamic
-            );
-        }
-        Ok(_) => {}
-        Err(e) => tracing::warn!("no se pudo actualizar el índice de fuentes: {e:#}"),
-    }
+    sync_source_index(config);
     let bump_consumers = {
         let db = InstalledDb::load(config.installed_db_path())?;
         soname_bump_consumers(config, &db)
