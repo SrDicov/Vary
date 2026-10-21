@@ -179,6 +179,25 @@ roce en este documento. Los features se ganan con dolor documentado, no con spec
 Los dos revisores trabajaron con datos MEDIDOS (contenedor Void), no con supuestos: por eso
 encontraron lo que el CI no puede ver.
 
+## AUDITORÍA 2026-10-22 (abierta sobre `8c14628`)
+
+**Regla de la auditoría: NO reabre el arco.** Audita lo que existe. "Debería
+implementarse X" no es un hallazgo: si X ya está diferido con trigger (5.5), es
+RECHAZADO con motivo. La auditoría tampoco es la excusa para el rewrite.
+
+- FASE 0 (inventario) → `docs/vary2/AUDIT-map.md` (`4edcb02`): 46 módulos, 21.298
+  LOC, 177 `pub fn`, 20 crates (todos con call site), matriz de cobertura sin
+  agujeros (los 7 críticos con ≥2 dominios).
+- FASE 1: 7 dominios (A1-A7) con subagents, 2-3 en paralelo.
+- FASE 2 (fusión/triaje) → `docs/vary2/AUDIT-hallazgos.md`.
+- FASE 3 (arreglos) → commits `audit(ámbito): ...`, uno por fix lógico.
+- FASE 4 (poda S4) → solo con evidencia de inalcanzabilidad, sin cambios de
+  comportamiento.
+- FASE 5 → `docs/vary2/AUDIT-2026-10-22.md` (informe ejecutivo) + merge a main.
+
+Salto de la auditoría: `8c14628` (la forma con palabras estilo kyoz ya estaba
+mergeada a main cuando empezó la auditoría).
+
 ## Estado por item (§3 de ORDEN-v2)
 
 | Item | Estado | Commit / evidencia |
@@ -233,3 +252,8 @@ encontraron lo que el CI no puede ver.
 
 El arco v2 está **cerrado**. Lo único que queda abierto son las ventanas de 5.4/5.5
 (condiciones de disparo escritas). El roadmap futuro lo genera el uso real.
+
+**Excepción en curso (2026-10-22):** la auditoría total (arriba). Termina con la
+matriz de cobertura sin agujeros y la tabla de hallazgos sin opiniones; después
+vuelve a mandar la semana de uso real (registrar roces, hotfix solo con
+corrupción o crash).
