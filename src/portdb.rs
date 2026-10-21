@@ -318,6 +318,11 @@ pub struct UpdateStats {
     pub reindexed: usize,
     /// Hubo que reindexar TODO (cambió `helpers_hash`).
     pub full_reindex: bool,
+    /// Entradas del índice en total.
+    pub entries: usize,
+    /// Entradas que el parser estático no pudo resolver (versión calculada
+    /// por shell): se resuelven vía `xbps-src show` en la fase de upgrade.
+    pub needs_dynamic: usize,
 }
 
 /// Actualización incremental tras `git pull --ff-only`.
@@ -531,7 +536,7 @@ pub fn sync_index(config: &crate::config::Config) -> Result<UpdateStats> {
         return Ok(UpdateStats::default());
     }
     let mut db = load(&index_path)?;
-    let stats = if db.entries.is_empty() {
+    let mut stats = if db.entries.is_empty() {
         let fresh = index_checkout(&checkout)?;
         let count = fresh.entries.len();
         db = fresh;
@@ -540,10 +545,13 @@ pub fn sync_index(config: &crate::config::Config) -> Result<UpdateStats> {
             new_commit: db.void_commit.clone(),
             reindexed: count,
             full_reindex: true,
+            ..Default::default()
         }
     } else {
         update_incremental(&checkout, &config.git_bin, &mut db)?
     };
+    stats.entries = db.entries.len();
+    stats.needs_dynamic = db.entries.values().filter(|e| e.needs_dynamic).count();
     save(&db, &index_path)?;
     Ok(stats)
 }

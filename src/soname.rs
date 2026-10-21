@@ -81,13 +81,10 @@ pub fn source_tree_bumps(
 pub fn bump_consumers(
     pins_by_pkg: &BTreeMap<String, SonamePins>,
     shlibs: &BTreeMap<String, String>,
-) -> Vec<(String, Vec<String>)> {
+) -> Vec<(String, Vec<SonameBump>)> {
     let mut out = Vec::new();
     for (pkg, pins) in pins_by_pkg {
-        let affected: Vec<String> = source_tree_bumps(pins, shlibs)
-            .into_iter()
-            .map(|b| b.shlib)
-            .collect();
+        let affected = source_tree_bumps(pins, shlibs);
         if !affected.is_empty() {
             out.push((pkg.clone(), affected));
         }
@@ -306,7 +303,10 @@ mod tests {
         let consumers = bump_consumers(&pins_by_pkg, &tree);
         assert_eq!(consumers.len(), 1);
         assert_eq!(consumers[0].0, "app");
-        assert_eq!(consumers[0].1, vec!["libpoppler.so.145".to_string()]);
+        assert_eq!(consumers[0].1.len(), 1);
+        assert_eq!(consumers[0].1[0].shlib, "libpoppler.so.145");
+        assert_eq!(consumers[0].1[0].from, "poppler-24.08.0_1");
+        assert_eq!(consumers[0].1[0].to, "poppler-25.02.0_1");
     }
 
     /// Query falsa con claves propias (evita E0700 en el `impl Fn`).

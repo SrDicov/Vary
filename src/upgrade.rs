@@ -109,7 +109,10 @@ fn add_official_source_upgrades(
 /// Se calcula ANTES del merge (`xbps-install -u`): los consumidores entran en
 /// el plan de recompilación de la MISMA transacción (E14). Sin índice de
 /// fuentes no hay señal (no se inventa).
-fn soname_bump_consumers(config: &Config, db: &InstalledDb) -> Vec<(String, Vec<String>)> {
+fn soname_bump_consumers(
+    config: &Config,
+    db: &InstalledDb,
+) -> Vec<(String, Vec<crate::soname::SonameBump>)> {
     let Ok(index) = crate::portdb::load(config.cache_dir.join("portdb.json")) else {
         return Vec::new();
     };
@@ -261,6 +264,12 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
                 } else {
                     "incremental"
                 }
+            );
+            // 5.3: contador de plantillas que el parser estático no puede
+            // resolver (se resuelven por `xbps-src show` en el upgrade).
+            println!(
+                "portdb: {} plantillas, {} requieren resolución dinámica (vía xbps-src show en upgrade).",
+                stats.entries, stats.needs_dynamic
             );
         }
         Ok(_) => {}
@@ -467,9 +476,28 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
     }
 
     // ITEM 4: los consumidores de un bump de SONAME se recompilan (E14).
-    for (name, sonames) in &bump_consumers {
+    // Rastro auditable (5.2): proveedor, soname viejo/nuevo y lista de
+    // consumidores, vía tracing (sin infraestructura de log nueva).
+    let consumer_names: Vec<String> = bump_consumers.iter().map(|(n, _)| n.clone()).collect();
+    for (name, bumps) in &bump_consumers {
+        for bump in bumps {
+            tracing::warn!(
+                "soname con bump: '{name}' requiere {} (proveedor {} -> {}); consumidores: {}",
+                bump.shlib,
+                bump.from,
+                bump.to,
+                consumer_names.join(", ")
+            );
+        }
         if !outdated.contains(name) {
-            println!("  {name} (soname con bump: {})", sonames.join(", "));
+            println!(
+                "  {name} (soname con bump: {})",
+                bumps
+                    .iter()
+                    .map(|b| b.shlib.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             outdated.push(name.clone());
         }
     }
