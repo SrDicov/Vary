@@ -3,13 +3,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+// Campos desconocidos = RECHAZADOS: en el fichero de CONFIANZA un typo
+// (`enabld = false`, `key_fingerrprint = ...`) se ignoraba en silencio y
+// cambiaba el comportamiento (el repo que el usuario quería deshabilitar
+// quedaba ACTIVO, el pin no se aplicaba). Mismo precedente del repo que
+// con los flags: "no mentir, rechazar" (H-032/H-043).
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ReposConf {
     #[serde(rename = "vur", default)]
     pub vur: BTreeMap<String, RepoEntry>,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct RepoEntry {
     pub url: String,
     pub branch: Option<String>,
@@ -70,7 +77,17 @@ impl ReposConf {
                 return Err(err).with_context(|| format!("no se pudo leer {}", path.display()));
             }
         };
-        toml::from_str(&text).with_context(|| format!("TOML inválido en {}", path.display()))
+        let conf: Self = toml::from_str(&text)
+            .with_context(|| format!("TOML inválido en {}", path.display()))?;
+        // El nombre del repo se usa como RUTA (`vurs_dir().join(name)`) y como
+        // nombre de fichero de llave. La entrada por CLI ya se validaba
+        // (`keys::validate_repo_name`); el fichero editado a mano NO pasaba por
+        // esa puerta: una clave "../../tmp/x" escapaba del directorio de VURs.
+        for name in conf.vur.keys() {
+            crate::keys::validate_repo_name(name)
+                .with_context(|| format!("repos.conf: nombre de repo inválido '{name}'"))?;
+        }
+        Ok(conf)
     }
 
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
@@ -127,6 +144,45 @@ key_fingerprint = "60:ae:0c:d6:f0:95:17:80:bc:93:46:7a:89:af:a3:2d"
 binary_repo_url = "https://usuario.github.io/mi-repo/bin"
 enabled = true
 "#;
+
+    /// Un nombre de repo con traversal (`../../tmp/x`) NO se acepta: se usa
+    /// como ruta del clon VUR. La entrada por CLI ya lo validaba; el
+    /// fichero editado a mano se colaba.
+    #[test]
+    fn nombre_de_repo_con_traversal_se_rechaza_al_cargar() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("repos.conf");
+        std::fs::write(
+            &path,
+            r#"[vur."../../tmp/evil"]
+url = "file:///tmp/evil"
+"#,
+        )
+        .unwrap();
+        let err = ReposConf::load(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("nombre de repo inválido"),
+            "{err:#}"
+        );
+    }
+
+    /// Campo desconocido = typo = ERROR (no se ignora en silencio: un
+    /// `enabld = false` dejaba el repo ACTIVO).
+    #[test]
+    fn campo_desconocido_se_rechaza() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("repos.conf");
+        std::fs::write(
+            &path,
+            r#"[vur.mi-repo]
+url = "https://example.org/r.git"
+enabld = false
+"#,
+        )
+        .unwrap();
+        let err = ReposConf::load(&path).unwrap_err();
+        assert!(err.to_string().contains("enabld"), "{err:#}");
+    }
 
     /// `save()` escribe atómicamente (tmp + rename): el fichero anterior se
     /// sustituye entero y no queda ningún temporal por el camino.
