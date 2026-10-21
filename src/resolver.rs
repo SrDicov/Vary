@@ -275,6 +275,16 @@ impl<'a> Ctx<'a> {
         self.opts.rebuild_reasons.contains_key(name)
     }
 
+    /// ITEM 1: anota en el plan POR QUÉ se recompila. Se llama solo cuando la
+    /// acción de compilación se materializa (nunca antes): si el build degrada
+    /// a binario, no hay rebuild que anunciar.
+    fn note_rebuild(&mut self, name: &str) {
+        if let Some(reason) = self.opts.rebuild_reasons.get(name) {
+            self.warnings
+                .push(format!("rebuild de '{name}': {}", reason.as_str()));
+        }
+    }
+
     /// Puntos 1b y 5: candidato VUR por nombre y, si falla o es descartado
     /// Nodo hoja para un paquete oficial. `VurInfo` es aquí un placeholder
     /// mínimo (los oficiales no tienen template VUR); solo importa el nombre.
@@ -355,10 +365,6 @@ impl<'a> Ctx<'a> {
         // (opciones/banderas/parches/template cambiados) aunque el usuario no
         // lo pida explícitamente: se comporta como `source_always`.
         let forced_source = source_always || self.needs_rebuild(name);
-        if let Some(reason) = self.opts.rebuild_reasons.get(name) {
-            self.warnings
-                .push(format!("rebuild de '{name}': {}", reason.as_str()));
-        }
         if self.source.official_exists(name)
             && !matches!(self.opts.order, CandidateOrder::PreferSource)
             && !forced_source
@@ -443,6 +449,7 @@ impl<'a> Ctx<'a> {
                         );
                         return Ok(self.push_item(item, dependent));
                     }
+                    self.note_rebuild(name);
                     let item = Self::official_item(name, &self.arch, Action::BuildOfficial);
                     return Ok(self.push_item(item, dependent));
                 }
@@ -521,6 +528,9 @@ impl<'a> Ctx<'a> {
         } else {
             Action::Build
         };
+        if matches!(action, Action::Build) {
+            self.note_rebuild(name);
+        }
         let item = PlanItem {
             name: name.to_string(),
             info,

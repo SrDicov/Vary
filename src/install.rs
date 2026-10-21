@@ -319,12 +319,16 @@ fn rebuild_candidates(
     if !config.newoptions && !config.changed_flags {
         return out;
     }
-    for (name, reason) in crate::rebuild::candidates(config, None) {
-        let hit = (config.newoptions && reason.triggers_options())
-            || (config.changed_flags && reason.triggers_flags());
-        if hit {
+    for (name, reasons) in crate::rebuild::candidates(config, None) {
+        // Cada dimensión se filtra por separado: un cambio de opciones no
+        // puede tapar un cambio de banderas (y al revés).
+        let hit = reasons.iter().find(|r| {
+            (config.newoptions && r.triggers_options())
+                || (config.changed_flags && r.triggers_flags())
+        });
+        if let Some(reason) = hit {
             tracing::info!("{name}: rebuild por {}", reason.as_str());
-            out.insert(name, reason);
+            out.insert(name, *reason);
         }
     }
     out
@@ -336,18 +340,11 @@ fn rebuild_candidates(
 /// VUR y no se inventa: sin baseline no hay señal.
 fn build_facts(config: &Config, pkg: &str, action: &Action) -> crate::db::BuildFacts {
     let official = matches!(action, Action::BuildOfficial);
-    crate::db::BuildFacts {
-        active_options: crate::rebuild::effective_options(config, pkg),
-        cflags: config.make.cflags.clone(),
-        cxxflags: config.make.cxxflags.clone(),
-        ldflags: config.make.ldflags.clone(),
-        patches_sha256: crate::overlay::user_file_hashes(&config.config_dir, pkg),
-        template_sha256: if official {
-            crate::rebuild::template_hash(&config.void_packages_dir(), pkg)
-        } else {
-            None
-        },
+    let mut facts = crate::rebuild::target_for(config, pkg, true);
+    if !official {
+        facts.template_sha256 = None;
     }
+    facts
 }
 
 /// P0-2: fecha el primer registro binario (best-effort con aviso; la
@@ -1972,6 +1969,12 @@ pub fn install(config: &mut Config) -> Result<i32> {
             // P2-soname: los subs son paquetes instalados propios.
             if itype == crate::db::InstallType::Source {
                 db.set_soname_pins(&sub.pkgname, crate::soname::capture(&sub.pkgname));
+                // ITEM 1: los subpaquetes también llevan baseline (si no,
+                // nunca podrían marcarse para recompilar).
+                db.set_build_facts(
+                    &sub.pkgname,
+                    &build_facts(config, &sub.pkgname, &item.action),
+                );
             }
         }
     }
@@ -2248,6 +2251,62 @@ mod tests {
         assert_eq!(got, Some(PathBuf::from("/c/xbps-src.log.w2")));
         let got = worker_log_file(None, None, &fake_sandbox(&slot_dir));
         assert_eq!(got, None);
+    }
+
+    /// ITEM 1: el filtro por flag es por DIMENSIÓN: `--changed-flags` solo
+    /// dispara con banderas cambiadas y `--newoptions` solo con opciones/
+    /// parches/template. Un cambio de banderas no puede quedar tapado.
+    #[test]
+    fn rebuild_candidates_filtra_por_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = Config::default();
+        config.cache_dir = dir.path().to_path_buf();
+        config.config_dir = dir.path().join("conf");
+        let mut db = crate::db::InstalledDb::load(config.installed_db_path()).unwrap();
+        db.upsert(
+            "demo",
+            "demo-1.0_1",
+            "official",
+            crate::db::InstallType::Source,
+            None,
+            None,
+        );
+        db.set_build_facts(
+            "demo",
+            &crate::db::BuildFacts {
+                active_options: vec![],
+                cflags: "-O2".to_string(),
+                cxxflags: "-O2".to_string(),
+                ldflags: String::new(),
+                patches_sha256: vec![],
+                template_sha256: None,
+            },
+        );
+        db.save().unwrap();
+
+        // Objetivo: mismas opciones, otras banderas.
+        config.make.cflags = "-O3 -march=native".to_string();
+        config.make.cxxflags = "-O3 -march=native".to_string();
+
+        config.newoptions = false;
+        config.changed_flags = true;
+        let out = rebuild_candidates(&config);
+        assert_eq!(
+            out.get("demo"),
+            Some(&crate::rebuild::RebuildReason::FlagsChanged),
+            "{out:?}"
+        );
+
+        // `--newoptions` no debe disparar por un cambio de banderas.
+        config.newoptions = true;
+        config.changed_flags = false;
+        let out = rebuild_candidates(&config);
+        assert!(!out.contains_key("demo"), "{out:?}");
+
+        // Sin flags: nada (cero trabajo).
+        config.newoptions = false;
+        config.changed_flags = false;
+        assert!(rebuild_candidates(&config).is_empty());
     }
 
     /// WorkerSandbox mínimo sin montar (los paths no necesitan existir para
