@@ -162,7 +162,11 @@ pub fn validate_repo_name(name: &str) -> Result<()> {
     if name.contains("..") || name.contains('/') || name.contains('\\') {
         bail!("intento de path traversal detectado en el nombre del repositorio '{name}'");
     }
-    if name.starts_with("00-") || name == "keys" {
+    // "official" está reservado: es el centinela con el que la DB marca los
+    // paquetes construidos desde el árbol de fuentes oficial (void-packages).
+    // Un VUR con ese nombre haría que sus paquetes se cruzaran con el
+    // índice de fuentes (falsa "versión nueva").
+    if name.starts_with("00-") || name == "keys" || name == "official" {
         bail!("nombre de repositorio reservado o no permitido: '{name}'");
     }
     Ok(())

@@ -889,6 +889,11 @@ fn expand_template_vars(
     revision: u32,
 ) -> String {
     let revision = revision.to_string();
+    // ponytail: las canónicas se sustituyen SIN frontera de token
+    // (`$version_suffix` -> `1.0_suffix`); es el criterio que ya usaban los
+    // subpaquetes y el de los templates de void-packages (`${}`), techo
+    // asumido. Si aparece un template real que lo rompa: sustituir por
+    // expansión con frontera (nombre de variable más largo primero).
     let out = value
         .replace("${sourcepkg}", pkgname)
         .replace("$sourcepkg", pkgname)
@@ -899,6 +904,22 @@ fn expand_template_vars(
         .replace("${revision}", &revision)
         .replace("$revision", &revision);
     // Variables del template: `${nombre}`.
+    // ponytail: una sola pasada (no recursiva): el VALOR de una variable no
+    // se re-expande (`_tag="v${version}"` deja `v${version}` crudo) y las
+    // variables definidas dentro del cuerpo de un subpaquete no se capturan
+    // (solo se leen `depends`/`short_desc` del sub). Techo asumido; si un
+    // template real lo usa: expandir en dos pasadas y recoger las
+    // asignaciones del sub.
+    //
+    // ponytail: la forma BARE (`$var` sin llaves) NO se expande. MEDIDO en
+    // el clon real de void-packages (15.162 templates): los únicos `$var`
+    // sin llaves en líneas de deps son los idiom de lista de xbps-src
+    // (`$depends`, `$makedepends`, `$hostmakedepends`, `$_xdeps`), que son
+    // autorreferentes (su valor es la propia asignación) y cuya semántica
+    // ("la lista original, vacía al inicio") no se puede reproducir sin
+    // evaluar el template entero. 0 casos reales de variables bare tipo
+    // `$_llvmver`: si aparecen, expandir con frontera (nombre más largo
+    // primero, el carácter siguiente no alfanumérico).
     let mut rest = out.as_str();
     let mut expanded = String::with_capacity(out.len());
     while let Some(start) = rest.find("${") {
@@ -1648,6 +1669,31 @@ checkdepends="libxml2"
         let content = "pkgname=foo\nversion=1.0\nrevision=2\ndepends=\"bar-${version}\"\n";
         let info = parse_template_text(content, "test:template").unwrap();
         assert_eq!(info.depends, vec!["bar-1.0".to_string()]);
+    }
+
+    /// Un `${` sin cerrar se deja tal cual (no se cuelga ni se trunca).
+    #[test]
+    fn llave_sin_cerrar_queda_cruda() {
+        let content = "pkgname=foo\nversion=1.0\nrevision=1\ndepends=\"a${b\"\n";
+        let info = parse_template_text(content, "test:template").unwrap();
+        assert_eq!(info.depends, vec!["a${b".to_string()]);
+    }
+
+    /// Criterio actual (fijado a propósito): las canónicas también se
+    /// sustituyen sin frontera de token, y el valor de una variable NO se
+    /// re-expande (una sola pasada).
+    #[test]
+    fn criterio_de_expansion_fijado() {
+        // Sin frontera de token: `$version_suffix` -> `1.0_suffix`.
+        let content = "pkgname=foo\nversion=1.0\nrevision=1\ndepends=\"x$version_suffix\"\n";
+        let info = parse_template_text(content, "test:template").unwrap();
+        assert_eq!(info.depends, vec!["x1.0_suffix".to_string()]);
+
+        // Una sola pasada: el valor de una variable no se re-expande.
+        let content =
+            "pkgname=foo\nversion=1.0\nrevision=1\n_tag=v${version}\ndepends=\"${_tag}\"\n";
+        let info = parse_template_text(content, "test:template").unwrap();
+        assert_eq!(info.depends, vec!["v${version}".to_string()]);
     }
 
     /// Una variable que NO existe se deja tal cual (no se inventa un

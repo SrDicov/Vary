@@ -153,7 +153,7 @@ pub fn expand(name: &str, _config: &Config, db: &InstalledDb) -> Result<Vec<Stri
                 .collect();
             let vurs: Vec<String> = snap
                 .iter()
-                .filter(|(_, e)| e.vur != "official")
+                .filter(|(_, e)| e.vur != crate::db::OFFICIAL_REPO)
                 .map(|(n, _)| n.clone())
                 .collect();
             (Vec::new(), Vec::new(), sources, vurs, Vec::new())
@@ -321,7 +321,7 @@ mod tests {
     fn entry(t: InstallType, pins: Option<crate::soname::SonamePins>) -> crate::db::Entry {
         crate::db::Entry {
             version: "1.0_1".to_string(),
-            vur: "official".to_string(),
+            vur: crate::db::OFFICIAL_REPO.to_string(),
             install_date: 0,
             build_date: None,
             install_type: t,
