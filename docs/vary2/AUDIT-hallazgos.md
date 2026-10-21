@@ -583,6 +583,52 @@ base64, serde/JSON, tempfile, y **errores surfaceados vs loggeados**.
 - `"1.2.3_4_5"` devolvía la versión `1.2.3_4` (con `_` dentro) → pkgver
   sintético malformado. **Fix**: una versión con `_` no parsea.
 
+### Checklist del "segundo par de ojos" (respondido con datos, no de memoria)
+
+**1. Escritura de la caché: tmp + rename atómico** (`fetch_index`): el rename
+(2) de POSIX es atómico → un `kill -9` en cualquier punto deja **o la caché
+vieja, o la nueva**: nunca una mezcla ni un fichero a medias. Si el proceso
+muere antes del rename, la caché **no existe** → la próxima llamada la
+re-descarga (o usa la TTL si aún está vigente) → **se re-descarga solo** ✓.
+
+**2. Ciclo de vida del temporal único — S4 (documentado, NO arreglado)**
+- **Evidencia (SIGKILL real)**: un proceso que crea el temporal y muere sin
+  ejecutar el `Drop` deja el fichero → `.tmpd2cDFr` (0 bytes) en el dir ✓.
+- **El sweep no lo alcanza**: `signal.rs:239-241` → `sweep_stale_tmp_files()`
+  barre **solo** `std::env::temp_dir()` (`/tmp`) con el prefijo `"vary-"`; los
+  temporales de la caché viven en `~/.cache/vary/` con el prefijo aleatorio de
+  `tempfile` (`.tmp…`) → ni el directorio ni el prefijo coinciden ✓.
+- **Consecuencia**: cada `SIGKILL` durante una descarga del índice VUP deja el
+  temporal (0..64 MiB según cuánto se descargara) **acumulándose en disco**,
+  sin limpieza.
+- **Por qué NO se arregla**: cualquier limpieza por patrón (barrer el cache_dir)
+  reintroduce **la carrera que A8-04 acaba de cerrar**: un run que arranca
+  borraría el temporal de una descarga en curso de otro run → ese otro falla
+  ("índice no disponible") → se arregla un S4 y se rompe un S3. El*S4 se
+  acepta con nombre* (fuga de disco acotada, camino raro: VUP + SIGKILL).
+  Si aparece, el arreglo es un lock por repo, no un barrido.
+
+**3. `split_pkgver` vs xbps real (NO de memoria)**
+- **Fuente real**: xbps 0.60.7 `lib/util.c`:
+  - `is_revision` (líneas 45-54): acepta **dígitos y guiones bajos** →
+    comentario explícito: *"allow underscore for accepting
+    perl-Digest-1.17_01_1 etc."* → xbps **sí** acepta una versión con "_" si
+    lo que sigue es una revisión válida.
+  - `xbps_pkg_name` (249-282) y `xbps_pkg_version` (119-143): el nombre llega
+    hasta el **último '-'**; la revisión se localiza en el '_' que sigue a un
+    dígito y tras el cual solo hay dígitos/guiones bajos.
+- **Consecuencia**: el fix de vary (`version.contains('_')` → `None`) es **MÁS
+  ESTRICTO que xbps**: xbps aceptaría `1.17_01_1` (versión `1.17`, revisión
+  `01_1`) y vary lo descarta.
+- **Medición en el clon real** (15.162 templates): **0 versiones con "_"**
+  literal (la única coincidencia es `version="0.0.0.${_tag}"`, una variable sin
+  evaluar) → la divergencia **no se materializa en los datos reales**.
+- **Además, el fix es coherente con el tipo**: `VurInfo.revision` es `u32` → la
+  revisión `"01_1"` **no se puede representar**; aceptarla produciría un
+  pkgver que xbps interpretaría de otra forma (versión `1.17` vs `1.17_01`) →
+  peor que descartar (fail-safe: el paquete no se ofrece en vez de ofrecerse con
+  una versión malinterpretada).
+
 ### Revisado SIN hallazgo (con evidencia)
 
 | Punto | Evidencia |
