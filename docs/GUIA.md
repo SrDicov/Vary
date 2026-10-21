@@ -307,6 +307,14 @@ Qué pasa, por dentro:
    recompilar) y **ancla** (`repolock`) lo compilado, para que un `-Su` no te
    lo pise con un binario oficial.
 
+`vary -S` **sin** paquete es un error (no es "actualizar"): te faltan
+objetivos.
+
+```sh
+$ vary -S
+error: no targets specified (use -h for help)
+```
+
 Instalar **varios** paquetes de golpe:
 
 ```sh
