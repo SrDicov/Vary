@@ -524,3 +524,69 @@ cabecera que declara su desfase y remite a README/VURINFO.md.
 **Sin hallazgos A7**: los 20 crates de `Cargo.toml` tienen call site en
 PRODUCCIÓN (no solo en tests) → ninguno se elimina ni se mueve a
 `dev-dependencies`.
+
+---
+
+## A8 — Pase real de dominio: `src/vup_index.rs` (433 LOC)
+
+**Por qué este pase**: la matriz de cobertura de FASE 0 listaba 44 ficheros y
+`vup_index.rs` quedó **sin dueño** → un módulo entero (433 líneas de
+base64/serde/JSON/tempfile) sin revisión. Corregir el documento no audita el
+código: este pase sí. Lente: integridad de datos (T2/T4/T5), round-trips
+base64, serde/JSON, tempfile, y **errores surfaceados vs loggeados**.
+
+**ID: A8-01** · **S2** · `src/vup_index.rs::fetch_index` → **ARREGLADO**
+
+- **Reproducción**: el `index.json` lo publica el repo remoto (T3) y se
+  descargaba **sin límite de tamaño**; luego `std::fs::read` lo cargaba entero
+  en RAM. Con `--max-time 60` y 100 MB/s son 6 GB → OOM. Además el stderr de
+  curl se descartaba con `.status()` → el usuario veía "índice no disponible
+  (sin red ni caché válida)" sin saber si fue DNS, TLS o tamaño.
+- **Fix**: `--max-filesize` de curl + comprobación del tamaño al leer
+  (defensa en profundidad, no depender del curl) + el stderr de curl en el
+  mensaje de error.
+- **Matiz (autorrevisión del autor)**: la primera versión del fix abortaba con
+  `?` al pasarse el tope → **mataba el fallback a la caché vieja**. Corregido:
+  el dato inválido no es el estado → se avisa y se cae al fallback (fail-soft).
+
+**ID: A8-02** · **S3** · `src/vup_index.rs::decode_plist_public_key_pem` → **ARREGLADO**
+
+- El `<data>` del plist (base64, del repo remoto) se decodificaba sin tope →
+  OOM con un plist hostil. **Fix**: tope de 1 MiB (los reales pesan KB).
+
+**ID: A8-03** · **S3** · `src/vup_index.rs::to_vur_info` → **ARREGLADO** (toca JOIN)
+
+- La **clave** del mapa `packages` del `index.json` la decide el repo remoto y
+  entraba **sin validar**: un nombre tipo `../../etc/x` llegaba al plan, a la
+  DB de instalados (`installed.json`) y al nombre del artefacto. La vía
+  `.VURINFO` sí valida (`metadata::validate()` → `is_valid_pkgname`): aquí
+  faltaba **la misma puerta** (la asimetría que Audi A1 caza).
+- **Fix**: validar con `metadata::is_valid_pkgname` + aviso (el paquete se
+  descarta, no aborta el repo entero).
+- **Doble revisión subagent**: obligatoria (toca la clave de join).
+
+**ID: A8-04** · **S3** · `src/vup_index.rs::fetch_index` (temporal) → **ARREGLADO**
+
+- El temporal de descarga tenía **nombre fijo** (`index.tmp`) y los comandos de
+  solo lectura **no toman el flock global** → dos búsquedas concurrentes
+  comparten el fichero: una renombra el contenido de la otra.
+- **Fix**: temporal de nombre único (`tempfile::NamedTempFile` en el dir de la
+  caché) → además la caché queda en 0600.
+
+**ID: A8-05** · **S3** · `src/vup_index.rs::split_pkgver` → **ARREGLADO**
+
+- `"1.2.3_4_5"` devolvía la versión `1.2.3_4` (con `_` dentro) → pkgver
+  sintético malformado. **Fix**: una versión con `_` no parsea.
+
+### Revisado SIN hallazgo (con evidencia)
+
+| Punto | Evidencia |
+|---|---|
+| La URL del `index.json` hasta `/etc/xbps.d` | `keys.rs:423 validate_repository_url(u)?` ANTES de escribir el conf → el vector de URL no se materializa |
+| `validate_repository_url` | `keys.rs:280-292`: rechaza saltos de línea, caracteres de control y cualquier esquema que no sea http/https/file |
+| Round-trip base64 | `decode_plist_public_key_pem`: filtra a `[A-Za-z0-9+/=]`, decodifica, valida UTF-8 y exige `BEGIN PUBLIC KEY` |
+| El PEM crudo a xbps | el pre-import escribe el texto CRUDO (verificado en vivo por diff con `/var/db/xbps/keys/`, T-012) |
+| `git show HEAD:{first}` | el path viene de `ls-tree` (git no admite `..` en un árbol) y el argv empieza por `HEAD:` → no puede ser una opción |
+| Escritura de la caché | temporal en el dir 0700 + `rename` atómico |
+| `deny_unknown_fields` en el `index.json` | **NO debe**: el JSON es externo (lo genera el repo remoto) → ponerlo rompe con campos nuevos. El nuestro (`repos.conf`) sí lo lleva (A4-05). Regla: deny en los JSON PROPIOS, no en los ajenos |
+| `discover_plist_key` | ordena y toma el primero → determinista |
