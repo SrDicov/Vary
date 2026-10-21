@@ -205,6 +205,8 @@ fn needs_lock(config: &Config) -> bool {
             !(config.args.has_arg("p", "print")
                 || config.args.has_arg("why", "why")
                 || config.args.has_arg("log", "log")
+                // `-Q` es solo lectura: listar instalados no muta nada.
+                || config.args.has_arg("Q", "query")
                 || (config.args.has_arg("lock", "lock") && config.targets.is_empty()))
         }
         Op::Sync => {
@@ -217,6 +219,18 @@ fn needs_lock(config: &Config) -> bool {
 }
 
 fn handle_cmd(config: &mut Config) -> Result<i32> {
+    // `vary -Q` (listar instalados) es independiente: no se combina con
+    // -S/-R ni con --repo.
+    if config.args.has_arg("Q", "query") {
+        if command_line::peek_repo_cmd().is_some() {
+            bail!("-Q no se combina con --repo");
+        }
+        if config.op != Op::Default {
+            bail!("-Q es independiente: no se combina con -S/-R");
+        }
+        return crate::query::list(config);
+    }
+
     // `vary --conf-update` es independiente: rechaza -S/-R, targets y --repo.
     if config.conf_update {
         if command_line::peek_repo_cmd().is_some() {
@@ -355,6 +369,7 @@ mod init;
 mod install;
 mod journal;
 mod overlay;
+mod query;
 mod review;
 mod search;
 mod upgrade;
@@ -379,6 +394,9 @@ mod tests {
             (vec!["--why", "foo"], false),
             (vec!["--log"], false),
             (vec!["--log", "foo"], false),
+            (vec!["-Q"], false),
+            (vec!["-Q", "foo"], false),
+            (vec!["--query"], false),
             (vec!["-S", "foo"], true),
             (vec!["-Syu"], true),
             (vec!["-R", "foo"], true),

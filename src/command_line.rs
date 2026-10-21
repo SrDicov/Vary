@@ -428,6 +428,14 @@ impl Config {
                 self.candidate_order = crate::resolver::CandidateOrder::PreferSource;
             }
             Arg::Long("interactive") => self.interactive = true,
+            Arg::Long("query") => {
+                // Alias largo de `-Q` (listar instalados), como `-Ss`/`-Si`
+                // aceptan las dos grafías.
+                self.args.args.push(crate::args::Arg {
+                    key: "query".to_string(),
+                    value: None,
+                });
+            }
             Arg::Long("print") | Arg::Short('p') => {
                 // P0-4: plan imprimible sin mutar (ver install::print_plan).
                 // El registro en args es automático (is_pacman_arg); aquí no
@@ -913,6 +921,19 @@ mod tests {
             assert!(config.deep_build, "{alias} debe fijar deep_build");
             assert!(!config.force_build);
         }
+    }
+
+    /// `-Q` (listar instalados) y su alias largo `--query` se registran.
+    #[test]
+    fn query_se_registra_con_las_dos_grafias() {
+        let mut config = Config::default();
+        parse_args(&mut config, &["-Q"]).expect("parse");
+        assert!(config.args.has_arg("Q", "query"));
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["--query", "bash"]).expect("parse");
+        assert!(config.args.has_arg("Q", "query"));
+        assert_eq!(config.targets, vec!["bash".to_string()]);
     }
 
     /// ITEM 1: los flags de auditoría se parsean; `-N` NO se usa (colisiona

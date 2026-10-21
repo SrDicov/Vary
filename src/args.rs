@@ -44,6 +44,7 @@ pub static PACMAN_FLAGS: &[&str] = &[
     "file",
     "q",
     "quiet",
+    "Q",
     "s",
     "search",
     "t",

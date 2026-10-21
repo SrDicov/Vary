@@ -4,6 +4,12 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **`-Q` (alias `--query`):** lista los paquetes instalados, una línea
+  `nombre version` por paquete (solo lectura: sin lock, sin elevación). Con
+  argumentos filtra por subcadena del nombre, como `pacman -Q`. Cierra el hueco
+  que dejaba ver `kyo list` de kyoz: Vary tenía `xbps-query -l` internamente
+  (para el set `@installed`) pero ninguna forma de listarlo desde la CLI.
+
 - **Índice de fuentes (PortDb sin SQL):** `-Sy` actualiza también el clon de
   void-packages (estaba congelado en el commit del clone) y refresca
   `~/.cache/vary/portdb.json`: versiones, opciones de build y el mapa
