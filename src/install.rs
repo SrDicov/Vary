@@ -825,6 +825,17 @@ fn official_ver_rev_checked(
     Ok(Some(ver_rev))
 }
 
+/// Nombre del artefacto que produce xbps-src: `{pkgver}.{arch}.xbps`.
+///
+/// El arch es el RESUELTO del sistema (`x86_64-musl` en musl), nunca el
+/// "crudo" (`std::env::consts::ARCH` = `x86_64`): xbps-src nombra el
+/// artefacto con el arch del sistema, así que con el arch equivocado el
+/// build "terminaba OK" pero el artefacto no aparecía nunca (fallo al 100 %
+/// en hosts musl).
+fn artifact_name(pkgver: &str, arch: &str) -> String {
+    format!("{pkgver}.{arch}.xbps")
+}
+
 /// Build oficial VÍA SECUENCIAL con el helper común (root/log del masterdir).
 fn build_official_sequential(
     md: &crate::masterdir::Masterdir,
@@ -832,12 +843,17 @@ fn build_official_sequential(
     pkg: &str,
     ver_rev: &str,
     hyb_conf: &crate::conf::PkgConf,
+    arch: &str,
 ) -> Result<std::path::PathBuf> {
     build_official(&OfficialBuild {
         root: &md.path,
         binpkgs: &md.hostdir_binpkgs_root(),
         pkg,
-        artifact: &format!("{pkg}-{ver_rev}.{}.xbps", config.arch()),
+        // El arch RESUELTO ("x86_64-musl" en musl), no `config.arch()`
+        // ("x86_64"): xbps-src nombra el artefacto con el arch del sistema y
+        // el nombreWAYS no coincidía → el build "terminaba OK" pero el
+        // artefacto no aparecía (fallo al 100 % en hosts musl).
+        artifact: &artifact_name(&format!("{pkg}-{ver_rev}"), arch),
         conf: hyb_conf,
         config_dir: &config.config_dir,
         id: crate::conf::auto_id(),
@@ -1420,7 +1436,14 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 if let Some(ver_rev) =
                     official_ver_rev_checked(&md, config, &parent_pkg, &mut official_pkgver, c)?
                 {
-                    build_official_sequential(&md, config, &parent_pkg, &ver_rev, &hyb_conf)?;
+                    build_official_sequential(
+                        &md,
+                        config,
+                        &parent_pkg,
+                        &ver_rev,
+                        &hyb_conf,
+                        &arch,
+                    )?;
                     built_names.push(parent_pkg);
                 }
                 continue;
@@ -1536,15 +1559,15 @@ pub fn install(config: &mut Config) -> Result<i32> {
             });
             key_to_job.insert((item.name.clone(), item.info.pkgname.clone()), jobs.len());
             // Artefactos esperados (determinista): padre obligatorio + subs.
-            let expected_parent = format!("{}.{arch}.xbps", item.info.pkgver());
+            let expected_parent = artifact_name(&item.info.pkgver(), &arch);
             let expected_subs: Vec<String> = item
                 .info
                 .subpackages
                 .iter()
                 .map(|s| {
-                    format!(
-                        "{}-{}_{}.{arch}.xbps",
-                        s.pkgname, item.info.version, item.info.revision
+                    artifact_name(
+                        &format!("{}-{}_{}", s.pkgname, item.info.version, item.info.revision),
+                        &arch,
                     )
                 })
                 .collect();
@@ -1611,6 +1634,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                             &job.parent_pkg,
                             &job.ver_rev,
                             &hyb_conf,
+                            &arch,
                         )?;
                         built_names.push(job.parent_pkg.clone());
                         continue;
@@ -1666,6 +1690,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
                                 &job.parent_pkg,
                                 &job.ver_rev,
                                 &hyb_conf,
+                                &arch,
                             )?;
                             built_names.push(job.parent_pkg.clone());
                             continue;
@@ -2330,5 +2355,21 @@ mod tests {
         // derivamos slot/log vía funciones asociadas puras en su lugar.
         // (Si esto no compila, el test recuerda cablear un ctor de test.)
         crate::masterdir::WorkerSandbox::for_test(slot_dir.to_path_buf())
+    }
+
+    /// El nombre del artefacto lleva el arch RESUELTO del sistema: en musl
+    /// xbps-src produce `foo-1.0_1.x86_64-musl.xbps`. Con el arch "crudo"
+    /// (`x86_64`) el build terminaba OK pero el artefacto no aparecía
+    /// (fallo al 100 % en hosts musl).
+    #[test]
+    fn nombre_artefacto_usa_el_arch_resuelto() {
+        assert_eq!(
+            artifact_name("foo-1.0_1", "x86_64-musl"),
+            "foo-1.0_1.x86_64-musl.xbps"
+        );
+        assert_eq!(
+            artifact_name("foo-1.0_1", "x86_64"),
+            "foo-1.0_1.x86_64.xbps"
+        );
     }
 }
