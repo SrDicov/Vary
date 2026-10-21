@@ -72,6 +72,20 @@ número end-to-end. AGENTS.md prohíbe `cargo test` local (PC lento) → queda a
 oportunidad (contenedor Void o máquina real). Medición de I/O ya hecha en el clon real:
 9.713 templates → sha256 de todos **0,41 s**; `git diff-tree` **0,022 s**.
 
+**MEDICIÓN (2026-10-22, ventana real: host con el clon de void-packages,
+15.162 templates)**:
+
+```
+cargo test --lib -- --ignored portdb --nocapture
+  frío: 15162 entradas en 9.291053796s (3 dinámicos)
+  incremental: 41.813893ms (reindexados: 0, completo: false)
+```
+
+Ratio 222× (índice frío 9,29 s en este PC vs incremental 41,8 ms). El test
+ahora **afirma** (antes solo imprimía): `n_cold > 100` y el incremental no
+cambia el número de entradas (findings A6-01). El incremental sobre un árbol
+sin cambios reindexa 0 paquetes y NO hace reindexado completo ✓.
+
 ### 5.5 — Ítems diferidos (condición de disparo, coste y fecha)
 
 | Ítem | Trigger (evento observable) | Coste al disparar | Fecha |

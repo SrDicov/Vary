@@ -14,6 +14,11 @@
 
 ---
 
+> **Auditoría posterior (2026-10-22):** la revisión total del proyecto (46
+> módulos, 7 dominios) está en `docs/vary2/AUDIT-hallazgos.md` (hallazgos
+> `A1-01`…`A7-xx`) y su informe ejecutivo en `docs/vary2/AUDIT-2026-10-22.md`.
+> Namespace propio: **no** mezcla los identificadores `H-###` de esta tabla.
+
 Este documento registra cronológicamente cada corrección atómica realizada sobre el código de `vary`, vinculada a su hallazgo, commit y validación.
 
 ---
