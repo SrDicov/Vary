@@ -38,7 +38,6 @@ pub struct SearchHit {
     /// "name-version_revision".
     pub pkgver: String,
     pub short_desc: Option<String>,
-    pub repository: Option<String>,
     pub installed: bool,
 }
 
@@ -48,7 +47,8 @@ impl From<SearchHit> for PkgInfo {
             name: h.name,
             pkgver: h.pkgver,
             short_desc: h.short_desc,
-            repository: h.repository,
+            // La salida de búsqueda no trae repositorio (xbps no lo emite).
+            repository: None,
             installed: h.installed,
         }
     }
@@ -127,22 +127,24 @@ fn after_bracketed(s: &str) -> Option<&str> {
 
 /// Parsea UNA línea de la salida de `xbps-query -Rs`.
 ///
-/// Supuesto EXACTO de formato implementado (tolerante):
+/// Supuesto EXACTO de formato (verificado en xbps 0.60.7,
+/// `bin/xbps-query/search.c:52-90`):
 ///
 /// ```text
-/// [<marca>] [[<repo>]] <pkgver>[ <descripción corta>]
+/// [<marca>] <pkgver> <descripción corta>
 /// ```
 ///
-/// * Primer token entre corchetes = marca de estado. `[*]` o `[x]` marcan el
-///   paquete como INSTALADO; cualquier otra marca (`[-]`, `[?]`, `[ ]`, …)
-///   como no instalado. Sin marca inicial también se acepta (no instalado).
-/// * Si INMEDIATAMENTE después hay otro token entre corchetes, se interpreta
-///   como nombre del repositorio (p. ej. `[multilib]`).
+/// * Primer token entre corchetes = marca de estado: `[*]` instalado, `[-]`
+///   no instalado (son las dos únicas que emite xbps). Sin marca inicial
+///   también se acepta (no instalado).
 /// * El primer token sin corchetes es `<pkgver>` = "nombre-version_revision";
 ///   el nombre se separa con `rsplit_once('-')` porque las versiones XBPS no
 ///   contienen guiones (`1.2.3_1`), así `foo-bar-1.2.3_1` => nombre `foo-bar`.
 /// * Todo lo demás tras `<pkgver>` es la descripción corta (`None` si vacía).
 /// * Líneas vacías o sin `<pkgver>` => [`None`].
+///
+/// NO hay token de repositorio en la salida real (por eso el campo
+/// `repository` de [`SearchHit`] no existe: no habría de dónde sacarlo).
 pub fn parse_search_line(line: &str) -> Option<SearchHit> {
     let mut rest = line.trim();
     if rest.is_empty() {
@@ -151,19 +153,12 @@ pub fn parse_search_line(line: &str) -> Option<SearchHit> {
 
     let installed = if bracketed(rest).is_some() {
         let mark = bracketed(rest)?;
-        let hit = matches!(mark, "*" | "x");
+        // xbps solo emite `*` (instalado) o `-` (no instalado).
+        let hit = mark == "*";
         rest = after_bracketed(rest)?;
         hit
     } else {
         false
-    };
-
-    let repository = if bracketed(rest).is_some() {
-        let repo = bracketed(rest)?.to_owned();
-        rest = after_bracketed(rest)?;
-        Some(repo)
-    } else {
-        None
     };
 
     let pkgver_end = rest.find(char::is_whitespace).unwrap_or(rest.len());
@@ -178,7 +173,6 @@ pub fn parse_search_line(line: &str) -> Option<SearchHit> {
         name: name.to_owned(),
         pkgver: pkgver.to_owned(),
         short_desc: (!short_desc.is_empty()).then(|| short_desc.to_owned()),
-        repository,
         installed,
     })
 }
@@ -345,8 +339,8 @@ pub fn bulk_official_names() -> Option<std::collections::HashSet<String>> {
     Some(names_from_search_output(&stdout_text(&out)))
 }
 
-/// Nombres (`rsplit_once('-')` vía [`parse_search_line`]: repo y
-/// `versión_rev` fuera) de una salida `-Rs`. Pura y testeable sin xbps.
+/// Nombres (`rsplit_once('-')` vía [`parse_search_line`]: `versión_rev` fuera)
+/// de una salida `-Rs`. Pura y testeable sin xbps.
 pub fn names_from_search_output(text: &str) -> std::collections::HashSet<String> {
     text.lines()
         .filter_map(parse_search_line)
@@ -776,7 +770,6 @@ mod tests {
         assert_eq!(hit.name, "foo");
         assert_eq!(hit.pkgver, "foo-1.2.3_1");
         assert_eq!(hit.short_desc.as_deref(), Some("Short description here"));
-        assert_eq!(hit.repository, None);
         assert!(!hit.installed);
     }
 
@@ -791,7 +784,8 @@ mod tests {
 
     #[test]
     fn search_line_marcas_de_instalado() {
-        for mark in ["[*]", "[x]"] {
+        // xbps 0.60.7 solo emite `*` (instalado) y `-` (no instalado).
+        for mark in ["[*]"] {
             let hit = parse_search_line(&format!("{mark} zzz-0.1_1  desc")).unwrap();
             assert!(hit.installed, "marca {mark} debe ser instalada");
         }
@@ -799,17 +793,6 @@ mod tests {
             let hit = parse_search_line(&format!("{mark} zzz-0.1_1  desc")).unwrap();
             assert!(!hit.installed, "marca {mark} no debe ser instalada");
         }
-    }
-
-    #[test]
-    fn search_line_con_repositorio() {
-        let hit =
-            parse_search_line("[-] [multilib] gcc-multilib-4.1_1  GCC with multilib").unwrap();
-        assert_eq!(hit.repository.as_deref(), Some("multilib"));
-        assert_eq!(hit.name, "gcc-multilib");
-        assert_eq!(hit.pkgver, "gcc-multilib-4.1_1");
-        assert_eq!(hit.short_desc.as_deref(), Some("GCC with multilib"));
-        assert!(!hit.installed);
     }
 
     #[test]
@@ -836,11 +819,14 @@ mod tests {
         }
     }
 
+    /// Forma REAL de `xbps-query -Rs` (verificada en Void real con xbps
+    /// 0.60.7): `[-] <pkgver>  <desc>`. NO hay token de repositorio (el
+    /// test anterior usaba `[multilib]`, una forma que la producción nunca
+    /// genera: un test que da al código su propio mundo).
     #[test]
-    fn bulk_names_stripea_repo_y_version() {
-        // Papercut E2: el prefijo [repo] y `-versión_rev` no deben contaminar.
+    fn bulk_names_stripa_la_version() {
         let out = "[-] firefox-146.0_1  Firefox web browser\n\
-                   [*] [multilib] lib32-alsa-lib-1.2.14_1  ALSA\n\
+                   [*] lib32-alsa-lib-1.2.14_1  ALSA\n\
                    [-] foo-bar-1.2.3_1  guiones en nombre\n\
                    \n\
                    [-]   \n";

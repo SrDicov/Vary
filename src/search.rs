@@ -53,10 +53,6 @@ pub fn search(config: &Config) -> Result<i32> {
     match xbps::search_official(&pattern) {
         Ok(pkgs) => {
             for p in pkgs {
-                let repo_raw = p.repository.clone().unwrap_or_default();
-                if repo_raw.contains("hostdir/binpkgs") || repo_raw.starts_with('/') {
-                    continue;
-                }
                 let desc = p.short_desc.clone().unwrap_or_default();
                 if !matches_words(&words, &p.name, &desc) {
                     continue;
@@ -66,11 +62,10 @@ pub fn search(config: &Config) -> Result<i32> {
                     pkgver: p.pkgver.clone(),
                     desc,
                     rank: Rank::Official,
-                    repo: if repo_raw.is_empty() {
-                        "official".to_string()
-                    } else {
-                        repo_raw
-                    },
+                    // La salida de `xbps-query -Rs` no trae repositorio
+                    // (verificado en xbps 0.60.7, search.c): el filtro que
+                    // excluía el repo local era código muerto.
+                    repo: "official".to_string(),
                 });
             }
         }
