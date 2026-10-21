@@ -188,12 +188,37 @@ RECHAZADO con motivo. La auditoría tampoco es la excusa para el rewrite.
 - FASE 0 (inventario) → `docs/vary2/AUDIT-map.md` (`4edcb02`): 46 módulos, 21.298
   LOC, 177 `pub fn`, 20 crates (todos con call site), matriz de cobertura sin
   agujeros (los 7 críticos con ≥2 dominios).
-- FASE 1: 7 dominios (A1-A7) con subagents, 2-3 en paralelo.
+- FASE 1: 7 dominios (A1-A7) con subagents, 2-3 en paralelo. **A7 devolvió
+  texto degenerado (sin evidencia) → se repitió con brief estrecho.**
 - FASE 2 (fusión/triaje) → `docs/vary2/AUDIT-hallazgos.md`.
 - FASE 3 (arreglos) → commits `audit(ámbito): ...`, uno por fix lógico.
 - FASE 4 (poda S4) → solo con evidencia de inalcanzabilidad, sin cambios de
   comportamiento.
 - FASE 5 → `docs/vary2/AUDIT-2026-10-22.md` (informe ejecutivo) + merge a main.
+
+### Hallazgos de la auditoría (resumen; detalle en AUDIT-hallazgos.md)
+
+**Falsos positivos descartados por el fusor (con evidencia):** A3-01 (la
+validación del pkgname SÍ estaba: `vur_client.rs:1152 info.validate()?`; la
+reproducción en Void real lo rechazó limpio) y A4-03a (la migración v2→v3 es
+intencionada: solo se rechaza el schema FUTURO).
+
+**Arreglados (S1/S2 primero):** A1-01 (pkgver del subpaquete), A1-02
+(expansión de variables en el padre), A2-01/02/04/05 (argv con `--`), A2-03 +
+A4-05 (fichero de confianza), A3-02/A4-02/A4-04/A4-09 (escrituras atómicas),
+A4-01 (índice de fuentes corrupto), A4-03 (schema futuro), A4-06/A5-09 (fallo
+de refresh visible), A4-11 (DB de remove), A5-01 (arch del artefacto en musl),
+A5-05 (estado de instalación), A6-01/02/03/04/06 (tests y CI).
+
+**Diferidos con trigger (NO se arreglan en la auditoría):** A1-04 (props
+posicionales), A1-05 (multi-proveedor de shlibs), A1-07/A5-03 (flags pacman
+sin efecto), A5-04 (`--interactive`), A5-08 (colisión de niveles), A5-10 (hash
+de template sin `files/`), A6-05 (mock sin arch), A6-09 (ruido del repounlock).
+
+**PARADA §8.2 (plan presentado, no ejecutado):** A5-02
+(`build_options_default` no está en el esquema VURINFO: el arreglo toca ≥4
+módulos y el schema). **Congelados por el prompt:** todo cambio de CLI
+(A1-07/A5-03/A5-04/A5-08) y el formato del valor en `installed.json` (A5-10).
 
 Salto de la auditoría: `8c14628` (la forma con palabras estilo kyoz ya estaba
 mergeada a main cuando empezó la auditoría).
