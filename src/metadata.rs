@@ -206,7 +206,7 @@ pub fn parse_many(json: &str) -> Result<Vec<VurInfo>> {
     Ok(out)
 }
 
-fn is_valid_version(v: &str) -> bool {
+pub fn is_valid_version(v: &str) -> bool {
     !v.is_empty()
         && v.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+'))

@@ -64,6 +64,45 @@ pub fn sanitize_repo_name(name: &str) -> String {
         .collect()
 }
 
+/// Prefijo de los temporales de descarga (para poder limpiar los huérfanos).
+const TMP_PREFIX: &str = "vary-vup-";
+
+/// Edad a partir de la cual un temporal se considera huérfano (1 h): una
+/// descarga en curso (60 s de tope) nunca llega ahí.
+const ORPHAN_MAX_AGE_SECS: u64 = 3600;
+
+/// Limpia los temporales de descarga huérfanos (un SIGKILL no ejecuta el
+/// `Drop` de `NamedTempFile`). Por EDAD, no por patrón: una descarga en curso
+/// tiene el fichero reciente → no se toca (barrer sin mirar la edad
+/// introduciría la carrera que el nombre único evita).
+fn sweep_orphan_tmp(dir: &Path, prefix: &str, max_age_secs: u64) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with(prefix) {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        let reciente = now
+            .duration_since(modified)
+            .map(|d| d.as_secs() < max_age_secs)
+            .unwrap_or(false);
+        if !reciente {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// Tope del `index.json` remoto: el índice real de VUP ocupa unos cientos de
 /// KB; 64 MiB es generoso y evita que un repo hostil (T3) lo convierta en un
 /// OOM (curl descarga a disco, pero el `read` lo carga entero en RAM).
@@ -131,7 +170,14 @@ pub fn fetch_index(
     // comandos de solo lectura: dos búsquedas concurrentes comparten el
     // mismo "index.tmp" y una renombra el contenido de la otra).
     let parent = cache_path.parent().unwrap_or_else(|| Path::new("."));
-    let tmp = tempfile::NamedTempFile::new_in(parent)
+    // Prefijo reconocible: un SIGKILL no ejecuta el `Drop` → el temporal
+    // queda huérfano; `sweep_orphan_tmp` lo recoge (por EDAD: una descarga en
+    // curso tiene el fichero reciente → barrer sin mirar la edad traería la
+    // carrera que el nombre único acaba de cerrar).
+    sweep_orphan_tmp(parent, TMP_PREFIX, ORPHAN_MAX_AGE_SECS);
+    let tmp = tempfile::Builder::new()
+        .prefix(TMP_PREFIX)
+        .tempfile_in(parent)
         .with_context(|| format!("creando temporal para {}", cache_path.display()))?;
     let tmp_path = tmp.path().to_path_buf();
     let out = Command::new(curl_bin)
@@ -139,10 +185,15 @@ pub fn fetch_index(
             "-fsSL",
             "--max-time",
             "60",
-            // T3: el repo remoto decide el tamaño; sin tope, 60 s a 100 MB/s
-            // son 6 GB y el `read` de más abajo se los come en RAM (OOM).
+            // T3: el repo remoto decide el tamaño.
+            // `--max-filesize` solo actúa si el servidor manda Content-Length
+            // (sin él, curl no corta) → `--limit-rate` acota los bytes
+            // ضمن el `--max-time` (4 MiB/s × 60 s ≈ 240 MiB) y el
+            // `check_index_size` posterior rechaza lo que se pase.
             "--max-filesize",
             &MAX_INDEX_BYTES.to_string(),
+            "--limit-rate",
+            "4m",
             "-o",
         ])
         .arg(&tmp_path)
@@ -158,7 +209,11 @@ pub fn fetch_index(
         // Tope también al leer (no depender solo de curl). Si el índice es
         // demasiado grande NO se aborta: el dato es inválido, no el estado →
         // se cae al fallback de la caché vieja (fail-soft).
-        let size = std::fs::metadata(&tmp_path).map(|m| m.len()).unwrap_or(0);
+        // Si no se puede MEDIR el tamaño, no se puede garantizar el tope:
+        // fail-closed (el tope existe contra dato hostil).
+        let size = std::fs::metadata(&tmp_path)
+            .with_context(|| format!("midiendo {}", tmp_path.display()))?
+            .len();
         if let Err(err) = check_index_size(size) {
             tracing::warn!("{err:#}");
         } else {
@@ -261,6 +316,14 @@ pub fn to_vur_info(
         return None;
     }
     let (version, revision) = split_pkgver(pkg.version.trim())?;
+    // La vía .VURINFO valida la versión (`metadata::validate` →
+    // `is_valid_version`); el VurInfo sintético se construye directo → aquí
+    // faltaba la misma puerta (una versión con caracteres raros entra en el
+    // plan, en la DB y en la salida).
+    if !crate::metadata::is_valid_version(&version) {
+        tracing::warn!("el repo VUR '{repo}' declara una versión inválida: '{version}'");
+        return None;
+    }
     let info = VurInfo {
         format_version: 1,
         pkgname: name.to_string(),
@@ -347,14 +410,15 @@ pub fn read_repo_plist_text(repo_path: &Path) -> Result<String> {
     )?;
     // T3: el plist lo publica el repo remoto. El tope va ANTES de leer:
     // leerlo entero a RAM y luego rechazar es tarde (el pico ya ocurrió).
-    if let Ok(meta) = std::fs::metadata(&key_path) {
-        anyhow::ensure!(
-            meta.len() <= MAX_PLIST_BYTES,
-            "el plist {} ocupa {} bytes (tope {MAX_PLIST_BYTES}): se rechaza",
-            key_path.display(),
-            meta.len()
-        );
-    }
+    // Fail-closed: si no se puede medir, no se puede garantizar el tope.
+    let meta =
+        std::fs::metadata(&key_path).with_context(|| format!("midiendo {}", key_path.display()))?;
+    anyhow::ensure!(
+        meta.len() <= MAX_PLIST_BYTES,
+        "el plist {} ocupa {} bytes (tope {MAX_PLIST_BYTES}): se rechaza",
+        key_path.display(),
+        meta.len()
+    );
     std::fs::read_to_string(&key_path).with_context(|| format!("leyendo {}", key_path.display()))
 }
 
@@ -395,16 +459,20 @@ pub fn read_repo_plist_text_git(git_bin: &str, repo_path: &Path) -> Result<Strin
         .args(["cat-file", "-s", &format!("HEAD:{first}")])
         .output()
         .with_context(|| format!("no se pudo ejecutar git cat-file -s HEAD:{first}"))?;
-    if size.status.success() {
-        let bytes: u64 = String::from_utf8_lossy(&size.stdout)
-            .trim()
-            .parse()
-            .unwrap_or(0);
-        anyhow::ensure!(
-            bytes <= MAX_PLIST_BYTES,
-            "el plist {first} del repo ocupa {bytes} bytes (tope {MAX_PLIST_BYTES}): se rechaza"
-        );
-    }
+    // Fail-closed: si git no dice el tamaño (o no es un número), NO se sigue
+    // sin tope (el tope existe contra dato hostil).
+    anyhow::ensure!(
+        size.status.success(),
+        "git cat-file -s HEAD:{first} falló: no se puede medir el plist"
+    );
+    let reported = String::from_utf8_lossy(&size.stdout).trim().to_string();
+    let bytes: u64 = reported
+        .parse()
+        .with_context(|| format!("tamaño de plist ilegible: '{reported}'"))?;
+    anyhow::ensure!(
+        bytes <= MAX_PLIST_BYTES,
+        "el plist {first} del repo ocupa {bytes} bytes (tope {MAX_PLIST_BYTES}): se rechaza"
+    );
     let show = Command::new(git_bin)
         .arg("-C")
         .arg(repo_path)
@@ -420,6 +488,15 @@ pub fn read_repo_plist_text_git(git_bin: &str, repo_path: &Path) -> Result<Strin
 
 #[cfg(test)]
 mod tests {
+    /// Fija el mtime de un fichero (para simular un huérfano viejo) con la
+    /// API estándar (`File::set_times`, estable desde Rust 1.75): sin `unsafe`
+    /// ni dependencias nuevas.
+    fn filetime_set(path: &Path, when: SystemTime) {
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        file.set_times(std::fs::FileTimes::new().set_modified(when))
+            .unwrap();
+    }
+
     /// T3: el repo remoto decide el tamaño del índice; sin tope, el `read`
     /// lo carga entero en RAM (OOM).
     #[test]
@@ -445,6 +522,44 @@ mod tests {
                 "el nombre {malo:?} debería rechazarse"
             );
         }
+    }
+
+    /// La versión del índice también pasa por su puerta (la vía .VURINFO
+    /// valida con `is_valid_version`; el VurInfo sintético se construye
+    /// directo → faltaba la misma puerta).
+    #[test]
+    fn la_version_del_indice_se_valida() {
+        let mut pkg = VupPackage {
+            category: "cat".to_string(),
+            version: "1.0_1".to_string(),
+            archs: vec!["x86_64".to_string()],
+            repo_urls: BTreeMap::from([("x86_64".to_string(), "https://x/y".to_string())]),
+        };
+        assert!(to_vur_info("repo", "bueno", &pkg, "x86_64").is_some());
+        for mala in ["1.0 beta_1", "a-b_1", "1.0\nx_1"] {
+            pkg.version = mala.to_string();
+            assert!(
+                to_vur_info("repo", "bueno", &pkg, "x86_64").is_none(),
+                "la versión {mala:?} debería rechazarse"
+            );
+        }
+    }
+
+    /// El barrido de huérfanos va POR EDAD: uno viejo se borra, uno
+    /// reciente (descarga en curso) se respeta → no se reintroduce la carrera.
+    #[test]
+    fn el_barrido_de_huerfanos_respeta_los_recientes() {
+        let dir = tempfile::tempdir().unwrap();
+        let viejo = dir.path().join(format!("{TMP_PREFIX}viejo"));
+        let nuevo = dir.path().join(format!("{TMP_PREFIX}nuevo"));
+        std::fs::write(&viejo, b"x").unwrap();
+        std::fs::write(&nuevo, b"x").unwrap();
+        // El viejo se hace viejo (2 h); el nuevo se queda recién creado.
+        filetime_set(&viejo, SystemTime::now() - Duration::from_secs(7200));
+
+        sweep_orphan_tmp(dir.path(), TMP_PREFIX, ORPHAN_MAX_AGE_SECS);
+        assert!(!viejo.exists(), "el huérfano viejo debería haberse borrado");
+        assert!(nuevo.exists(), "un temporal reciente no se toca");
     }
 
     /// Forma REAL del `index.json` de VUP (la que genera `generate_index.py`):
