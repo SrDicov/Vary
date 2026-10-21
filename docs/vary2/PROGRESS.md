@@ -348,9 +348,20 @@ Reglas de la semana (sin excepciones):
 
 **DESVIACIÓN (2026-10-22):** la doble revisión subagent del fix de join
 A8-03 (`to_vur_info` valida el nombre del paquete del `index.json`) **no se pudo
-ejecutar**: 4 intentos (2 con el agente `reviewer`, 2 con `general`), todos con
+ejecutar**: **6 intentos** (3 con el agente `reviewer`, 3 con `general` — el
+último con el checklist del "segundo par de ojos"), todos con
 `all upstream attempts failed` → indisponibilidad del servicio de subagents, no
-un criterio del prompt. En su lugar, el autor hizo **2 pasadas propias con
+un criterio del prompt. **Trigger de cierre (observado, no "cuando pueda"):**
+la primera sesión en la que una llamada subagent tenga éxito → se paga esta
+deuda antes que cualquier otra cosa. Hasta entonces, el checklist que el
+segundo par de ojos debía cubrir **ya está respondido con datos** (ver
+`AUDIT-hallazgos.md`, sección A8): `split_pkgver` contra el código real de xbps
+0.60.7 (`lib/util.c:45-54` `is_revision`, `:119-143` `xbps_pkg_version`,
+`:249-282` `xbps_pkg_name`) + la medición en el clon real (0 versiones con "_"
+en 15.162 templates); la escritura de caché (tmp+rename atómico → un kill
+deja la caché vieja o la nueva, nunca una mezcla) y el huérfano por SIGKILL
+(evidencia: queda `.tmp…`; el sweep solo barre `/tmp` con prefijo `vary-`; NO se
+arranca porque barrer por patrón reintroduce la carrera que A8-04 cerró). En su lugar, el autor hizo **2 pasadas propias con
 evidencia**: (1) *lente de join* — el `pkgname` validado es exactamente la
 clave que consume `install.rs` (`to_vur_info(pkgname, vpkg, arch)`), y si se
 descarta no entra en `vur_map`, ni en `vup_binary_urls`, ni en `binary_check`
