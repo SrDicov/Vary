@@ -372,6 +372,37 @@ datos* — todo lo que entra del remoto tiene puerta (`repo_urls` →
 leer). **La revisión subagent queda PENDIENTE** para cuando la infra vuelva:
 es un fix de join y el gobierno no lo cierra sin dos revisores.
 
+**Para el revisor cuando la infra vuelva (A8-03):** al argumentar el
+`split_pkgver`, **citar la función de SPLIT de xbps, no solo el validador**
+(`is_revision`). Con lo citado hasta ahora (`lib/util.c:45-54` `is_revision`,
+`:119-143` `xbps_pkg_version`, `:249-282` `xbps_pkg_name`) queda probado que
+xbps **acepta** una versión con "_" si lo que sigue es una revisión válida; lo
+que falta es ver **dónde corta** el split (último "_" vs primer "_" tras un
+dígito). Bajo ambas lecturas el descarte se sostiene (medido: 0 versiones con
+"_" en 15.162 templates, y `VurInfo.revision` es `u32` → "01_1" no se puede
+representar), pero el puente tiene que apoyarse en la pata correcta. El día
+que aparezca un paquete estilo `perl-Digest` (que xbps sí acepta: revisión
+"01_1") habrá que saber qué pata lo sostiene.
+
+**O_TMPFILE (decisión, no descuido):** el huérfano por SIGKILL del temporal de
+descarga (S4, `AUDIT-hallazgos.md` §A8) tiene una solución de kernel: `O_TMPFILE`
+= inodo sin nombre que el kernel borra al morir el proceso → **huérfanos
+estructuralmente imposibles**. No se usa porque `std` no lo expone: haría falta
+`unsafe` + libc o una dependencia nueva, **vetadas ambas** por el gobierno, para
+un S4 con nombre (VUP + SIGKILL + disco). Si el S4 sube de nombre, el precio
+cambia y la decisión se revisa.
+
+**Medición de la puerta "no parsea = no hay estado" (2026-10-22):** con curl
+real y un `index.json` servido por HTTP: la caché truncada a 20 bytes **se
+re-descarga** (no falla duro) → no hay S3 pendiente ahí. La misma puerta en los
+JSON con estado: `installed.json` corrupto → backup + arranque vacío
+(`db.rs`, test `corrupt_db_preserves_backup_and_starts_empty`) y schema futuro →
+respaldo + no reinterpretación (A4-03, test
+`schema_futuro_preserva_respaldo_y_no_se_reinterpreta`); `portdb.json` corrupto
+→ backup + reindexado (A4-01). **Coherencia**: el número de versión de formato
+existe exactamente donde NO hay auto-reparación (el estado se pierde aunque
+con respaldo) y no existe donde sí la hay (la caché) → no es YAGNI.
+
 **Leyes nuevas (de la propia auditoría):**
 
 1. **Artefacto mal identificado = dato podrido: hash antes de conclusión.** La
