@@ -1,7 +1,14 @@
 # AUDIT — mapa del proyecto (FASE 0)
 
 Verdad del proyecto en el momento de auditar: `testing` = `main` = `8c14628`.
-21.298 líneas de Rust en `src/` (46 módulos), 20 crates, 0 features opcionales.
+**21298 líneas de Rust en `src/` (45 módulos), 177 `pub fn`, 20 crates, 0 features opcionales.**
+
+> Tabla regenerada desde el propio árbol de `8c14628` (cada fila = un fichero de
+> `src/`; la suma cuadra con `wc -l src/*.rs`). La primera versión de esta
+> tabla listaba 43 filas (faltaban `portdb.rs` y `elevate.rs`) y la matriz de
+> cobertura omitía `vup_index.rs`: dos listas que no se deacuerdan
+> ([finding del revisor](https://github.com/SrDicov/Vary)) y un agujero de
+> cobertura. Corregido el 2026-10-22 contra los datos reales.
 
 Método: `wc -l`, `grep` de call sites por crate, `grep` de `use crate::` para
 el grafo de dependencias, extracción de `pub fn` para la superficie pública.
@@ -11,51 +18,53 @@ Ninguna cifra de este documento es estimación.
 
 | módulo | LOC | `pub fn` | crates que usa | consumidores (`use crate::`) |
 |---|---:|---:|---|---|
-| `install.rs` | 2334 | 3 | anyhow, serde_json, sha2, tempfile, dirs, nix(vía xbps) | bootstrap, cache, config, db, metadata, reposconf, resolver, util, vur_client, xbps |
-| `vur_client.rs` | 1702 | 2 | anyhow, base64, serde, tar, tempfile, dirs | info, keys, repo, review, search, upgrade, vup_index, cache, metadata, reposconf |
-| `resolver.rs` | 1687 | 8 | anyhow, petgraph, serde, metadata | install, why |
-| `xbps.rs` | 1031 | 23 | anyhow, serde, tempfile, indicatif, nix, config | install, search, upgrade, masterdir, config |
-| `command_line.rs` | 1055 | 5 | anyhow, config, args | lib, repo |
-| `keys.rs` | 1118 | 22 | anyhow, base64, md5, sha2, tempfile, toml | repo, reposconf, vur_client, util |
-| `db.rs` | 727 | 9 | anyhow, serde, serde_json, tempfile | lib, install, rebuild, remove, sets, upgrade, config |
-| `upgrade.rs` | 715 | 2 | anyhow, diffy, sha2, tempfile, cache, config, db, reposconf, template_audit, vur_client, xbps | lib |
-| `config.rs` | 666 | 5 | anyhow, serde, toml, dirs, ansiterm | 20 módulos (config central) |
-| `masterdir.rs` | 596 | 12 | anyhow, nix, tempfile, dirs, xbps | bootstrap, main |
-| `metadata.rs` | 523 | 6 | anyhow, serde, serde_json, tar, cache | install, resolver, vup_index, vur_client, cache |
-| `repo.rs` | 509 | 1 | anyhow, toml, tempfile, command_line, config, keys, reposconf, util, vur_client | lib |
-| `soname.rs` | 476 | 11 | anyhow, serde, sets | sets, rebuild, upgrade |
-| `overlay.rs` | 439 | 3 | anyhow, sha2, tempfile, dirs | lib, install |
-| `vup_index.rs` | 433 | 10 | anyhow, base64, serde, serde_json, tempfile, metadata | reposconf, vur_client, keys |
-| `sets.rs` | 410 | 6 | anyhow, config, db, soname | lib, install |
-| `signal.rs` | 388 | 11 | anyhow, indicatif, nix, tempfile | lib, main, masterdir, overlay |
-| `rebuild.rs` | 363 | 6 | anyhow, sha2, config, db | upgrade, install |
-| `lockfile.rs` | 362 | 7 | anyhow, serde, toml, tempfile, config | lib |
-| `challenge.rs` | 357 | 6 | anyhow, ruzstd, tar, sha2, tempfile | lib |
-| `preflight.rs` | 344 | 4 | anyhow, nix | main, lib |
-| `template_audit.rs` | 349 | 5 | anyhow, tar | upgrade |
-| `conf.rs` | 284 | 6 | anyhow, config | install, conf_update |
-| `use_reduce.rs` | 267 | 6 | anyhow, tar | rebuild, portdb |
-| `reposconf.rs` | 255 | 2 | anyhow, serde, toml, tempfile | info, install, keys, repo, search, upgrade, vur_client |
-| `search.rs` | 245 | 1 | anyhow, cache, config, reposconf, vur_client, xbps | lib |
-| `conf_update.rs` | 245 | 1 | anyhow, config | lib |
-| `logging.rs` | 191 | 6 | tracing, tracing-appender, tracing-subscriber, tempfile | lib |
-| `review.rs` | 173 | 3 | anyhow, vur_client, tempfile | lib |
-| `util.rs` | 164 | 5 | anyhow, tempfile, config | install, keys, repo, lib |
-| `args.rs` | 166 | 4 | anyhow | command_line, config |
-| `info.rs` | 158 | 1 | anyhow, cache, config, reposconf, vur_client | lib |
-| `why.rs` | 158 | 2 | anyhow, cache, config, resolver | lib |
-| `journal.rs` | 143 | 5 | anyhow, tempfile | lib |
-| `cache.rs` | 120 | 1 | anyhow, serde, serde_json, tempfile, metadata | info, install, search, upgrade, why, vur_client |
-| `bootstrap.rs` | 115 | 3 | anyhow, masterdir | install |
-| `query.rs` | 108 | 3 | anyhow, config | lib |
-| `remove.rs` | 94 | 1 | anyhow, config, db | lib |
-| `main.rs` | 93 | 0 | anyhow, nix, mimalloc, lib | bin |
-| `lock.rs` | 89 | 2 | anyhow, nix, tempfile | lib |
-| `help.rs` | 75 | 1 | — | lib |
-| `init.rs` | 59 | 1 | anyhow | install |
-| `lib.rs` | 453 | 3 | anyhow, config, db | bin |
+| `args.rs` | 166 | 0 | — | — |
+| `bootstrap.rs` | 115 | 3 | anyhow, tracing | masterdir |
+| `cache.rs` | 120 | 0 | anyhow, serde, serde_json, tempfile | metadata |
+| `challenge.rs` | 357 | 2 | anyhow, ruzstd, sha2, tar | — |
+| `command_line.rs` | 1055 | 4 | anyhow | args, config |
+| `conf.rs` | 284 | 4 | anyhow, tracing | config |
+| `conf_update.rs` | 245 | 1 | anyhow, tracing | config |
+| `config.rs` | 666 | 1 | ansiterm, anyhow, dirs, serde, tempfile, toml, tracing | args |
+| `db.rs` | 727 | 3 | anyhow, serde, serde_json, tempfile, tracing | — |
+| `elevate.rs` | 218 | 4 | anyhow, dirs | — |
+| `help.rs` | 75 | 1 | — | — |
+| `info.rs` | 158 | 1 | anyhow | cache, config, reposconf, vur_client |
+| `init.rs` | 59 | 1 | anyhow | — |
+| `install.rs` | 2334 | 3 | anyhow, sha2, tempfile, tracing | bootstrap, cache, config, db, metadata, reposconf, resolver, util, vur_client, xbps |
+| `journal.rs` | 143 | 4 | anyhow, tempfile | — |
+| `keys.rs` | 1118 | 21 | anyhow, base64, md5, sha2, tempfile, tracing | reposconf, util, vur_client |
+| `lib.rs` | 453 | 3 | ansiterm, anyhow, dirs, tracing | config, db |
+| `lock.rs` | 89 | 1 | anyhow, nix, tempfile | — |
+| `lockfile.rs` | 362 | 4 | anyhow, serde, tempfile, toml | config |
+| `logging.rs` | 191 | 5 | tempfile, tracing, tracing_appender, tracing_subscriber | — |
+| `main.rs` | 93 | 0 | anyhow, mimalloc, nix | — |
+| `masterdir.rs` | 596 | 8 | anyhow, dirs, nix, tempfile, tracing | xbps |
+| `metadata.rs` | 523 | 4 | anyhow, serde, serde_json, tar, tracing | — |
+| `overlay.rs` | 439 | 2 | anyhow, dirs, sha2, tempfile, tracing | — |
+| `portdb.rs` | 841 | 9 | anyhow, serde, serde_json, sha2, tempfile, tracing | — |
+| `preflight.rs` | 344 | 2 | nix | — |
+| `query.rs` | 108 | 3 | anyhow | config |
+| `rebuild.rs` | 363 | 5 | sha2 | config, db |
+| `remove.rs` | 94 | 1 | anyhow, tracing | config, db |
+| `repo.rs` | 509 | 1 | anyhow, tempfile, toml, tracing | command_line, config, keys, reposconf, util, vur_client |
+| `reposconf.rs` | 255 | 0 | anyhow, serde, tempfile, toml, tracing | — |
+| `resolver.rs` | 1687 | 2 | anyhow, petgraph, tracing | metadata |
+| `review.rs` | 173 | 3 | anyhow, tempfile | vur_client |
+| `search.rs` | 245 | 1 | anyhow, tracing | cache, config, reposconf, vur_client, xbps |
+| `sets.rs` | 410 | 5 | anyhow | config, db, soname |
+| `signal.rs` | 388 | 10 | indicatif, nix, tempfile, tracing | — |
+| `soname.rs` | 476 | 9 | — | — |
+| `template_audit.rs` | 349 | 3 | tar | — |
+| `upgrade.rs` | 715 | 2 | anyhow, diffy, tracing | cache, config, db, reposconf, template_audit, vur_client, xbps |
+| `use_reduce.rs` | 267 | 4 | tar | — |
+| `util.rs` | 164 | 5 | anyhow, tempfile | config |
+| `vup_index.rs` | 433 | 8 | anyhow, base64, serde, serde_json, tempfile, tracing | metadata |
+| `vur_client.rs` | 1702 | 1 | anyhow, base64, tar, tempfile, tracing | cache, metadata, reposconf |
+| `why.rs` | 158 | 2 | anyhow, tracing | cache, config, resolver |
+| `xbps.rs` | 1031 | 21 | anyhow, indicatif, nix, serde, tempfile, tracing | config |
 
-Total: 177 `pub fn`.
+Total: **45 módulos, 21298 LOC, 177 `pub fn`.**
 
 ## 2. Crates (Cargo.toml): 20, todos con call site
 
@@ -148,6 +157,7 @@ Cada archivo con ≥1 dominio; los 7 críticos con ≥2.
 | `src/xbps.rs` | A1, A2 | — |
 | `src/keys.rs` | A2, A3, A7 | — |
 | `src/vur_client.rs` | A1, A2, A3 | — |
+| `src/vup_index.rs` | A1, A3 | — |
 | `src/command_line.rs` | A1, A5 | — |
 | `src/config.rs` | A4, A5 | — |
 | `src/metadata.rs` | A1, A3 | — |
@@ -188,5 +198,10 @@ Cada archivo con ≥1 dominio; los 7 críticos con ≥2.
 | `scripts/**` | A6, A7 | — |
 | `README*.md`, `CHANGELOG.md`, `docs/**` | A7 | — |
 
-**Agujeros: ninguno.** 46/46 archivos de `src/` con dueño; los 7 críticos con
+**Agujeros: ninguno.** 45/45 archivos de `src/` con dueño; los 7 críticos con
 ≥2 dominios cada uno.
+
+> Corrección 2026-10-22: la primera versión de esta matriz listaba 44 filas
+> (`vup_index.rs` quedaba fuera → un agujero de cobertura) y la cabecera
+> declaraba "45 módulos" cuando son 45 ficheros. Ambas cosas se detectaron al
+> contrastar el mapa consigo mismo: dos listas que no se deacuerdan.
