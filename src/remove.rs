@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::db::InstalledDb;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub fn remove(config: &Config) -> Result<i32> {
     // P1-1: --lock no aplica a -R (no hay estado final que pineado tenga
@@ -62,9 +62,10 @@ pub fn remove(config: &Config) -> Result<i32> {
             }
         }
         if changed {
-            if let Err(e) = db.save() {
-                tracing::warn!("failed to update installed db: {e}");
-            }
+            // Falla ruidosamente: el aviso iba solo al log (invisible) y la
+            // DB quedaba con entradas de paquetes ya desinstalados.
+            db.save()
+                .context("no se pudo actualizar la DB de instalados")?;
         }
     }
 
