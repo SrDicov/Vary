@@ -482,7 +482,7 @@ mod tests {
 
         db.upsert(
             "hello-vur",
-            "1.0_1",
+            "hello-vur-1.0_1",
             "mi-repo",
             InstallType::Source,
             None,
@@ -490,7 +490,7 @@ mod tests {
         );
         db.upsert(
             "kernel-vur",
-            "6.12_1",
+            "kernel-vur-6.12_1",
             "void-repo",
             InstallType::Binary,
             None,
@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(reloaded.len(), 2);
 
         let hello = reloaded.get("hello-vur").unwrap();
-        assert_eq!(hello.version, "1.0_1");
+        assert_eq!(hello.version, "hello-vur-1.0_1");
         assert_eq!(hello.vur, "mi-repo");
         assert_eq!(hello.install_type, InstallType::Source);
         assert!(hello.build_date.is_some());
@@ -524,7 +524,7 @@ mod tests {
         let path = dir.path().join("installed.json");
         let legacy_json = r#"{
             "legacy-pkg": {
-                "version": "2.0_1",
+                "version": "legacy-pkg-2.0_1",
                 "vur": "custom",
                 "install_date": 1700000000,
                 "install_type": "source"
@@ -535,7 +535,7 @@ mod tests {
         let db = InstalledDb::load(&path).unwrap();
         assert_eq!(db.len(), 1);
         let entry = db.get("legacy-pkg").unwrap();
-        assert_eq!(entry.version, "2.0_1");
+        assert_eq!(entry.version, "legacy-pkg-2.0_1");
         assert_eq!(entry.build_date, Some(1700000000000));
     }
 
@@ -544,8 +544,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("installed.json");
         let mut db = InstalledDb::load(&path).unwrap();
-        db.upsert("pkg-a", "1.0", "r", InstallType::Source, None, None);
-        db.upsert("pkg-b", "1.0", "r", InstallType::Binary, None, None);
+        db.upsert("pkg-a", "pkg-a-1.0_1", "r", InstallType::Source, None, None);
+        db.upsert("pkg-b", "pkg-b-1.0_1", "r", InstallType::Binary, None, None);
         assert_eq!(db.len(), 2);
 
         assert!(db.remove("pkg-a"));
@@ -599,7 +599,7 @@ mod tests {
         let mut db = InstalledDb::load(&path).unwrap();
         db.upsert(
             "pin-pkg",
-            "2.0_1",
+            "pin-pkg-2.0_1",
             "mi-repo",
             InstallType::Source,
             Some("abc123def456".to_string()),
@@ -643,7 +643,7 @@ mod tests {
             "schema_version": 2,
             "packages": {
                 "v2-pkg": {
-                    "version": "3.1_2",
+                    "version": "v2-pkg-3.1_2",
                     "vur": "repo-x",
                     "install_date": 1700000001,
                     "build_date": 1700000001000,
@@ -656,7 +656,7 @@ mod tests {
         let db = InstalledDb::load(&path).unwrap();
         assert_eq!(db.len(), 1);
         let entry = db.get("v2-pkg").unwrap();
-        assert_eq!(entry.version, "3.1_2");
+        assert_eq!(entry.version, "v2-pkg-3.1_2");
         assert_eq!(entry.vur, "repo-x");
         assert_eq!(entry.install_date, 1700000001);
         assert_eq!(entry.build_date, Some(1700000001000));
