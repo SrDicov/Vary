@@ -490,11 +490,27 @@ pub fn virtuals(checkout: &Path) -> BTreeMap<String, String> {
 }
 
 /// Carga el índice del caché (JSON). Si no existe, índice vacío.
+///
+/// Un índice corrupto NO es un error fatal: se preserva una copia
+/// `.corrupt.<epoch>` y se arranca vacío, igual que la DB de instalados
+/// (`db.rs`). Antes, el `Err` se propagaba y el fichero corrupto impedía
+/// reindexar para siempre: el índice quedaba inservible sin mano.
 pub fn load(path: impl Into<PathBuf>) -> Result<PortDb> {
     let path = path.into();
     match std::fs::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text)
-            .with_context(|| format!("índice de fuentes corrupto: {}", path.display())),
+        Ok(text) => match serde_json::from_str(&text) {
+            Ok(db) => Ok(db),
+            Err(err) => {
+                tracing::warn!(
+                    "{} corrupto ({err}), preservando respaldo antes de iniciar vacío",
+                    path.display()
+                );
+                let corrupt_bak =
+                    path.with_extension(format!("corrupt.{}", crate::db::now_epoch_secs()));
+                let _ = std::fs::copy(&path, &corrupt_bak);
+                Ok(PortDb::default())
+            }
+        },
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(PortDb::default()),
         Err(err) => Err(err).with_context(|| format!("leyendo {}", path.display())),
     }
@@ -837,5 +853,23 @@ mod tests {
         let back = load(&path).unwrap();
         assert_eq!(back.entries.len(), db.entries.len());
         assert_eq!(back.get("pkg2").unwrap().version, "1.0");
+    }
+
+    /// Índice corrupto: se preserva respaldo y se arranca vacío (así el
+    /// siguiente sync reindexa). Antes el Err impedía reindexar para siempre.
+    #[test]
+    fn indice_corrupto_preserva_respaldo_y_arranca_vacio() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("portdb.json");
+        std::fs::write(&path, "not valid json {{{").unwrap();
+
+        let db = load(&path).unwrap();
+        assert!(db.entries.is_empty());
+
+        let entries: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(entries.iter().any(|name| name.contains("corrupt")));
     }
 }

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn now_epoch_secs() -> u64 {
+pub(crate) fn now_epoch_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -643,6 +643,30 @@ mod tests {
         assert_eq!(entry.install_type, InstallType::Binary);
         assert_eq!(entry.repo_commit, None);
         assert_eq!(entry.artifact_sha256, None);
+    }
+
+    /// Un `installed.json` escrito por una versión FUTURA no se reinterpreta
+    /// con la semántica v3: se preserva respaldo y se arranca vacío (si no,
+    /// el binario viejo degradaría el fichero al guardarlo).
+    #[test]
+    fn schema_futuro_preserva_respaldo_y_no_se_reinterpreta() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.json");
+        let futuro = format!(
+            r#"{{"schema_version": {}, "packages": {{"futuro-pkg": {{"version": "9.9_1"}}}}}}"#,
+            CURRENT_SCHEMA_VERSION + 1
+        );
+        std::fs::write(&path, futuro).unwrap();
+
+        let db = InstalledDb::load(&path).unwrap();
+        assert_eq!(db.len(), 0);
+        assert!(db.get("futuro-pkg").is_none());
+
+        let entries: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(entries.iter().any(|name| name.contains("corrupt")));
     }
 
     fn pinned_entry() -> Entry {
