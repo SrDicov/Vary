@@ -94,6 +94,14 @@ Notes: the audit only considers packages **built by vary** (official binaries ar
 
 Package upgrades can leave `<file>.new-<pkgver>` files side by side with your current `/etc` configs (e.g. `/etc/passwd.new-0.146_2`). `vary --conf-update` walks `/etc` recursively (without following symlinks) and, for each candidate with a non-empty `.new-<suffix>`, shows `git diff --no-index` of the original against the new file and asks: `[r]eemplazar [k]eep [d]iff [q]uit` (Enter keeps, `d` re-diffs, `q` quits). Replacing makes a `<original>.vary-bak.<pid>` backup before moving the `.new-` file over the original, always through configurable privilege elevation (never direct writes as non-root). Notes: writes never happen without a TTY — with `--noconfirm` or without a TTY it only lists `new -> original` pairs and exits 0; it is an independent command (rejects `-S`/`-R`, targets and `--repo`); it never touches `.so`/library files (those are handled by `@preserved-rebuild`, above); take it as the prompt you get, and review diffs before pressing `r`.
 
+### Source index, virtuals and conditional dependencies
+
+`-Sy` now also updates the void-packages checkout (it used to stay frozen at the clone's commit) and refreshes the local source index (`~/.cache/vary/portdb.json`): package versions, build options and the `SONAME -> provider` map from `common/shlibs`. The refresh is incremental — only the templates touched by the new commit are re-read — and a change in `common/build-style`/`common/build-helper` triggers a full reindex (every entry depends on them). Templates whose version is computed by shell cannot be parsed statically: they are marked as such and resolved with `xbps-src show` when needed.
+
+Virtual packages are resolved through `etc/defaults.virtual` plus the local `etc/virtual` override, so `vary -S ntp-daemon` installs the real package that provides it.
+
+Dependencies conditioned on build options (`$(vopt_if ...)` in the templates) are reduced with your active options before the dependency graph is built, so they never enter it as bogus package names (`$(vopt_if`).
+
 ## Configuration
 
 User configuration lives in `~/.config/vary/vary.conf` (optional; full example in [`etc/vary.conf.example`](./etc/vary.conf.example)):

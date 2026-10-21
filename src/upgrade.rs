@@ -103,6 +103,32 @@ fn add_official_source_upgrades(
     }
 }
 
+/// ITEM 4: paquetes instalados desde fuente que requieren un SONAME cuyo
+/// proveedor cambió en el árbol de fuentes (`common/shlibs`).
+///
+/// Se calcula ANTES del merge (`xbps-install -u`): los consumidores entran en
+/// el plan de recompilación de la MISMA transacción (E14). Sin índice de
+/// fuentes no hay señal (no se inventa).
+fn soname_bump_consumers(config: &Config, db: &InstalledDb) -> Vec<(String, Vec<String>)> {
+    let Ok(index) = crate::portdb::load(config.cache_dir.join("portdb.json")) else {
+        return Vec::new();
+    };
+    if index.shlibs.is_empty() {
+        return Vec::new();
+    }
+    let mut pins_by_pkg = std::collections::BTreeMap::new();
+    for (name, entry) in db.entries_snapshot() {
+        if entry.install_type != InstallType::Source {
+            continue;
+        }
+        let Some(pins) = entry.soname_pins.as_ref().filter(|p| !p.is_empty()) else {
+            continue;
+        };
+        pins_by_pkg.insert(name, pins.clone());
+    }
+    crate::soname::bump_consumers(&pins_by_pkg, &index.shlibs)
+}
+
 /// Diff de template pendiente de revisión en un upgrade (A3).
 struct TemplateDiff {
     pkg: String,
@@ -273,6 +299,15 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         }
     }
 
+    // ITEM 4 (E14): los consumidores de un bump de SONAME se detectan ANTES
+    // del merge: entran en el plan de recompilación de esta misma
+    // transacción (si se detectaran después, el binario oficial ya habría
+    // pisado el paquete fuente).
+    let bump_consumers = {
+        let db = InstalledDb::load(config.installed_db_path())?;
+        soname_bump_consumers(config, &db)
+    };
+
     // Phase 1: official upgrade
     println!(":: Upgrading official packages...");
     let mut extra = vec!["-u".to_string()];
@@ -428,6 +463,14 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
                 println!("  {} {} -> {}", name, entry.version, cur);
                 outdated.push(name.clone());
             }
+        }
+    }
+
+    // ITEM 4: los consumidores de un bump de SONAME se recompilan (E14).
+    for (name, sonames) in &bump_consumers {
+        if !outdated.contains(name) {
+            println!("  {name} (soname con bump: {})", sonames.join(", "));
+            outdated.push(name.clone());
         }
     }
 

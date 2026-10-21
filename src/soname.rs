@@ -17,6 +17,84 @@ use std::collections::{BTreeMap, BTreeSet};
 /// (p. ej. `"libcurl.so.4" → "libcurl-8.22.0_1"`).
 pub type SonamePins = BTreeMap<String, String>;
 
+/// ITEM 4: un SONAME cuyo proveedor cambió en el ÁRBOL DE FUENTES
+/// (`common/shlibs`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SonameBump {
+    pub shlib: String,
+    /// Proveedor pineado al instalar (`pkg-ver_rev`).
+    pub from: String,
+    /// Proveedor que exige ahora el árbol de fuentes.
+    pub to: String,
+}
+
+/// (nombre del proveedor, versión, revisión) de un `pkgver` de xbps.
+fn provider_parts(pkgver: &str) -> Option<(&str, &str, u32)> {
+    let (name, rest) = pkgver.rsplit_once('-')?;
+    let (ver, rev) = rest.rsplit_once('_')?;
+    Some((name, ver, rev.parse().ok()?))
+}
+
+/// SONAMEs con proveedor distinto en el árbol de fuentes (`common/shlibs`).
+///
+/// Puro: `pinned` = baseline por paquete, `shlibs` = mapa SONAME→proveedor
+/// del árbol. Sin dato (el árbol no trackea ese SONAME, o formatos
+/// inesperados) NO hay señal: no se inventan bumps.
+pub fn source_tree_bumps(
+    pinned: &SonamePins,
+    shlibs: &BTreeMap<String, String>,
+) -> Vec<SonameBump> {
+    let mut out = Vec::new();
+    for (shlib, from) in pinned {
+        let Some(to) = shlibs.get(shlib) else {
+            continue;
+        };
+        if to == from {
+            continue;
+        }
+        let bumped = match (provider_parts(from), provider_parts(to)) {
+            // El SONAME cambió de proveedor -> bump claro.
+            (Some((n1, _, _)), Some((n2, _, _))) if n1 != n2 => true,
+            // Mismo proveedor: bump solo si el árbol exige una versión MAYOR.
+            (Some((_, v1, r1)), Some((_, v2, r2))) => {
+                crate::resolver::cmp_pkgver(v2, r2, v1, r1) == std::cmp::Ordering::Greater
+            }
+            _ => false,
+        };
+        if bumped {
+            out.push(SonameBump {
+                shlib: shlib.clone(),
+                from: from.clone(),
+                to: to.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// Paquetes (con sus SONAMEs afectados) que requieren un SONAME con bump.
+///
+/// `pins_by_pkg` = pins por paquete instalado; `shlibs` = mapa SONAME→proveedor
+/// del árbol de fuentes. El bump se evalúa POR PAQUETE (cada uno tiene su
+/// baseline): un paquete pineado con una versión más nueva que la del árbol no
+/// está afectado. Puro.
+pub fn bump_consumers(
+    pins_by_pkg: &BTreeMap<String, SonamePins>,
+    shlibs: &BTreeMap<String, String>,
+) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for (pkg, pins) in pins_by_pkg {
+        let affected: Vec<String> = source_tree_bumps(pins, shlibs)
+            .into_iter()
+            .map(|b| b.shlib)
+            .collect();
+        if !affected.is_empty() {
+            out.push((pkg.clone(), affected));
+        }
+    }
+    out
+}
+
 /// Drift detectado entre baseline pineada y estado actual.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SonameDrift {
@@ -163,6 +241,73 @@ pub fn check_db_entry(pkg: &str, pinned: &SonamePins) -> Vec<SonameDrift> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn shlibs(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// ITEM 4: bump de SONAME en el árbol de fuentes (ejemplo real: poppler).
+    #[test]
+    fn source_tree_bumps_detecta_proveedor_mayor() {
+        let pinned = SonamePins::from([(
+            "libpoppler.so.145".to_string(),
+            "poppler-24.08.0_1".to_string(),
+        )]);
+        let tree = shlibs(&[("libpoppler.so.145", "poppler-25.02.0_1")]);
+        let bumps = source_tree_bumps(&pinned, &tree);
+        assert_eq!(bumps.len(), 1);
+        assert_eq!(bumps[0].shlib, "libpoppler.so.145");
+        assert_eq!(bumps[0].from, "poppler-24.08.0_1");
+        assert_eq!(bumps[0].to, "poppler-25.02.0_1");
+    }
+
+    /// Sin señal si el árbol no trackea el SONAME o la versión no es mayor.
+    #[test]
+    fn source_tree_bumps_sin_datos_no_inventa() {
+        let pinned = SonamePins::from([("libfoo.so.1".to_string(), "foo-1.0_1".to_string())]);
+        assert!(source_tree_bumps(&pinned, &BTreeMap::new()).is_empty());
+        // El árbol exige una versión MENOR: el instalado es más nuevo.
+        let tree = shlibs(&[("libfoo.so.1", "foo-0.9_1")]);
+        assert!(source_tree_bumps(&pinned, &tree).is_empty());
+        // Igual: sin bump.
+        let tree = shlibs(&[("libfoo.so.1", "foo-1.0_1")]);
+        assert!(source_tree_bumps(&pinned, &tree).is_empty());
+    }
+
+    /// El SONAME que cambia de proveedor es un bump claro.
+    #[test]
+    fn source_tree_bumps_cambio_de_proveedor() {
+        let pinned = SonamePins::from([("libx.so.1".to_string(), "old-1.0_1".to_string())]);
+        let tree = shlibs(&[("libx.so.1", "new-2.0_1")]);
+        let bumps = source_tree_bumps(&pinned, &tree);
+        assert_eq!(bumps.len(), 1);
+    }
+
+    /// Consumidores: los paquetes fuente que requieren el SONAME con bump.
+    #[test]
+    fn bump_consumers_lista_los_afectados() {
+        let pins_by_pkg = BTreeMap::from([
+            (
+                "app".to_string(),
+                SonamePins::from([(
+                    "libpoppler.so.145".to_string(),
+                    "poppler-24.08.0_1".to_string(),
+                )]),
+            ),
+            (
+                "otro".to_string(),
+                SonamePins::from([("libz.so.1".to_string(), "z-1.0_1".to_string())]),
+            ),
+        ]);
+        let tree = shlibs(&[("libpoppler.so.145", "poppler-25.02.0_1")]);
+        let consumers = bump_consumers(&pins_by_pkg, &tree);
+        assert_eq!(consumers.len(), 1);
+        assert_eq!(consumers[0].0, "app");
+        assert_eq!(consumers[0].1, vec!["libpoppler.so.145".to_string()]);
+    }
 
     /// Query falsa con claves propias (evita E0700 en el `impl Fn`).
     fn fake(table: BTreeMap<(String, String), Vec<String>>) -> impl Fn(&str, &str) -> Vec<String> {
