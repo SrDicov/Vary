@@ -588,6 +588,7 @@ mod tests {
     fn template_no_literal_marca_needs_dynamic() {
         let tmp = tempfile::tempdir().unwrap();
         fixture(tmp.path());
+        std::fs::create_dir_all(tmp.path().join("srcpkgs/dyn")).unwrap();
         std::fs::write(
             tmp.path().join("srcpkgs/dyn/template"),
             "pkgname=dyn\nversion=$(date +%s)\nrevision=1\n",
