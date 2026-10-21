@@ -4,6 +4,16 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **`--conf-update`:** resuelve los ficheros `<fichero>.new-<pkgver>` que xbps
+  deja en `/etc` tras una actualización: escaneo recursivo (sin symlinks),
+  `git diff --no-index` por fichero con TTY y pregunta
+  `[r]eemplazar [k]eep [d]iff [q]uit`; al reemplazar deja backup
+  `<original>.vary-bak.<pid>` con `cp -p` antes del `mv`, siempre vía
+  `elevate` (sudo/doas/run0). Sin TTY o con `--noconfirm` solo lista
+  `nuevo -> original` y sale 0 (no escribe nada). Con TTY es el momento de
+  revisar y decidir por fichero; `q` corta. Comando independiente: no se
+  combina con `-S`/`-R`, targets ni `--repo`; no toca ficheros `.so`
+  (esos los cubre `@preserved-rebuild`). Detalles en README.
 - **Fix parseo de `xbps-src show`:** el formato real emite
   `version:\tX`/`revision:\tY`; el parser solo aceptaba `version=`/
   `revision=`, así que los builds oficiales forzados y los upgrades

@@ -141,6 +141,8 @@ pub struct Config {
     pub prefer_binary: bool,
     /// P1-2: habilita funciones en validación (`challenge`).
     pub experimental: bool,
+    /// `vary --conf-update`: resuelve los `.new-*` de /etc.
+    pub conf_update: bool,
     /// T-010: orden explícito entre candidatos multi-repo (los flags
     /// --prefer-binary/--force-build/--no-prefer-binary lo fijan al
     /// parsear; default Legacy = precedencia histórica).
@@ -340,6 +342,7 @@ impl Config {
             deep_build: false,
             prefer_binary: true,
             experimental: false,
+            conf_update: false,
             candidate_order: crate::resolver::CandidateOrder::Legacy,
         }
     }

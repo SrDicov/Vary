@@ -462,6 +462,12 @@ impl Config {
                     value: None,
                 });
             }
+
+            Arg::Long("conf-update") => {
+                // `vary --conf-update`: resuelve los `.new-*` de /etc.
+                // Flag propio de vary (no pacman): solo campo.
+                self.conf_update = true;
+            }
             Arg::Long("print-format") => {
                 // Solo se soporta el formato estable de texto; cualquier otro
                 // valor miente sobre la salida y se rechaza (precedente H-007).

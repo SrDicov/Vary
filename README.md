@@ -77,6 +77,10 @@ Notes: only source-built packages (the DB carries no pins for binary installs), 
 
 `--deep` (alias `--deep-build`) passes `-N` to xbps-src: it builds without remote repositories, compiling missing dependencies from source while reusing the local repo (`hostdir/binpkgs`) for what was already built. It can fail if any dependency's source or distfile is not available; CLI flag only (no `vary.conf` option).
 
+## Config file conflicts (`--conf-update`)
+
+Package upgrades can leave `<file>.new-<pkgver>` files side by side with your current `/etc` configs (e.g. `/etc/passwd.new-0.146_2`). `vary --conf-update` walks `/etc` recursively (without following symlinks) and, for each candidate with a non-empty `.new-<suffix>`, shows `git diff --no-index` of the original against the new file and asks: `[r]eemplazar [k]eep [d]iff [q]uit` (Enter keeps, `d` re-diffs, `q` quits). Replacing makes a `<original>.vary-bak.<pid>` backup before moving the `.new-` file over the original, always through configurable privilege elevation (never direct writes as non-root). Notes: writes never happen without a TTY — with `--noconfirm` or without a TTY it only lists `new -> original` pairs and exits 0; it is an independent command (rejects `-S`/`-R`, targets and `--repo`); it never touches `.so`/library files (those are handled by `@preserved-rebuild`, above); take it as the prompt you get, and review diffs before pressing `r`.
+
 ## Configuration
 
 User configuration lives in `~/.config/vary/vary.conf` (optional; full example in [`etc/vary.conf.example`](./etc/vary.conf.example)):

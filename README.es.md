@@ -77,6 +77,10 @@ Notas: solo aplica a compilados por vary (la DB no guarda pins de installs binar
 
 `--deep` (alias `--deep-build`) pasa `-N` a xbps-src: construye sin repos remotos, compilando desde fuente las dependencias que falten y reutilizando el repo local (`hostdir/binpkgs`) para lo ya compilado. Puede fallar si falta la fuente o el distfile de alguna dependencia; flag solo de CLI (no existe opción en `vary.conf`).
 
+## Conflictos de ficheros de configuración (`--conf-update`)
+
+Las actualizaciones de paquetes pueden dejar `<fichero>.new-<pkgver>` junto a tu configuración actual de `/etc` (p. ej. `/etc/passwd.new-0.146_2`). `vary --conf-update` recorre `/etc` recursivamente (sin seguir symlinks) y, por cada candidato con sufijo `.new-` no vacío, muestra un `git diff --no-index` entre el original y el nuevo y pregunta `[r]eemplazar [k]eep [d]iff [q]uit` (Enter conserva, `d` re-muestra el diff, `q` corta). Al reemplazar hace un backup `<original>.vary-bak.<pid>` antes de mover el `.new-` sobre el original, siempre vía la herramienta de elevación configurada (nunca escrituras directas como no-root). Notas: sin TTY no se escribe nada — con `--noconfirm` o sin terminal solo lista pares `nuevo -> original` y sale 0; es un comando independiente (rechaza `-S`/`-R`, targets y `--repo`); nunca toca ficheros `.so`/de librerías (esos los cubre `@preserved-rebuild`, arriba); revísalo como prompt que es, y mira los diffs antes de pulsar `r`.
+
 ## Configuración
 
 Configuración de usuario en `~/.config/vary/vary.conf` (opcional; ejemplo completo en [`etc/vary.conf.example`](./etc/vary.conf.example)):

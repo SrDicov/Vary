@@ -4,6 +4,7 @@ mod cache;
 mod challenge;
 mod command_line;
 mod conf;
+mod conf_update;
 mod config;
 mod db;
 mod elevate;
@@ -186,6 +187,10 @@ pub fn restore_terminal() {
 /// H-027: el lock global solo protege operaciones que mutan estado compartido.
 /// Búsqueda, info, listado de repos, ayuda y versión corren sin lock.
 fn needs_lock(config: &Config) -> bool {
+    // --conf-update puede escribir en /etc: lock global siempre.
+    if config.conf_update {
+        return true;
+    }
     if let Some(cmd) = command_line::peek_repo_cmd() {
         return !matches!(cmd, command_line::RepoCmd::List);
     }
@@ -210,6 +215,17 @@ fn needs_lock(config: &Config) -> bool {
 }
 
 fn handle_cmd(config: &mut Config) -> Result<i32> {
+    // `vary --conf-update` es independiente: rechaza -S/-R, targets y --repo.
+    if config.conf_update {
+        if command_line::peek_repo_cmd().is_some() {
+            bail!("--conf-update es independiente: no se combina con --repo");
+        }
+        if config.op != Op::Default || !config.targets.is_empty() {
+            bail!("--conf-update es independiente: no se combina con -S/-R ni targets");
+        }
+        return crate::conf_update::run(config);
+    }
+
     // Manejo de subcomando --repo
     if let Some(cmd) = command_line::take_repo_cmd() {
         return repo::handle_repo_cmd(config, cmd);
@@ -363,6 +379,7 @@ mod tests {
             (vec!["-S", "foo"], true),
             (vec!["-Syu"], true),
             (vec!["-R", "foo"], true),
+            (vec!["--conf-update"], true),
             (vec![], true),
         ] {
             let mut config = Config::new().expect("config de test");

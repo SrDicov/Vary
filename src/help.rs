@@ -35,6 +35,7 @@ pub fn help() {
     );
     println!("    vary --why <pkg>            Explain what pulls a package");
     println!("    vary --log [pkg]            Show operation history");
+    println!("    --conf-update           Resolve .new-* config files left in /etc (asks per file; --noconfirm or non-TTY only lists)");
     println!();
     println!("Vary options:");
     println!("    --force-build           Force build from source even if binary exists");
