@@ -42,6 +42,8 @@ pub fn help() {
     println!("    --deep-build (--deep)   Pass -N to xbps-src (no remote repos: dependencies are built from source; may fail if a source/distfile is missing)");
     println!("    --prefer-binary         Prefer binary repos when available (default)");
     println!("    --no-prefer-binary      Always build from source");
+    println!("    --newoptions            Rebuild source packages whose options, user patches or template changed");
+    println!("    --changed-flags (-U)    Rebuild source packages compiled with different CFLAGS/options");
     println!("    --sudo <bin>            privilege escalation tool: sudo, doas or run0 (default: auto-detected; unused as root)");
     println!("    --sudoflags <flags>     replace vary.conf flags for the elevation tool");
     println!("    --git <bin>             git binary to use");

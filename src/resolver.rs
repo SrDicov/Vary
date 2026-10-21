@@ -168,6 +168,10 @@ pub struct ResolveOptions {
     /// paquete oficial que matchee se compila desde fuente (nodo
     /// `Action::BuildOfficial`) a menos que exista candidato VUR source.
     pub source_always: Vec<String>,
+    /// ITEM 1: paquetes que la auditoría marcó para recompilar (opciones,
+    /// banderas, parches o template cambiados) con su motivo. Se comportan
+    /// como `source_always`: se compilan desde fuente.
+    pub rebuild_reasons: std::collections::BTreeMap<String, crate::rebuild::RebuildReason>,
 }
 
 impl Default for ResolveOptions {
@@ -177,6 +181,7 @@ impl Default for ResolveOptions {
             force_build: false,
             order: CandidateOrder::Legacy,
             source_always: Vec::new(),
+            rebuild_reasons: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -264,6 +269,12 @@ impl<'a> Ctx<'a> {
             .any(|p| crate::config::matches_glob(p, name))
     }
 
+    /// ITEM 1: la auditoría de discrepancias marcó este paquete para
+    /// recompilar (opciones/banderas/parches/template cambiados).
+    fn needs_rebuild(&self, name: &str) -> bool {
+        self.opts.rebuild_reasons.contains_key(name)
+    }
+
     /// Puntos 1b y 5: candidato VUR por nombre y, si falla o es descartado
     /// Nodo hoja para un paquete oficial. `VurInfo` es aquí un placeholder
     /// mínimo (los oficiales no tienen template VUR); solo importa el nombre.
@@ -340,9 +351,17 @@ impl<'a> Ctx<'a> {
         // candidato, se compila él mismo desde fuente (BuildOfficial, hoja).
         // Punto 1a: oficial -> Install(Official), NODO HOJA (sin recursión).
         let source_always = self.source_always_matches(name);
+        // ITEM 1: la auditoría puede marcar el paquete para recompilarlo
+        // (opciones/banderas/parches/template cambiados) aunque el usuario no
+        // lo pida explícitamente: se comporta como `source_always`.
+        let forced_source = source_always || self.needs_rebuild(name);
+        if let Some(reason) = self.opts.rebuild_reasons.get(name) {
+            self.warnings
+                .push(format!("rebuild de '{name}': {}", reason.as_str()));
+        }
         if self.source.official_exists(name)
             && !matches!(self.opts.order, CandidateOrder::PreferSource)
-            && !source_always
+            && !forced_source
         {
             let item =
                 Self::official_item(name, &self.arch, Action::Install(BinarySource::Official));
@@ -403,7 +422,7 @@ impl<'a> Ctx<'a> {
             // Sin ninguno de los dos, el flag no puede actuar -> AVISAR
             // (nunca callar) y seguir con el binario official.
             if self.source.official_exists(name) {
-                if matches!(self.opts.order, CandidateOrder::PreferSource) || source_always {
+                if matches!(self.opts.order, CandidateOrder::PreferSource) || forced_source {
                     // Guardia de template: compilar un oficial sin template
                     // en void-packages/srcpkgs/<pkg> es imposible
                     // (xbps-src pkg fallaría). Avisar y degradar al binario
@@ -444,7 +463,10 @@ impl<'a> Ctx<'a> {
     /// `source_always` sobre el nombre pedido o el pkgname real (lo pedido
     /// puede ser virtual).
     fn force_source(&self, name: &str, info: &VurInfo) -> bool {
-        self.source_always_matches(name) || self.source_always_matches(&info.pkgname)
+        self.source_always_matches(name)
+            || self.source_always_matches(&info.pkgname)
+            || self.needs_rebuild(name)
+            || self.needs_rebuild(&info.pkgname)
     }
 
     /// T-010: clase de un candidato (0 = preferido por el orden efectivo).
@@ -1078,6 +1100,7 @@ mod tests {
             force_build,
             order,
             source_always: Vec::new(),
+            rebuild_reasons: Default::default(),
         }
     }
 
@@ -1086,6 +1109,7 @@ mod tests {
     fn opts_con_source_always(pats: &[&str]) -> ResolveOptions {
         ResolveOptions {
             source_always: strs(pats),
+            rebuild_reasons: Default::default(),
             ..ResolveOptions::default()
         }
     }
@@ -1122,6 +1146,7 @@ mod tests {
         // Preferencia de fuente con match: mismo resultado (hoja oficial).
         let opts = ResolveOptions {
             source_always: strs(&["linux*"]),
+            rebuild_reasons: Default::default(),
             ..opts_con_orden(true, true, CandidateOrder::PreferSource)
         };
         let plan = resolve(&targets(&["linux"]), &src, &opts).unwrap();
@@ -1147,6 +1172,52 @@ mod tests {
         assert_eq!(build_names(&plan), vec!["tool"]);
         assert_eq!(plan.builds[0].action, Action::Build);
         assert_ne!(plan.builds[0].action, Action::BuildOfficial);
+    }
+
+    /// ITEM 1: la auditoría marca un paquete -> se compila desde fuente
+    /// (BuildOfficial) aunque el usuario no lo pida, y el plan explica por qué.
+    #[test]
+    fn rebuild_por_auditoria_convierte_oficial_en_build_oficial() {
+        let src = MockSource {
+            official: ["linux"].into(),
+            ..MockSource::default()
+        };
+        let opts = ResolveOptions {
+            rebuild_reasons: [(
+                "linux".to_string(),
+                crate::rebuild::RebuildReason::FlagsChanged,
+            )]
+            .into_iter()
+            .collect(),
+            ..opts_con_orden(true, false, CandidateOrder::PreferBinary)
+        };
+        let plan = resolve(&targets(&["linux"]), &src, &opts).unwrap();
+        assert!(plan.installs.is_empty());
+        assert_eq!(build_names(&plan), vec!["linux"]);
+        assert_eq!(plan.builds[0].action, Action::BuildOfficial);
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|w| w.contains("rebuild de 'linux'")),
+            "{:?}",
+            plan.warnings
+        );
+    }
+
+    /// Sin razón de rebuild, el oficial sigue siendo binario (no hay ruido).
+    #[test]
+    fn sin_razon_de_rebuild_el_oficial_sigue_siendo_binario() {
+        let src = MockSource {
+            official: ["linux"].into(),
+            ..MockSource::default()
+        };
+        let opts = opts_con_orden(true, false, CandidateOrder::PreferBinary);
+        let plan = resolve(&targets(&["linux"]), &src, &opts).unwrap();
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(
+            plan.installs[0].action,
+            Action::Install(BinarySource::Official)
+        );
     }
 
     /// Patrón `?` funciona; un `*` vacío también matchea el sufijo.

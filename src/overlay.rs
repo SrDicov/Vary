@@ -7,8 +7,47 @@
 //! (éxito, error o Drop temprano): best-effort, nunca paniquea.
 
 use anyhow::{bail, Context, Result};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// Hashes de los ficheros de usuario de `pkg` (`patches/<pkg>` + `files/<pkg>`),
+/// ordenados por nombre. Es la señal que ITEM 1 compara contra la DB: si el
+/// usuario toca sus parches o su config, el paquete compilado queda obsoleto.
+///
+/// Mismo criterio que el overlay: symlinks y directorios no se copian → no
+/// cuentan. Un fichero ilegible se salta (best-effort).
+pub fn user_file_hashes(config_dir: &Path, pkg: &str) -> Vec<String> {
+    let mut items: Vec<(String, String)> = Vec::new();
+    for kind in ["patches", "files"] {
+        let dir = config_dir.join(kind).join(pkg);
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(meta) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if !meta.is_file() {
+                continue;
+            }
+            let Ok(bytes) = fs::read(&path) else {
+                continue;
+            };
+            let name = entry.file_name().to_string_lossy().into_owned();
+            items.push((
+                format!("{kind}/{name}"),
+                format!("sha256:{:x}", Sha256::digest(bytes)),
+            ));
+        }
+    }
+    items.sort();
+    items
+        .into_iter()
+        .map(|(label, hash)| format!("{label} {hash}"))
+        .collect()
+}
 
 /// Una mutación reversible sobre srcpkgs. Se deshace en orden inverso.
 enum Action {

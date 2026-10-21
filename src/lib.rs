@@ -16,6 +16,7 @@ mod logging;
 mod masterdir;
 mod metadata;
 mod preflight;
+mod rebuild;
 mod remove;
 mod repo;
 mod reposconf;

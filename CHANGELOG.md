@@ -4,6 +4,15 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **Auditoría de rebuild (`--newoptions`, `--changed-flags -U`):** vary graba con
+  qué se compiló cada paquete instalado desde fuente (opciones activas,
+  banderas, hashes de los parches/ficheros de usuario y hash del template) y
+  detecta cuándo quedó obsoleto aunque el `pkgver` no se mueva:
+  `--newoptions` recompila por opciones/parches/template cambiados,
+  `--changed-flags` por banderas distintas. Sin baseline (paquetes
+  anteriores a esta función) no hay señal: no se inventan rebuilds. Los
+  binarios oficiales nunca se recompilan por esto. Sin short para
+  `--newoptions`: `-N` ya significa "sin repos remotos" en xbps-src.
 - **Fix `XBPS_PKG_OPTIONS`:** xbps-src separa la lista de opciones por
   **comas** (`IFS=','` en `set_build_options`), pero vary la emitía con
   espacios: el token entero no matcheaba ninguna opción y todas las que no

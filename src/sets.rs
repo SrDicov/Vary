@@ -328,6 +328,12 @@ mod tests {
             repo_commit: None,
             artifact_sha256: None,
             soname_pins: pins,
+            active_options: None,
+            cflags: None,
+            cxxflags: None,
+            ldflags: None,
+            patches_sha256: None,
+            template_sha256: None,
         }
     }
 

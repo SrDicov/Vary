@@ -25,6 +25,21 @@ pub enum InstallType {
     Binary,
 }
 
+/// ITEM 1: hechos de compilación que se registran por paquete instalado
+/// desde fuente (opciones, banderas, parches de usuario, template).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BuildFacts {
+    /// Opciones activas (sin `~`), ordenadas.
+    pub active_options: Vec<String>,
+    pub cflags: String,
+    pub cxxflags: String,
+    pub ldflags: String,
+    /// Hashes de los ficheros de usuario aplicados.
+    pub patches_sha256: Vec<String>,
+    /// Hash del template usado.
+    pub template_sha256: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Entry {
     pub version: String,
@@ -48,6 +63,23 @@ pub struct Entry {
     /// o si la captura falló (sin baseline no hay aviso, sin ruido).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub soname_pins: Option<BTreeMap<String, String>>,
+    /// ITEM 1: opciones de build ACTIVAS con las que se compiló
+    /// (sin `~`). Ausente = sin baseline → la auditoría no propone rebuild.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_options: Option<Vec<String>>,
+    /// ITEM 1: banderas con las que se compiló.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cflags: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cxxflags: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ldflags: Option<String>,
+    /// ITEM 1: hashes de los parches/archivos de usuario aplicados.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patches_sha256: Option<Vec<String>>,
+    /// ITEM 1: hash del template con el que se compiló.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_sha256: Option<String>,
 }
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
@@ -195,8 +227,29 @@ impl InstalledDb {
                 repo_commit,
                 artifact_sha256,
                 soname_pins: None,
+                active_options: None,
+                cflags: None,
+                cxxflags: None,
+                ldflags: None,
+                patches_sha256: None,
+                template_sha256: None,
             },
         );
+    }
+
+    /// ITEM 1: registra el estado real de compilación (opciones, banderas,
+    /// parches de usuario, template). Best-effort: si el paquete no está
+    /// en la DB, no se inventa nada.
+    pub fn set_build_facts(&mut self, name: &str, facts: &BuildFacts) {
+        let Some(entry) = self.entries.get_mut(name) else {
+            return;
+        };
+        entry.active_options = Some(facts.active_options.clone());
+        entry.cflags = Some(facts.cflags.clone());
+        entry.cxxflags = Some(facts.cxxflags.clone());
+        entry.ldflags = Some(facts.ldflags.clone());
+        entry.patches_sha256 = Some(facts.patches_sha256.clone());
+        entry.template_sha256 = facts.template_sha256.clone();
     }
 
     #[allow(dead_code)]
@@ -340,6 +393,13 @@ pub fn decode_bincode_entry(data: &[u8]) -> Option<Entry> {
         repo_commit: None,
         artifact_sha256: None,
         soname_pins: None,
+        // ITEM 1: el formato legacy no trae hechos de compilación.
+        active_options: None,
+        cflags: None,
+        cxxflags: None,
+        ldflags: None,
+        patches_sha256: None,
+        template_sha256: None,
     })
 }
 
@@ -595,6 +655,12 @@ mod tests {
             repo_commit: Some("aaa111".to_string()),
             artifact_sha256: Some("sha256:bbb222".to_string()),
             soname_pins: None,
+            active_options: None,
+            cflags: None,
+            cxxflags: None,
+            ldflags: None,
+            patches_sha256: None,
+            template_sha256: None,
         }
     }
 

@@ -141,6 +141,12 @@ pub struct Config {
     pub prefer_binary: bool,
     /// P1-2: habilita funciones en validación (`challenge`).
     pub experimental: bool,
+    /// ITEM 1: `--newoptions`: recompila los paquetes desde fuente cuyas
+    /// opciones/parches/template cambiaron (aunque el `pkgver` sea el mismo).
+    pub newoptions: bool,
+    /// ITEM 1: `--changed-flags`: recompila los paquetes desde fuente
+    /// compilados con otras banderas (`-O2` → `-O3 -march=native`).
+    pub changed_flags: bool,
     /// `vary --conf-update`: resuelve los `.new-*` de /etc.
     pub conf_update: bool,
     /// T-010: orden explícito entre candidatos multi-repo (los flags
@@ -342,6 +348,8 @@ impl Config {
             deep_build: false,
             prefer_binary: true,
             experimental: false,
+            newoptions: false,
+            changed_flags: false,
             conf_update: false,
             candidate_order: crate::resolver::CandidateOrder::Legacy,
         }

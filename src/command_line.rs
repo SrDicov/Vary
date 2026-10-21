@@ -413,6 +413,16 @@ impl Config {
                 self.prefer_binary = true;
                 self.candidate_order = crate::resolver::CandidateOrder::PreferBinary;
             }
+            Arg::Long("newoptions") => {
+                // ITEM 1: recompila lo que cambió del lado fuente (opciones,
+                // parches de usuario, template). SIN short: `-N` en xbps-src
+                // significa "sin repos remotos" y ya lo usa `--deep`.
+                self.newoptions = true;
+            }
+            Arg::Long("changed-flags") | Arg::Short('U') => {
+                // ITEM 1: recompila lo compilado con otras banderas.
+                self.changed_flags = true;
+            }
             Arg::Long("no-prefer-binary") => {
                 self.prefer_binary = false;
                 self.candidate_order = crate::resolver::CandidateOrder::PreferSource;
@@ -903,5 +913,24 @@ mod tests {
             assert!(config.deep_build, "{alias} debe fijar deep_build");
             assert!(!config.force_build);
         }
+    }
+
+    /// ITEM 1: los flags de auditoría se parsean; `-N` NO se usa (colisiona
+    /// con la semántica de xbps-src) y `-U` sí está libre.
+    #[test]
+    fn flags_de_auditoria_se_parsean() {
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "foo", "--newoptions"]).expect("parse");
+        assert!(config.newoptions);
+        assert!(!config.changed_flags);
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "foo", "--changed-flags"]).expect("parse");
+        assert!(config.changed_flags);
+        assert!(!config.newoptions);
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "foo", "-U"]).expect("parse");
+        assert!(config.changed_flags);
     }
 }

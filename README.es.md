@@ -77,6 +77,19 @@ Notas: solo aplica a compilados por vary (la DB no guarda pins de installs binar
 
 `--deep` (alias `--deep-build`) pasa `-N` a xbps-src: construye sin repos remotos, compilando desde fuente las dependencias que falten y reutilizando el repo local (`hostdir/binpkgs`) para lo ya compilado. Puede fallar si falta la fuente o el distfile de alguna dependencia; flag solo de CLI (no existe opción en `vary.conf`).
 
+### Recompilar cuando cambian las entradas (`--newoptions`, `--changed-flags`)
+
+Al instalar un paquete **desde fuente**, vary graba con qué se compiló: las opciones de build activas, las banderas del compilador, los hashes de tus propios parches/ficheros de configuración y el hash del template. Un paquete cuyo `pkgver` no cambió puede estar obsoleto igual: cambiaste `-O2` por `-O3 -march=native`, añadiste un parche, o void-packages cambió el template.
+
+`--newoptions` recompila los paquetes compilados por vary cuyas **opciones, parches de usuario o template** cambiaron; `--changed-flags` (short `-U`) recompila los que se compilaron con otras **banderas**:
+
+```sh
+vary -S --changed-flags        # cambiaste CFLAGS en vary.conf
+vary -S --newoptions           # tocaste tus parches/opciones o el template
+```
+
+Notas: la auditoría solo mira paquetes **compilados por vary** (los binarios oficiales nunca se recompilan por esto) y solo cuando hay baseline registrado — un paquete instalado antes de esta función no tiene baseline, así que no se toca (no se inventan rebuilds). El plan explica cada rebuild (`rebuild de 'linux': banderas cambiadas`). `--newoptions` no lleva short: `-N` ya significa "sin repos remotos" en xbps-src y lo usa `--deep`. La auditoría es una decisión **en tiempo de plan**: no recompila nada por su cuenta, tú sigue pidiendo la instalación.
+
 ## Conflictos de ficheros de configuración (`--conf-update`)
 
 Las actualizaciones de paquetes pueden dejar `<fichero>.new-<pkgver>` junto a tu configuración actual de `/etc` (p. ej. `/etc/passwd.new-0.146_2`). `vary --conf-update` recorre `/etc` recursivamente (sin seguir symlinks) y, por cada candidato con sufijo `.new-` no vacío, muestra un `git diff --no-index` entre el original y el nuevo y pregunta `[r]eemplazar [k]eep [d]iff [q]uit` (Enter conserva, `d` re-muestra el diff, `q` corta). Al reemplazar hace un backup `<original>.vary-bak.<pid>` antes de mover el `.new-` sobre el original, siempre vía la herramienta de elevación configurada (nunca escrituras directas como no-root). Notas: sin TTY no se escribe nada — con `--noconfirm` o sin terminal solo lista pares `nuevo -> original` y sale 0; es un comando independiente (rechaza `-S`/`-R`, targets y `--repo`); nunca toca ficheros `.so`/de librerías (esos los cubre `@preserved-rebuild`, arriba); revísalo como prompt que es, y mira los diffs antes de pulsar `r`.

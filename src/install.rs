@@ -303,8 +303,51 @@ fn assemble_source(
         },
         // Híbrida: patrones de oficiales al resolver (BuildOfficial).
         source_always: config.source_always.clone(),
+        // ITEM 1: auditoría de discrepancias (opciones/banderas/parches).
+        rebuild_reasons: rebuild_candidates(config),
     };
     (source, opts)
+}
+
+/// ITEM 1: paquetes instalados desde fuente que hay que recompilar según los
+/// flags de auditoría. Sin `--newoptions`/`--changed-flags` no se recalcula
+/// nada (cero coste en el camino normal).
+fn rebuild_candidates(
+    config: &Config,
+) -> std::collections::BTreeMap<String, crate::rebuild::RebuildReason> {
+    let mut out = std::collections::BTreeMap::new();
+    if !config.newoptions && !config.changed_flags {
+        return out;
+    }
+    for (name, reason) in crate::rebuild::candidates(config, None) {
+        let hit = (config.newoptions && reason.triggers_options())
+            || (config.changed_flags && reason.triggers_flags());
+        if hit {
+            tracing::info!("{name}: rebuild por {}", reason.as_str());
+            out.insert(name, reason);
+        }
+    }
+    out
+}
+
+/// ITEM 1: hechos de compilación que se registran por paquete instalado desde
+/// fuente. El hash de template solo se registra para builds OFICIALES (su
+/// template vive en void-packages); en builds VUR el template está en el clon
+/// VUR y no se inventa: sin baseline no hay señal.
+fn build_facts(config: &Config, pkg: &str, action: &Action) -> crate::db::BuildFacts {
+    let official = matches!(action, Action::BuildOfficial);
+    crate::db::BuildFacts {
+        active_options: crate::rebuild::effective_options(config, pkg),
+        cflags: config.make.cflags.clone(),
+        cxxflags: config.make.cxxflags.clone(),
+        ldflags: config.make.ldflags.clone(),
+        patches_sha256: crate::overlay::user_file_hashes(&config.config_dir, pkg),
+        template_sha256: if official {
+            crate::rebuild::template_hash(&config.void_packages_dir(), pkg)
+        } else {
+            None
+        },
+    }
 }
 
 /// P0-2: fecha el primer registro binario (best-effort con aviso; la
@@ -1903,6 +1946,8 @@ pub fn install(config: &mut Config) -> Result<i32> {
                 tracing::debug!("{real}: sin pins de sonames (paquete sin shlibs o no instalado)");
             }
             db.set_soname_pins(real, pins);
+            // ITEM 1: hechos de compilación para la auditoría de rebuild.
+            db.set_build_facts(real, &build_facts(config, real, &item.action));
         }
         // P2: diario (best-effort: nunca aborta un install válido).
         if let Err(e) = crate::journal::append(
