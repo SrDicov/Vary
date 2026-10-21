@@ -91,8 +91,8 @@ impl Masterdir {
     }
 
     /// `./xbps-src show <pkg>` CAPTURADO (no hereda stdio: quien llama
-    /// parsea `version=`/`revision=`). Lectura pura del template evaluado,
-    /// sin chroot: corta y sin elevación.
+    /// parsea `version:`/`revision:`; también acepta `version=`/`revision=`).
+    /// Lectura pura del template evaluado, sin chroot: corta y sin elevación.
     pub fn show_pkg(&self, pkg: &str) -> Result<String> {
         let script = self.path.join("xbps-src");
         if !script.is_file() {

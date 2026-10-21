@@ -4,6 +4,11 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **Fix parseo de `xbps-src show`:** el formato real emite
+  `version:\tX`/`revision:\tY`; el parser solo aceptaba `version=`/
+  `revision=`, así que los builds oficiales forzados y los upgrades
+  `source_always` abortaban con "no trae version/revision parseables".
+  Ahora acepta ambos separadores.
 - **Set `@preserved-rebuild`:** recompilación explícita de los paquetes
   compilados por vary cuyos pins de sonames reportan drift (P2-soname):
   `vary -S --force-build @preserved-rebuild`. El aviso en `-Syu` ahora además

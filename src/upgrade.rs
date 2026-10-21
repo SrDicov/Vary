@@ -14,10 +14,17 @@ pub(crate) fn parse_template_version(text: &str) -> Option<(String, u32)> {
     let mut revision = 1u32;
     for line in text.lines() {
         let line = line.trim();
-        if let Some(v) = line.strip_prefix("version=") {
-            version = Some(v.trim().to_string());
-        } else if let Some(r) = line.strip_prefix("revision=") {
-            revision = r.trim().parse().unwrap_or(1);
+        // `xbps-src show` emite `version:\t1.2`; templates e índices VUR
+        // históricos usan `version=1.2`. Aceptamos ambos separadores.
+        let Some(pos) = line.find(|c| c == ':' || c == '=') else {
+            continue;
+        };
+        let key = line[..pos].trim();
+        let value = line[pos + 1..].trim();
+        match key {
+            "version" => version = Some(value.to_string()),
+            "revision" => revision = value.parse().unwrap_or(1),
+            _ => {}
         }
     }
     version.filter(|v| !v.is_empty()).map(|v| (v, revision))
@@ -488,6 +495,9 @@ mod tests {
     fn parse_template_version_minimo() {
         let text = "version=6.6.4\nrevision=1\n";
         assert_eq!(parse_template_version(text), Some(("6.6.4".to_string(), 1)));
+        // Formato real de `xbps-src show`: clave con dos puntos y tab.
+        let text = "pkgname:\tbase-files\nversion:\t0.146\nrevision:\t2\n";
+        assert_eq!(parse_template_version(text), Some(("0.146".to_string(), 2)));
         // revision sin definir => 1; con líneas de ruido intercaladas.
         let text = "# deps: xbps\nversion=156.1\nother=x\n";
         assert_eq!(parse_template_version(text), Some(("156.1".to_string(), 1)));

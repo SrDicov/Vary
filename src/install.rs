@@ -653,7 +653,7 @@ fn official_ver_rev(md: &crate::masterdir::Masterdir, pkg: &str) -> Result<(Stri
         .show_pkg(pkg)
         .with_context(|| format!("xbps-src show {pkg} (necesario para el build oficial)"))?;
     crate::upgrade::parse_template_version(&text).ok_or_else(|| {
-        anyhow::anyhow!("la salida de `xbps-src show {pkg}` no trae version=/revision= parseables")
+        anyhow::anyhow!("la salida de `xbps-src show {pkg}` no trae version/revision parseables")
     })
 }
 
