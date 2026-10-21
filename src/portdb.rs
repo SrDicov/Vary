@@ -83,6 +83,12 @@ impl PortDb {
     /// `pkgname-version_revision` en el árbol de fuentes: MISMO formato que
     /// `VurInfo::pkgver()` y que la versión guardada en la DB de instalados
     /// (así la auditoría puede compararlos sin conversiones).
+    ///
+    /// El nombre es el del PAQUETE FUENTE (`sourcepkg`): una entrada
+    /// symlink (`srcpkgs/foo-devel -> foo`) es el subpaquete de `foo`, y la
+    /// DB guarda bajo la clave del subpaquete el pkgver del padre. Con el
+    /// nombre de la entrada ("foo-devel") la comparación daba SIEMPRE
+    /// "versión nueva" para todo subpaquete.
     pub fn pkgver_of(&self, pkg: &str) -> Option<String> {
         self.entries.get(pkg).and_then(|e| {
             // Entrada `needs_dynamic` sin versión resuelta: NO hay dato, y
@@ -91,7 +97,7 @@ impl PortDb {
             if e.version.is_empty() {
                 return None;
             }
-            Some(format!("{}-{}", e.name, e.pkgver()))
+            Some(format!("{}-{}", e.sourcepkg, e.pkgver()))
         })
     }
 
@@ -662,6 +668,20 @@ mod tests {
         let db = index_checkout(tmp.path()).unwrap();
         assert_eq!(db.sourcepkg("pkg0-devel"), Some("pkg0"));
         assert_eq!(db.get("pkg0-devel").unwrap().version, "1.0");
+    }
+
+    /// El pkgver de un subpaquete es el del PAQUETE FUENTE: es lo que guarda
+    /// la DB de instalados bajo la clave del subpaquete (el padre), así que
+    /// la comparación "versión nueva" no puede dar un falso positivo para
+    /// todo subpaquete.
+    #[test]
+    fn pkgver_de_subpaquete_es_el_del_paquete_fuente() {
+        let tmp = tempfile::tempdir().unwrap();
+        fixture(tmp.path());
+        std::os::unix::fs::symlink("pkg0", tmp.path().join("srcpkgs/pkg0-devel")).unwrap();
+        let db = index_checkout(tmp.path()).unwrap();
+        assert_eq!(db.pkgver_of("pkg0-devel").as_deref(), Some("pkg0-1.0_1"));
+        assert_eq!(db.pkgver_of("pkg0").as_deref(), Some("pkg0-1.0_1"));
     }
 
     #[test]

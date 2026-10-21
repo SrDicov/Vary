@@ -203,7 +203,15 @@ pub fn candidates(
         // se salta (no hay señal) y leer ficheros sería trabajo inútil.
         let with_hashes = entry.patches_sha256.is_some() || entry.template_sha256.is_some();
         let target = target_for(config, &name, with_hashes);
-        let version = portdb_version.and_then(|f| f(&name));
+        // El índice de fuentes es el de void-packages: solo dice algo de los
+        // paquetes construidos DESDE ahí. Para un paquete de un VUR su fuente
+        // vive en el clon del VUR, así que el homónimo del índice NO es su
+        // fuente: compararlos daba "versión nueva" falsa.
+        let version = if entry.vur == crate::db::OFFICIAL_REPO {
+            portdb_version.and_then(|f| f(&name))
+        } else {
+            None
+        };
         let reasons = audit_all(&entry, &target, version.as_deref());
         if !reasons.is_empty() {
             out.insert(name, reasons);
@@ -263,6 +271,47 @@ mod tests {
     fn sin_discrepancia_no_hay_rebuild() {
         assert_eq!(audit(&entry_source(), &target(), None), None);
         assert!(audit_all(&entry_source(), &target(), None).is_empty());
+    }
+
+    /// El índice de fuentes es el de void-packages: su versión solo dice
+    /// algo de los paquetes construidos DESDE ahí. Para un paquete de un VUR
+    /// su fuente vive en el clon del VUR, así que el homónimo del índice no
+    /// es su fuente y compararlos daba "versión nueva" falsa.
+    #[test]
+    fn la_version_del_indice_no_aplica_a_los_paquetes_de_un_vur() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config {
+            cache_dir: dir.path().to_path_buf(),
+            config_dir: dir.path().join("conf"),
+            ..crate::config::Config::default()
+        };
+        let mut db = crate::db::InstalledDb::load(config.installed_db_path()).unwrap();
+        db.upsert(
+            "oficial",
+            "oficial-1.0_1",
+            crate::db::OFFICIAL_REPO,
+            InstallType::Source,
+            None,
+            None,
+        );
+        db.upsert(
+            "de-vur",
+            "de-vur-1.0_1",
+            "mi-vur",
+            InstallType::Source,
+            None,
+            None,
+        );
+        db.save().unwrap();
+
+        let lookup = |_: &str| Some("otra-9.9_9".to_string());
+        let out = candidates(&config, Some(&lookup));
+        assert_eq!(
+            out.get("oficial"),
+            Some(&vec![RebuildReason::NewVersion]),
+            "{out:?}"
+        );
+        assert!(!out.contains_key("de-vur"), "{out:?}");
     }
 
     #[test]

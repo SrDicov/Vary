@@ -1947,7 +1947,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
             Action::Install(BinarySource::VulBinary { repo }) => Some(repo.clone()),
             Action::Build => vur_map_lookup_repo(real, &repos, &mut cache).ok(),
             Action::Install(BinarySource::Official) => None,
-            Action::BuildOfficial => Some("official".to_string()),
+            Action::BuildOfficial => Some(crate::db::OFFICIAL_REPO.to_string()),
         };
         let (Some(repo_name), Some(itype)) = (repo_name, track_action(&item.action)) else {
             continue;

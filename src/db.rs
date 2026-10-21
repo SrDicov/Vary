@@ -84,6 +84,10 @@ pub struct Entry {
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
+/// Repositorio "virtual" que marca a los paquetes construidos desde el
+/// árbol de FUENTES oficial (void-packages), no desde un VUR.
+pub const OFFICIAL_REPO: &str = "official";
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct InstalledDbFile {
     pub schema_version: u32,
