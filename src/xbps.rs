@@ -404,19 +404,33 @@ pub fn query_manual_names() -> Result<Vec<String>> {
         .collect())
 }
 
+/// Una línea de `xbps-query -l` → `(nombre, pkgver)` SOLO si el paquete está
+/// INSTALADO de verdad.
+///
+/// Formato real (xbps 0.60.7, `bin/xbps-query/list.c:62-68`):
+/// `<estado> <pkgver> <desc>` con estado `ii` (instalado), `uu`
+/// (desempaquetado, no instalado), `hr` (borrado a medias) o `??`
+/// (desconocido). Solo `ii` cuenta: un paquete a medias desinstalado no es un
+/// instalado y no debe salir en `-Q` ni ser target de `@installed`.
+/// Pura y testeable sin xbps.
+pub fn installed_entry_from_line(line: &str) -> Option<(String, String)> {
+    let mut cols = line.split_whitespace();
+    let state = cols.next()?;
+    if state != "ii" {
+        return None;
+    }
+    let pkgver = cols.next()?;
+    Some((split_pkgver_name(pkgver).to_string(), pkgver.to_string()))
+}
+
 /// Segunda columna de una salida de lista (`-l`): pkgver => nombre canónico.
-/// Descarta líneas malformadas (< 2 columnas: `ii` desnudo, una sola col).
+/// Descarta líneas malformadas (< 2 columnas) y las que NO están instaladas
+/// (estado distinto de `ii`).
 /// Pura y testeable sin xbps.
 pub fn installed_names_from_output(text: &str) -> Vec<String> {
     text.lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .filter_map(|l| {
-            let mut cols = l.split_whitespace();
-            let _status = cols.next()?;
-            let pkgver = cols.next()?;
-            Some(split_pkgver_name(pkgver).to_string())
-        })
+        .filter_map(installed_entry_from_line)
+        .map(|(name, _)| name)
         .collect()
 }
 
@@ -918,6 +932,15 @@ mod tests {
             installed_names_from_output("ii foo-1.0_1 desc\nii\niisolo\nii glibc-2.41_1 x\n",),
             vec!["foo".to_owned(), "glibc".to_owned()]
         );
+    }
+
+    /// Solo el estado `ii` es "instalado": `uu` (desempaquetado), `hr`
+    /// (borrado a medias) y `??` no lo son (xbps 0.60.7, list.c:62-68).
+    #[test]
+    fn solo_el_estado_ii_cuenta_como_instalado() {
+        let salida =
+            "ii foo-1.0_1  desc\nuu bar-2.0_1  desc\nhr baz-3.0_1  desc\n?? qux-4.0_1  desc\n";
+        assert_eq!(installed_names_from_output(salida), vec!["foo".to_string()]);
     }
 
     #[test]

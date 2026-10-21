@@ -11,25 +11,25 @@
 use crate::config::Config;
 use anyhow::{Context, Result};
 
-/// Una línea de `xbps-query -l` → `(nombre, version)`.
+/// Una línea de `xbps-query -l` → `(nombre, version)` si el paquete está
+/// INSTALADO.
 ///
-/// Formato real (void-linux/xbps, `bin/xbps-query/list.c`):
+/// Formato real (void-linux/xbps, `bin/xbps-query/list.c:62-68`):
 /// `ii bash-5.2.21_1  The GNU Bourne Again shell`
-/// (estado, pkgver, descripción). El estado es `ii` (installed), `uu`
-/// (unpacked) o `hr` (half-removed) y se ignora: la lista es de instalados.
+/// (estado, pkgver, descripción). Estados: `ii` instalado · `uu`
+/// desempaquetado · `hr` borrado a medias · `??` desconocido. Solo `ii` es un
+/// instalado (el parser vive en `xbps` para no duplicar el formato).
 ///
 /// La versión se separa del nombre por el ÚLTIMO guion (mismo criterio que
 /// `xbps::split_pkgver_name`): en `pkgver` = `nombre-version_rev` la versión
 /// no lleva guiones.
 pub fn parse_installed_line(line: &str) -> Option<(String, String)> {
-    let mut cols = line.split_whitespace();
-    let _state = cols.next()?;
-    let pkgver = cols.next()?;
-    let (name, version) = match pkgver.rsplit_once('-') {
-        Some((name, version)) => (name, version),
-        None => (pkgver, ""),
+    let (name, pkgver) = crate::xbps::installed_entry_from_line(line)?;
+    let version = match pkgver.rsplit_once('-') {
+        Some((_, version)) => version.to_string(),
+        None => String::new(),
     };
-    Some((name.to_string(), version.to_string()))
+    Some((name, version))
 }
 
 /// ¿El paquete casa con alguno de los patrones? Subcadena del nombre (como
@@ -92,6 +92,10 @@ mod tests {
     fn lineas_raras_no_rompen_la_lista() {
         assert!(parse_installed_line("").is_none());
         assert!(parse_installed_line("ii").is_none());
+        // Estados que NO son "instalado" (xbps 0.60.7, list.c:62-68).
+        assert!(parse_installed_line("hr foo-1.0_1  desc").is_none());
+        assert!(parse_installed_line("uu foo-1.0_1  desc").is_none());
+        assert!(parse_installed_line("?? foo-1.0_1  desc").is_none());
         // Sin guion: el pkgver entero es el nombre y no hay versión.
         let (name, version) = parse_installed_line("ii weirdpkg  desc").expect("línea válida");
         assert_eq!(name, "weirdpkg");
