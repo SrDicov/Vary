@@ -64,6 +64,23 @@ pub fn sanitize_repo_name(name: &str) -> String {
         .collect()
 }
 
+/// Tope del `index.json` remoto: el índice real de VUP ocupa unos cientos de
+/// KB; 64 MiB es generoso y evita que un repo hostil (T3) lo convierta en un
+/// OOM (curl descarga a disco, pero el `read` lo carga entero en RAM).
+pub const MAX_INDEX_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Tope del plist de la llave (`keys/*.plist`): los reales pesan unos KB.
+pub const MAX_PLIST_BYTES: u64 = 1024 * 1024;
+
+/// Comprueba el tamaño del índice descargado.
+fn check_index_size(len: u64) -> Result<()> {
+    anyhow::ensure!(
+        len <= MAX_INDEX_BYTES,
+        "el índice remoto ocupa {len} bytes (tope {MAX_INDEX_BYTES}): se rechaza"
+    );
+    Ok(())
+}
+
 /// ¿la caché en disco sigue vigente?
 fn cache_is_fresh(path: &Path, ttl_secs: u64) -> bool {
     let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
@@ -110,38 +127,62 @@ pub fn fetch_index(
         anyhow::bail!("index_url debe ser http(s): '{url}'");
     }
 
-    let tmp_path = cache_path.with_extension("tmp");
-    let status = Command::new(curl_bin)
-        .args(["-fsSL", "--max-time", "60", "-o"])
+    // Descarga a un temporal de nombre ÚNICO (el flock global no cubre los
+    // comandos de solo lectura: dos búsquedas concurrentes comparten el
+    // mismo "index.tmp" y una renombra el contenido de la otra).
+    let parent = cache_path.parent().unwrap_or_else(|| Path::new("."));
+    let tmp = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creando temporal para {}", cache_path.display()))?;
+    let tmp_path = tmp.path().to_path_buf();
+    let out = Command::new(curl_bin)
+        .args([
+            "-fsSL",
+            "--max-time",
+            "60",
+            // T3: el repo remoto decide el tamaño; sin tope, 60 s a 100 MB/s
+            // son 6 GB y el `read` de más abajo se los come en RAM (OOM).
+            "--max-filesize",
+            &MAX_INDEX_BYTES.to_string(),
+            "-o",
+        ])
         .arg(&tmp_path)
         .arg("--")
         .arg(url)
-        .status()
+        .output()
         .with_context(|| {
             format!("no se pudo ejecutar '{curl_bin}': ¿está instalado? (flag --curl / [general] curl_bin)")
         })?;
 
+    let status = out.status;
     if status.success() {
-        match std::fs::read(&tmp_path)
-            .ok()
-            .and_then(|bytes| parse_index_bytes(&bytes).ok())
-        {
-            Some(idx) => {
-                if let Some(parent) = cache_path.parent() {
-                    if !parent.as_os_str().is_empty() {
-                        let _ = crate::util::ensure_private_dir(parent);
+        // Tope también al leer (no depender solo de curl). Si el índice es
+        // demasiado grande NO se aborta: el dato es inválido, no el estado →
+        // se cae al fallback de la caché vieja (fail-soft).
+        let size = std::fs::metadata(&tmp_path).map(|m| m.len()).unwrap_or(0);
+        if let Err(err) = check_index_size(size) {
+            tracing::warn!("{err:#}");
+        } else {
+            match std::fs::read(&tmp_path)
+                .ok()
+                .and_then(|bytes| parse_index_bytes(&bytes).ok())
+            {
+                Some(idx) => {
+                    if let Some(parent) = cache_path.parent() {
+                        if !parent.as_os_str().is_empty() {
+                            let _ = crate::util::ensure_private_dir(parent);
+                        }
                     }
+                    // La caché es solo una optimización: si no se puede escribir, seguir igual.
+                    // El tmp ya tiene los bytes (los escribió curl): renombrar es
+                    // atómico y una línea menos que reescribir (un `write` a
+                    // medias dejaba la caché truncada).
+                    let _ = std::fs::rename(&tmp_path, cache_path);
+                    return Ok(idx);
                 }
-                // La caché es solo una optimización: si no se puede escribir, seguir igual.
-                // El tmp ya tiene los bytes (los escribió curl): renombrar es
-                // atómico y una línea menos que reescribir (un `write` a
-                // medias dejaba la caché truncada).
-                let _ = std::fs::rename(&tmp_path, cache_path);
-                return Ok(idx);
-            }
-            None => {
-                let _ = std::fs::remove_file(&tmp_path);
-                tracing::warn!("el índice remoto {url} no parsea como index.json");
+                None => {
+                    let _ = std::fs::remove_file(&tmp_path);
+                    tracing::warn!("el índice remoto {url} no parsea como index.json");
+                }
             }
         }
     } else {
@@ -157,7 +198,18 @@ pub fn fetch_index(
             }
         }
     }
-    anyhow::bail!("índice {url} no disponible (sin red ni caché válida)")
+    // El stderr de curl se descarta con `.status()`: el usuario veía
+    // "no disponible" sin saber si fue DNS, TLS o tamaño.
+    let detail = String::from_utf8_lossy(&out.stderr);
+    let detail = detail.trim();
+    anyhow::bail!(
+        "índice {url} no disponible (sin red ni caché válida){}",
+        if detail.is_empty() {
+            String::new()
+        } else {
+            format!(": {detail}")
+        }
+    )
 }
 
 /// Divide `versión_revisión` (formato XBPS) en sus partes.
@@ -165,7 +217,9 @@ pub fn fetch_index(
 /// o la versión queda vacía.
 pub fn split_pkgver(pkgver: &str) -> Option<(String, u32)> {
     let (version, revision) = pkgver.rsplit_once('_')?;
-    if version.is_empty() {
+    // La versión no puede llevar "_" (delimita nombre-versión_revisión): un
+    // "1.2.3_4_5" daría un pkgver sintético malformado.
+    if version.is_empty() || version.contains('_') {
         return None;
     }
     let revision: u32 = revision.parse().ok()?;
@@ -181,6 +235,14 @@ pub fn split_pkgver(pkgver: &str) -> Option<(String, u32)> {
 /// arquitectura. `None` si el paquete no soporta `arch`, no declara URL
 /// para ella o su versión no parsea.
 pub fn to_vur_info(name: &str, pkg: &VupPackage, arch: &str) -> Option<(VurInfo, String)> {
+    // T3/T5: la clave del mapa "packages" la decide el repo remoto. Sin
+    // validar, un nombre tipo "../../etc/x" entra en el plan, en la DB de
+    // instalados y en el nombre del artefacto. La vía .VURINFO sí valida
+    // (metadata::validate): aquí faltaba la misma puerta.
+    if !crate::metadata::is_valid_pkgname(name) {
+        tracing::warn!("el índice remoto declara un nombre de paquete inválido: '{name}'");
+        return None;
+    }
     if !pkg.archs.iter().any(|a| a == arch) {
         return None;
     }
@@ -241,6 +303,13 @@ pub fn decode_plist_public_key_pem(plist_text: &str) -> Result<String> {
     let data_len = after[data_start..]
         .find(data_end_tag)
         .context("bloque <data> sin cerrar en el plist")?;
+    // T3: el plist lo publica el repo remoto; sin tope, un <data> enorme
+    // se decodifica entero en RAM (OOM).
+    if data_len as u64 > MAX_PLIST_BYTES {
+        anyhow::bail!(
+            "el bloque <data> del plist ocupa {data_len} bytes (tope {MAX_PLIST_BYTES}): se rechaza"
+        );
+    }
     let b64_raw = &after[data_start..data_start + data_len];
     let b64_clean: String = b64_raw
         .chars()
@@ -313,6 +382,53 @@ pub fn read_repo_plist_text_git(git_bin: &str, repo_path: &Path) -> Result<Strin
 
 #[cfg(test)]
 mod tests {
+    /// T3: el repo remoto decide el tamaño del índice; sin tope, el `read`
+    /// lo carga entero en RAM (OOM).
+    #[test]
+    fn el_indice_remoto_tiene_tope_de_tamano() {
+        assert!(check_index_size(MAX_INDEX_BYTES).is_ok());
+        assert!(check_index_size(MAX_INDEX_BYTES + 1).is_err());
+    }
+
+    /// T3/T5: la clave "packages" del índice la decide el repo remoto; un
+    /// nombre con traversal no puede entrar en el plan ni en la DB.
+    #[test]
+    fn el_nombre_del_indice_se_valida() {
+        let pkg = VupPackage {
+            category: "cat".to_string(),
+            version: "1.0_1".to_string(),
+            archs: vec!["x86_64".to_string()],
+            repo_urls: BTreeMap::from([("x86_64".to_string(), "https://x/y".to_string())]),
+        };
+        assert!(to_vur_info("bueno", &pkg, "x86_64").is_some());
+        for malo in ["../../etc/x", "-guion", "con espacio", ""] {
+            assert!(
+                to_vur_info(malo, &pkg, "x86_64").is_none(),
+                "el nombre {malo:?} debería rechazarse"
+            );
+        }
+    }
+
+    /// La versión de un pkgver no puede llevar "_" (delimita el pkgver).
+    #[test]
+    fn la_version_no_lleva_guion_bajo() {
+        assert_eq!(split_pkgver("0.5.0_1"), Some(("0.5.0".to_string(), 1)));
+        assert!(split_pkgver("1.2.3_4_5").is_none());
+        assert!(split_pkgver("0.5.0_0").is_none());
+    }
+
+    /// T3: el plist lo publica el repo remoto; un <data> enorme se
+    /// decodificaría entero en RAM.
+    #[test]
+    fn el_plist_del_repo_remoto_tiene_tope() {
+        let enorme = "A".repeat(MAX_PLIST_BYTES as usize + 16);
+        let plist = format!(
+            "<plist><dict><key>public-key</key><dict><key>data</key><data>{enorme}</data></dict></dict></plist>"
+        );
+        let err = decode_plist_public_key_pem(&plist).unwrap_err();
+        assert!(err.to_string().contains("tope"), "{err:#}");
+    }
+
     /// La URL del índice viene de repos.conf (dato): curl parsea opciones en
     /// cualquier posición, así que solo se admite http(s).
     #[test]
