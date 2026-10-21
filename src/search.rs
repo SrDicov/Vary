@@ -107,11 +107,7 @@ pub fn search(config: &Config) -> Result<i32> {
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            let arch = if config.arch_override.is_none() {
-                xbps::query_architecture().unwrap_or(config.arch())
-            } else {
-                config.arch()
-            };
+            let arch = config.resolved_arch();
             let cache_path = config.cache_dir.join(format!(
                 "vup-index-{}.json",
                 crate::vup_index::sanitize_repo_name(&name)

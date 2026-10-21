@@ -454,13 +454,7 @@ pub fn print_plan(config: &Config) -> Result<i32> {
     }
 
     // 3'. Arquitectura (igual que install; solo lecturas).
-    let arch = config.arch();
-    // Try xbps-query architecture if not overridden
-    let arch = if config.arch_override.is_none() {
-        xbps::query_architecture().unwrap_or(arch)
-    } else {
-        arch
-    };
+    let arch = config.resolved_arch();
 
     // 4'. Índices (sin guardar caché) + fuente (binpkgs_root como
     // ruta pura: sin bootstrap no hay masterdir que consultar).
@@ -1137,13 +1131,7 @@ pub fn install(config: &mut Config) -> Result<i32> {
     }
 
     // 3. Arquitectura (antes de los índices: el adaptador VUP filtra por arch).
-    let arch = config.arch();
-    // Try xbps-query architecture if not overridden
-    let arch = if config.arch_override.is_none() {
-        xbps::query_architecture().unwrap_or(arch)
-    } else {
-        arch
-    };
+    let arch = config.resolved_arch();
 
     // 4. Load indexes (ver load_source_maps).
     let mut cache = CacheIndex::load(config.cache_index_path())?;

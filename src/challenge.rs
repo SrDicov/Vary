@@ -253,12 +253,7 @@ pub fn challenge(config: &crate::config::Config, pkg: &str) -> Result<i32> {
     res.with_context(|| format!("reconstruyendo {pkg}"))?;
 
     // Localizar artefacto recién construido.
-    let arch = config.arch();
-    let arch = if config.arch_override.is_none() {
-        crate::xbps::query_architecture().unwrap_or(arch)
-    } else {
-        arch
-    };
+    let arch = config.resolved_arch();
     let xbps_path = md
         .hostdir_binpkgs_root()
         .join(format!("{}.{arch}.xbps", entry.version));

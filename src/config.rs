@@ -496,10 +496,21 @@ impl Config {
     }
 
     /// Arquitectura efectiva: override del CLI o la real del sistema.
-    pub fn arch(&self) -> String {
-        self.arch_override
-            .clone()
-            .unwrap_or_else(|| std::env::consts::ARCH.to_string())
+    /// La arquitectura del sistema RESUELTA: el override si lo hay; si no,
+    /// `xbps-query -R -p architecture base-system` (que devuelve
+    /// `x86_64-musl` en musl) y, si eso falla, el arch "crudo"
+    /// (`std::env::consts::ARCH` = `x86_64`).
+    ///
+    /// UNA SOLA DEFINICIÓN: el snippet estaba copiado en 6 sitios y uno se
+    /// quedó atrás (el nombre del artefacto oficial salía con el arch crudo
+    /// → en hosts musl el build "terminaba OK" pero el artefacto no
+    /// aparecía nunca).
+    pub fn resolved_arch(&self) -> String {
+        match &self.arch_override {
+            Some(arch) => arch.clone(),
+            None => crate::xbps::query_architecture()
+                .unwrap_or_else(|_| std::env::consts::ARCH.to_string()),
+        }
     }
 
     pub fn parse_args<S: AsRef<str>>(&mut self, args: &[S]) -> Result<()> {

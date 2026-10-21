@@ -397,12 +397,7 @@ fn retrust_vup_urls(config: &Config, repo: &VurRepo, entry: &RepoEntry) -> Resul
         "vup-index-{}.json",
         crate::vup_index::sanitize_repo_name(&repo.name)
     ));
-    let arch = config.arch();
-    let arch = if config.arch_override.is_none() {
-        crate::xbps::query_architecture().unwrap_or(arch)
-    } else {
-        arch
-    };
+    let arch = config.resolved_arch();
     let idx = crate::vup_index::fetch_index(
         &config.curl_bin,
         index_url,
