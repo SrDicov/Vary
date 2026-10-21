@@ -16,7 +16,7 @@ pub(crate) fn parse_template_version(text: &str) -> Option<(String, u32)> {
         let line = line.trim();
         // `xbps-src show` emite `version:\t1.2`; templates e índices VUR
         // históricos usan `version=1.2`. Aceptamos ambos separadores.
-        let Some(pos) = line.find(|c| c == ':' || c == '=') else {
+        let Some(pos) = line.find([':', '=']) else {
             continue;
         };
         let key = line[..pos].trim();
