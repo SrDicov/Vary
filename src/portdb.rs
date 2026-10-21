@@ -106,7 +106,7 @@ struct StaticTemplate {
 
 /// ¿El valor es un literal (sin evaluación de shell)?
 fn is_literal(value: &str) -> bool {
-    !value.contains("$(`") && !value.contains('`') && !value.contains("${")
+    !value.contains("$(") && !value.contains('`') && !value.contains("${")
 }
 
 /// Extrae `key=value` de una línea de template. `None` si no es una
@@ -651,6 +651,40 @@ mod tests {
         let stats = update_incremental(tmp.path(), "git", &mut db).unwrap();
         assert_eq!(stats.reindexed, 0);
         assert!(stats.new_commit.is_none());
+    }
+
+    /// Medición REAL sobre el clon local (necesita
+    /// `~/.cache/vary/void-packages`). Ignorado por defecto: requiere el clon
+    /// y no debe correr en CI. Ejecutar con
+    /// `cargo test -- --ignored portdb` (ver `audit/VALIDATION.md`).
+    #[test]
+    #[ignore]
+    fn mide_indice_frio_e_incremental() {
+        let checkout = std::env::var("HOME")
+            .map(|h| PathBuf::from(h).join(".cache/vary/void-packages"))
+            .unwrap_or_default();
+        if !checkout.join("srcpkgs").is_dir() {
+            eprintln!("sin clon local en {}: nada que medir", checkout.display());
+            return;
+        }
+        let t0 = std::time::Instant::now();
+        let db = index_checkout(&checkout).unwrap();
+        let cold = t0.elapsed();
+        println!(
+            "frío: {} entradas en {:?} ({} dinámicos)",
+            db.entries.len(),
+            cold,
+            db.entries.values().filter(|e| e.needs_dynamic).count()
+        );
+        let mut db = db;
+        let t1 = std::time::Instant::now();
+        let stats = update_incremental(&checkout, "git", &mut db).unwrap();
+        println!(
+            "incremental: {:?} (reindexados: {}, completo: {})",
+            t1.elapsed(),
+            stats.reindexed,
+            stats.full_reindex
+        );
     }
 
     #[test]
