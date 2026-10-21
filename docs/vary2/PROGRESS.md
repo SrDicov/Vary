@@ -82,6 +82,20 @@ oportunidad (contenedor Void o máquina real). Medición de I/O ya hecha en el c
 | Fallback dinámico del índice | primera resolución en frío de una plantilla `needs_dynamic` que no se resuelva por `xbps-src show` en el upgrade | bajo: llamada en paralelo con cap | 2026-10-21 |
 | Medición E2E del índice | próxima ventana de upgrade real | bajo: un comando | 2026-10-21 |
 
+### 5.3-bis — Verificación final en Void real (contenedor, vary `fd50af2`)
+
+```
+void-packages indexado: 15162 paquete(s) (índice completo).
+portdb: 15162 plantillas, 3 requieren resolución dinámica (vía xbps-src show en upgrade).
+```
+
+- El índice guarda el **pkgver** del proveedor (fix crítico):
+  `"libc.so.6": "glibc-2.41_1"`, `"libssl.so.3": "libssl3-3.5.4_1"` (antes: `"glibc"`).
+- Auditoría con `cflags` cambiadas: `gmp official-source` +
+  `warning: rebuild de 'gmp': banderas cambiadas` → el join funciona en real.
+- 15.162 entradas = 9.713 templates + los alias `-devel` (symlinks), que el
+  índice también resuelve a su sourcepkg.
+
 ### 5.6 — CIERRE DEL ARCO v2
 
 **CERRADO.** No hay "siguiente item": el backlog no existe. El roadmap siguiente lo genera
