@@ -79,13 +79,17 @@ pub fn render(pkg: &str, conf: &PkgConf) -> Result<String> {
         lines.push("XBPS_DISTCC=yes".to_string());
     }
     if !m.global_options.is_empty() {
-        let joined = m.global_options.join(" ");
+        // xbps-src parte la lista por COMAS (`IFS=','` en set_build_options,
+        // common/xbps-src/shutils/common.sh): con espacios el token no
+        // matchea ninguna opción y TODO lo que no esté en
+        // `build_options_default` queda desactivado en silencio.
+        let joined = m.global_options.join(",");
         lines.push(format!("XBPS_PKG_OPTIONS='{}'", quote(&joined)?));
     }
     if let Some(opts) = conf.options.get(pkg) {
         if !opts.is_empty() {
             let var = format!("XBPS_PKG_OPTIONS_{}", normalize_pkgname(pkg));
-            let joined = opts.join(" ");
+            let joined = opts.join(",");
             lines.push(format!("{var}='{}'", quote(&joined)?));
         }
     }
@@ -198,8 +202,8 @@ XBPS_LDFLAGS='-Wl,-O1'
 XBPS_DISTCC_HOSTS='localhost/4'
 XBPS_CCACHE=yes
 XBPS_DISTCC=yes
-XBPS_PKG_OPTIONS='static docs'
-XBPS_PKG_OPTIONS_foo='pgo wayland'
+XBPS_PKG_OPTIONS='static,docs'
+XBPS_PKG_OPTIONS_foo='pgo,wayland'
 XBPS_DEBUG_PKGS=yes
 XBPS_CHECK_PKGS=yes
 XBPS_ALLOW_RESTRICTED=yes
@@ -209,6 +213,32 @@ XBPS_ALLOW_RESTRICTED=yes
         assert!(!text.contains("case "), "sin case: {text}");
         assert!(!text.contains("RUSTFLAGS"), "sin RUSTFLAGS: {text}");
         assert!(!text.contains("MAKEJOBS"), "sin MAKEJOBS: {text}");
+    }
+
+    /// Las opciones van separadas por COMA: xbps-src parte la lista con
+    /// `IFS=','`; con espacios el token entero no matchea ninguna opción y
+    /// desactiva todo lo que no esté en `build_options_default`.
+    #[test]
+    fn opciones_separadas_por_coma() {
+        use crate::config::MakeSettings;
+        let conf = PkgConf {
+            make: MakeSettings {
+                global_options: vec!["static".into(), "docs".into()],
+                ..MakeSettings::default()
+            },
+            options: [(
+                "foo".to_string(),
+                vec!["pgo".to_string(), "wayland".to_string()],
+            )]
+            .into_iter()
+            .collect(),
+        };
+        let text = render("foo", &conf).unwrap();
+        assert!(text.contains("XBPS_PKG_OPTIONS='static,docs'\n"), "{text}");
+        assert!(
+            text.contains("XBPS_PKG_OPTIONS_foo='pgo,wayland'\n"),
+            "{text}"
+        );
     }
 
     #[test]

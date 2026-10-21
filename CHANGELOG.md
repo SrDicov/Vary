@@ -4,6 +4,12 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **Fix `XBPS_PKG_OPTIONS`:** xbps-src separa la lista de opciones por
+  **comas** (`IFS=','` en `set_build_options`), pero vary la emitía con
+  espacios: el token entero no matcheaba ninguna opción y todas las que no
+  estuvieran en `build_options_default` quedaban **desactivadas en
+  silencio** (`[make] global_options` y `[options] <pkg>`). Ahora se
+  emiten separadas por coma.
 - **`--conf-update`:** resuelve los ficheros `<fichero>.new-<pkgver>` que xbps
   deja en `/etc` tras una actualización: escaneo recursivo (sin symlinks),
   `git diff --no-index` por fichero con TTY y pregunta
