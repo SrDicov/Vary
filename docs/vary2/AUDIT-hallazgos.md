@@ -629,6 +629,15 @@ re-descarga (o usa la TTL si aún está vigente) → **se re-descarga solo** ✓
   peor que descartar (fail-safe: el paquete no se ofrece en vez de ofrecerse con
   una versión malinterpretada).
 
+### Doble revisión de A8-03 (paga)
+
+| Revisor | Veredicto | Aportación |
+|---|---|---|
+| **A** | OK CON SALVEDADES (solo S4) | La puerta está en el punto de entrada único de datos remotos a nombres; **0 falsos positivos** medidos contra los 15.162 nombres reales del clon; sus 2 S4 aplicadas (el aviso dice qué repo; test con la forma real del `index.json` con `_meta`) |
+| **B** | OK CON SALVEDADES (sin S1/S2) | Los 3 topes eran **fail-open** en su camino excepcional → fail-closed; la versión del índice no pasaba por `is_valid_version` → ahora sí; el huérfano por SIGKILL → prefijo + barrido **por edad** (sin reintroducir la carrera); `--max-filesize` solo actúa con Content-Length → `--limit-rate` + comentario corregido |
+
+Las 4 salvedades de B están aplicadas (`40bacc0`), con tests.
+
 ### Revisado SIN hallazgo (con evidencia)
 
 | Punto | Evidencia |
