@@ -117,17 +117,19 @@ pub fn fetch_index(
     if status.success() {
         match std::fs::read(&tmp_path)
             .ok()
-            .and_then(|bytes| parse_index_bytes(&bytes).ok().map(|idx| (bytes, idx)))
+            .and_then(|bytes| parse_index_bytes(&bytes).ok())
         {
-            Some((bytes, idx)) => {
+            Some(idx) => {
                 if let Some(parent) = cache_path.parent() {
                     if !parent.as_os_str().is_empty() {
                         let _ = crate::util::ensure_private_dir(parent);
                     }
                 }
                 // La caché es solo una optimización: si no se puede escribir, seguir igual.
-                let _ = std::fs::write(cache_path, &bytes);
-                let _ = std::fs::remove_file(&tmp_path);
+                // El tmp ya tiene los bytes (los escribió curl): renombrar es
+                // atómico y una línea menos que reescribir (un `write` a
+                // medias dejaba la caché truncada).
+                let _ = std::fs::rename(&tmp_path, cache_path);
                 return Ok(idx);
             }
             None => {

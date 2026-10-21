@@ -75,14 +75,26 @@ impl ReposConf {
 
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                crate::util::ensure_private_dir(parent)
-                    .with_context(|| format!("no se pudo crear {}", parent.display()))?;
-            }
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        if !parent.as_os_str().is_empty() {
+            crate::util::ensure_private_dir(parent)
+                .with_context(|| format!("no se pudo crear {}", parent.display()))?;
         }
-        std::fs::write(path, toml::to_string_pretty(self)?)
-            .with_context(|| format!("no se pudo escribir {}", path.display()))?;
+        // Escritura atómica (tmp + fsync + rename, el patrón de `db.rs`): un
+        // corte a mitad dejaba `repos.conf` truncado y TODOS los comandos con
+        // repos morían de golpe. Es el fichero de confianza (URLs, pins,
+        // trusted_at): perderlo es perder la confianza, no un annoyance.
+        let data = toml::to_string_pretty(self)?;
+        let mut temp = tempfile::NamedTempFile::new_in(parent)
+            .with_context(|| format!("creando temporal para {}", path.display()))?;
+        use std::io::Write;
+        temp.write_all(data.as_bytes())
+            .with_context(|| format!("escribiendo temporal para {}", path.display()))?;
+        temp.flush()?;
+        temp.as_file().sync_all()?;
+        temp.persist(path)
+            .map_err(|e| e.error)
+            .with_context(|| format!("renombrando a {}", path.display()))?;
         Ok(())
     }
 
@@ -115,6 +127,29 @@ key_fingerprint = "60:ae:0c:d6:f0:95:17:80:bc:93:46:7a:89:af:a3:2d"
 binary_repo_url = "https://usuario.github.io/mi-repo/bin"
 enabled = true
 "#;
+
+    /// `save()` escribe atómicamente (tmp + rename): el fichero anterior se
+    /// sustituye entero y no queda ningún temporal por el camino.
+    #[test]
+    fn save_sustituye_el_fichero_y_no_deja_temporales() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("repos.conf");
+        let conf: ReposConf = toml::from_str(SAMPLE_TOML).unwrap();
+        conf.save(&path).unwrap();
+        conf.save(&path).unwrap();
+
+        let back = ReposConf::load(&path).unwrap();
+        assert_eq!(back.vur.len(), 1);
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|name| name != "repos.conf")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temporales sin limpiar: {leftovers:?}"
+        );
+    }
 
     #[test]
     fn parses_exact_sample() {

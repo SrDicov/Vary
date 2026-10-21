@@ -57,14 +57,26 @@ impl Lockfile {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                crate::util::ensure_private_dir(parent)
-                    .with_context(|| format!("no se pudo crear {}", parent.display()))?;
-            }
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        if !parent.as_os_str().is_empty() {
+            crate::util::ensure_private_dir(parent)
+                .with_context(|| format!("no se pudo crear {}", parent.display()))?;
         }
-        std::fs::write(path, toml::to_string_pretty(self)?)
-            .with_context(|| format!("no se pudo escribir {}", path.display()))?;
+        // Escritura atómica (tmp + fsync + rename): un corte a mitad dejaba
+        // `vary.lock` ilegible y el hash de reproducibilidad se perdía en
+        // silencio (el aviso de "ilegible regenera" solo salía en el
+        // siguiente install).
+        let data = toml::to_string_pretty(self)?;
+        let mut temp = tempfile::NamedTempFile::new_in(parent)
+            .with_context(|| format!("creando temporal para {}", path.display()))?;
+        use std::io::Write;
+        temp.write_all(data.as_bytes())
+            .with_context(|| format!("escribiendo temporal para {}", path.display()))?;
+        temp.flush()?;
+        temp.as_file().sync_all()?;
+        temp.persist(path)
+            .map_err(|e| e.error)
+            .with_context(|| format!("renombrando a {}", path.display()))?;
         Ok(())
     }
 }
