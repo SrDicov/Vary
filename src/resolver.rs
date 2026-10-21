@@ -1228,7 +1228,7 @@ mod tests {
     #[test]
     fn virtual_se_traduce_al_paquete_real() {
         let src = MockSource {
-            official: ["ntp".into()].into(),
+            official: ["ntp"].into(),
             ..MockSource::default()
         };
         let opts = ResolveOptions {
