@@ -840,8 +840,20 @@ mod tests {
     #[test]
     fn bulk_sin_xbps_devuelve_none_sin_panico() {
         // Fuera de Void (CI ubuntu) no hay xbps ni repos: degrada a None.
-        // En Void real puede devolver Some; ambos son correctos aquí.
-        let _ = bulk_official_names();
+        // En Void real puede devolver Some. El assert depende del entorno,
+        // pero el test YA PUEDE FALLAR (antes no afirmaba nada).
+        let hay_xbps = std::process::Command::new("xbps-query")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        let res = bulk_official_names();
+        if !hay_xbps {
+            assert!(
+                res.is_none(),
+                "sin xbps-query debe degradar a None: {res:?}"
+            );
+        }
     }
 
     // ---------- parse_installed_props (query_installed) ----------
@@ -994,11 +1006,14 @@ mod tests {
     #[test]
     #[ignore = "requiere Void Linux con xbps-query instalado"]
     fn integracion_query_installed_real() {
-        if let Some(info) = query_installed("bash").unwrap() {
-            assert_eq!(info.name, "bash");
-            assert!(info.installed);
-            assert!(info.pkgver.starts_with("bash-"));
-        }
+        let info = query_installed("bash")
+            .unwrap()
+            .expect("bash está instalado en Void real");
+        assert_eq!(info.name, "bash");
+        assert!(info.installed);
+        assert!(info.pkgver.starts_with("bash-"));
+        // La forma de la versión: `nombre-versión_rev` (no la versión desnuda).
+        assert!(info.pkgver.split_once('-').is_some());
     }
 
     #[test]

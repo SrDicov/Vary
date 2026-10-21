@@ -771,12 +771,15 @@ mod tests {
         let t0 = std::time::Instant::now();
         let db = index_checkout(&checkout).unwrap();
         let cold = t0.elapsed();
+        let n_cold = db.entries.len();
         println!(
             "frío: {} entradas en {:?} ({} dinámicos)",
-            db.entries.len(),
+            n_cold,
             cold,
             db.entries.values().filter(|e| e.needs_dynamic).count()
         );
+        // El índice en frío tiene entradas (el clon real de void-packages).
+        assert!(n_cold > 100, "índice frío con solo {n_cold} entradas");
         let mut db = db;
         let t1 = std::time::Instant::now();
         let stats = update_incremental(&checkout, "git", &mut db).unwrap();
@@ -785,6 +788,12 @@ mod tests {
             t1.elapsed(),
             stats.reindexed,
             stats.full_reindex
+        );
+        // El incremental sobre un árbol sin cambios NO pierde entradas.
+        assert_eq!(
+            db.entries.len(),
+            n_cold,
+            "el incremental cambió el número de entradas sin cambios en el árbol"
         );
     }
 
