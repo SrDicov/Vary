@@ -429,6 +429,35 @@ mod tests {
         assert!(err.to_string().contains("tope"), "{err:#}");
     }
 
+    /// Integración del camino de descarga REAL (curl de verdad + index.json
+    /// servido por HTTP). Uso:
+    ///
+    /// ```sh
+    ///   mkdir -p /tmp/vup && cat > /tmp/vup/index.json <<'JSON'
+    ///   {"packages":{"bueno":{"category":"c","version":"1.0_1","archs":["x86_64"],
+    ///   "repo_urls":{"x86_64":"https://example.org/y"}},
+    ///   "../../etc/x":{"category":"c","version":"1.0_1","archs":["x86_64"],
+    ///   "repo_urls":{"x86_64":"https://example.org/y"}}}}
+    ///   JSON
+    ///   (cd /tmp/vup && python3 -m http.server 8099 &)
+    ///   VUP_TEST_URL=http://127.0.0.1:8099/index.json cargo test --lib -- --ignored vup
+    /// ```
+    #[test]
+    #[ignore = "requiere curl y un index.json servido por HTTP"]
+    fn descarga_el_indice_real_y_filtra_los_nombres_invalidos() {
+        let url = std::env::var("VUP_TEST_URL").expect("VUP_TEST_URL");
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("index.json");
+        let idx = fetch_index("curl", &url, &cache, 0).expect("descarga del índice");
+        assert!(idx.packages.contains_key("bueno"));
+        // El nombre lo decide el remoto: el inválido NO puede llegar al plan.
+        let pkg = idx.packages.get("bueno").unwrap();
+        assert!(to_vur_info("bueno", pkg, "x86_64").is_some());
+        assert!(to_vur_info("../../etc/x", pkg, "x86_64").is_none());
+        // La caché se escribió (y con el temporal ya renombrado).
+        assert!(cache.is_file());
+    }
+
     /// La URL del índice viene de repos.conf (dato): curl parsea opciones en
     /// cualquier posición, así que solo se admite http(s).
     #[test]
