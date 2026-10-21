@@ -17,6 +17,10 @@ Its core piece is the **VUR** protocol: distributed Git repositories that combin
 - **Void Linux** with `xbps` and `xbps-src` installed (plus `base-devel` to compile).
 - **`git`** — used to clone `void-packages` and VUR repos. It is mandatory: if missing, vary fails at startup with `git es requerido por vary pero no está instalado. Instálalo con: xbps-install git`.
 
+## Guide
+
+**Full usage guide (from zero, no paru/pacman knowledge required): [`docs/GUIA.md`](./docs/GUIA.md)** (in Spanish) — every command, every flag, every config key, with real output.
+
 ## Quick start
 
 There are no manual bootstrap steps: whenever there is something to build or install (`vary -S <pkg>`, or an upgrade with packages to rebuild), vary automatically clones `void-packages` into `~/.cache/vary/void-packages`, prepares the `xbps-src` *masterdir*, and creates its local caches. A `vary -Syu` with nothing to upgrade does not need (and does not do) any of that.
