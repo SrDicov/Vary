@@ -161,7 +161,7 @@ url = "file:///tmp/evil"
         .unwrap();
         let err = ReposConf::load(&path).unwrap_err();
         assert!(
-            err.to_string().contains("nombre de repo inválido"),
+            format!("{err:#}").contains("nombre de repo inválido"),
             "{err:#}"
         );
     }
@@ -181,7 +181,7 @@ enabld = false
         )
         .unwrap();
         let err = ReposConf::load(&path).unwrap_err();
-        assert!(err.to_string().contains("enabld"), "{err:#}");
+        assert!(format!("{err:#}").contains("enabld"), "{err:#}");
     }
 
     /// `save()` escribe atómicamente (tmp + rename): el fichero anterior se

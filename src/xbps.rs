@@ -278,7 +278,7 @@ pub fn official_repo_urls() -> Vec<String> {
 /// Sin URLs oficiales detectadas => degrada a [`search_remote`] normal.
 /// Args de búsqueda: el patrón va tras `--` para que un patrón que empiece
 /// por `-` NO lo interprete el getopt de xbps-query como opción.
-fn search_args<'a>(pattern: &'a str) -> Vec<&'a str> {
+fn search_args(pattern: &str) -> Vec<&str> {
     vec!["-Rs", "--", pattern]
 }
 
