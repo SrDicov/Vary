@@ -8,13 +8,13 @@ on:
       - 'audit/**'
       - 'docs/**'
       - 'roadmap/**'
-      - '*.md'
+      - '**/*.md'
   pull_request:
     paths-ignore:
       - 'audit/**'
       - 'docs/**'
       - 'roadmap/**'
-      - '*.md'
+      - '**/*.md'
   workflow_dispatch:
 
 # Una sola corrida activa: un push nuevo cancela la anterior (los gates

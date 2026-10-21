@@ -8,13 +8,21 @@ on:
       - 'audit/**'
       - 'docs/**'
       - 'roadmap/**'
-      - '*.md'
+      - '**/*.md'
   workflow_dispatch:
     inputs:
       publish_release:
         description: 'Publish a GitHub release with the built .xbps'
         type: boolean
         default: false
+
+# El release rodante 'repo' es una URL FIJA con repodata firmado: dos
+# publicaciones concurrentes podían dejar assets viejos (o ninguno) y valer un
+# downgrade silencioso. Se serializan (sin cancelar: cancelar a mitad de
+# publicar deja el repo a medias).
+concurrency:
+  group: vary-xbps
+  cancel-in-progress: false
 
 permissions: {}
 
