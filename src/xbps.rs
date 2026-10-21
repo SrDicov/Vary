@@ -785,10 +785,8 @@ mod tests {
     #[test]
     fn search_line_marcas_de_instalado() {
         // xbps 0.60.7 solo emite `*` (instalado) y `-` (no instalado).
-        for mark in ["[*]"] {
-            let hit = parse_search_line(&format!("{mark} zzz-0.1_1  desc")).unwrap();
-            assert!(hit.installed, "marca {mark} debe ser instalada");
-        }
+        let hit = parse_search_line("[*] zzz-0.1_1  desc").unwrap();
+        assert!(hit.installed, "la marca [*] debe ser instalada");
         for mark in ["[-]", "[ ]", "[?]"] {
             let hit = parse_search_line(&format!("{mark} zzz-0.1_1  desc")).unwrap();
             assert!(!hit.installed, "marca {mark} no debe ser instalada");
