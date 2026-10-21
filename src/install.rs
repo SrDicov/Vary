@@ -2264,9 +2264,11 @@ mod tests {
     #[test]
     fn rebuild_candidates_filtra_por_flag() {
         let dir = tempfile::tempdir().unwrap();
-        let mut config = Config::default();
-        config.cache_dir = dir.path().to_path_buf();
-        config.config_dir = dir.path().join("conf");
+        let mut config = Config {
+            cache_dir: dir.path().to_path_buf(),
+            config_dir: dir.path().join("conf"),
+            ..Config::default()
+        };
         let mut db = crate::db::InstalledDb::load(config.installed_db_path()).unwrap();
         db.upsert(
             "demo",
