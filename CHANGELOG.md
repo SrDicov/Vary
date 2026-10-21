@@ -4,6 +4,37 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+### Auditoría total (2026-10-22)
+
+- **Artefacto oficial en hosts musl:** el nombre del `.xbps` se construye con
+  la arquitectura **resuelta** (`x86_64-musl`), no con la "cruda" (`x86_64`):
+  el build terminaba OK pero el artefacto no aparecía nunca (fallo al 100 % en
+  musl).
+- **`-Q`/`@installed` solo cuentan lo instalado:** un paquete a medias
+  desinstalado (`hr`) o desempaquetado (`uu`) ya no sale como instalado.
+- **`repos.conf` estricto:** un nombre de repo con traversal se rechaza y un
+  campo desconocido (typo, p. ej. `enabld = false`) es un error en vez de
+  ignorarse en silencio (el repo que el usuario quería deshabilitar quedaba
+  ACTIVO). `official` pasa a ser un nombre reservado.
+- **Fallos visibles:** el refresh fallido de un repo VUR ahora avisa por
+  consola (antes solo iba al log) y el mensaje final no afirma "up to date"
+  con un índice viejo; `vary -R` falla ruidosamente si no puede guardar la DB.
+- **Estado atómico:** `repos.conf`, `vary.lock` y la caché del índice binario
+  se escriben con tmp+fsync+rename; un corte ya no los deja truncados (el
+  fichero de confianza truncado bloqueaba TODOS los comandos).
+- **Índice de fuentes recuperable:** un `portdb.json` corrupto se preserva y
+  se reindexa (antes impedía reindexar para siempre).
+- **Plantillas VUR:** las variables (`${version}`, `${_llvmver}`...) se expanden
+  igual en el paquete que en sus subpaquetes; antes un template real de
+  void-packages (`clang${_llvmver}`) rompía la resolución.
+- **Auditoría de rebuild:** el cruce con el índice de fuentes solo aplica a los
+  paquetes construidos desde el árbol oficial (para un VUR, el homónimo del
+  índice no es su fuente) y compara el pkgver del paquete fuente (el que
+  guarda la DB), no el del subpaquete.
+- **Poda:** fuera el código muerto (campos y accesores sin lectores, el
+  token `[repo]` que xbps nunca emite, la marca `x` inexistente) y una sola
+  definición de la arquitectura resuelta (6 copias → 1).
+
 - **Forma con palabras (estilo kyoz):** `vary install|update|remove|search|info|list`
   (alias de una letra: `u`, `r`, `s`, `i`, `ls`) traducen a los flags que ya
   existían (`-S`, `-Syu`, `-R`, `-Ss`, `-Si`, `-Q`): no hay una segunda ruta de
