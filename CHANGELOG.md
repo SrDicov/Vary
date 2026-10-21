@@ -4,6 +4,25 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **Índice de fuentes (PortDb sin SQL):** `-Sy` actualiza también el clon de
+  void-packages (estaba congelado en el commit del clone) y refresca
+  `~/.cache/vary/portdb.json`: versiones, opciones de build y el mapa
+  `SONAME -> proveedor` de `common/shlibs`. Incremental (solo los templates
+  tocados por el commit nuevo); un cambio en `common/build-style` o
+  `common/build-helper` dispara reindex completo. Los templates con versión
+  calculada se marcan `needs_dynamic`.
+- **Virtuals:** `etc/defaults.virtual` + override local `etc/virtual`:
+  `vary -S ntp-daemon` instala el paquete real que lo provee.
+- **Deps condicionales reducidas:** los `$(vopt_if ...)` de los templates se
+  parten sin romperlos y se reducen con tus opciones activas antes de
+  entrar en el grafo (antes se colaban como nombres de paquete basura:
+  `$(vopt_if`).
+- **Bumps de SONAME del árbol de fuentes:** antes del merge del upgrade se
+  cruzan los pins de soname con `common/shlibs`: los paquetes fuente que
+  requieren un SONAME cuyo proveedor cambió entran en el plan de
+  recompilación de esa misma transacción. **No** se preserva nada en
+  `/usr/lib` (requiere caso ABI real y aprobación explícita).
+
 - **Auditoría de rebuild (`--newoptions`, `--changed-flags -U`):** vary graba con
   qué se compiló cada paquete instalado desde fuente (opciones activas,
   banderas, hashes de los parches/ficheros de usuario y hash del template) y

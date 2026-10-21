@@ -94,6 +94,14 @@ Notas: la auditoría solo mira paquetes **compilados por vary** (los binarios of
 
 Las actualizaciones de paquetes pueden dejar `<fichero>.new-<pkgver>` junto a tu configuración actual de `/etc` (p. ej. `/etc/passwd.new-0.146_2`). `vary --conf-update` recorre `/etc` recursivamente (sin seguir symlinks) y, por cada candidato con sufijo `.new-` no vacío, muestra un `git diff --no-index` entre el original y el nuevo y pregunta `[r]eemplazar [k]eep [d]iff [q]uit` (Enter conserva, `d` re-muestra el diff, `q` corta). Al reemplazar hace un backup `<original>.vary-bak.<pid>` antes de mover el `.new-` sobre el original, siempre vía la herramienta de elevación configurada (nunca escrituras directas como no-root). Notas: sin TTY no se escribe nada — con `--noconfirm` o sin terminal solo lista pares `nuevo -> original` y sale 0; es un comando independiente (rechaza `-S`/`-R`, targets y `--repo`); nunca toca ficheros `.so`/de librerías (esos los cubre `@preserved-rebuild`, arriba); revísalo como prompt que es, y mira los diffs antes de pulsar `r`.
 
+### Índice de fuentes, virtuals y dependencias condicionales
+
+`-Sy` ahora actualiza también el clon de void-packages (antes se quedaba congelado en el commit del clone) y refresca el índice local de fuentes (`~/.cache/vary/portdb.json`): versiones de paquetes, opciones de build y el mapa `SONAME -> proveedor` de `common/shlibs`. El refresco es incremental — solo se releen los templates tocados por el commit nuevo — y un cambio en `common/build-style`/`common/build-helper` dispara un reindex completo (todas las entradas dependen de ellos). Los templates cuya versión se calcula con shell no se pueden parsear estáticamente: se marcan como tales y se resuelven con `xbps-src show` cuando hace falta.
+
+Los paquetes virtuales se resuelven vía `etc/defaults.virtual` más el override local `etc/virtual`, así que `vary -S ntp-daemon` instala el paquete real que lo provee.
+
+Las dependencias condicionadas por opciones de build (`$(vopt_if ...)` en los templates) se reducen con tus opciones activas antes de construir el grafo de dependencias, así que nunca entran en él como nombres de paquete basura (`$(vopt_if`).
+
 ## Configuración
 
 Configuración de usuario en `~/.config/vary/vary.conf` (opcional; ejemplo completo en [`etc/vary.conf.example`](./etc/vary.conf.example)):

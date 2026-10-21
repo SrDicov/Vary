@@ -1250,6 +1250,7 @@ mod tests {
         let mut info = vur_info_ver("tool", "1.0", &["x86_64"]);
         info.depends = strs(&["glibc", "$(vopt_if pgo 'xvfb-run dbus')"]);
         let src = MockSource {
+            official: ["glibc", "xvfb-run", "dbus"].into(),
             vur: [("tool", ("cnr", info))].into_iter().collect(),
             ..MockSource::default()
         };
@@ -1262,7 +1263,12 @@ mod tests {
             ..opts_con_orden(true, false, CandidateOrder::PreferBinary)
         };
         let plan = resolve(&targets(&["tool"]), &src, &opts).unwrap();
-        let names: Vec<&str> = plan.builds.iter().map(|b| b.name.as_str()).collect();
+        let names: Vec<&str> = plan
+            .installs
+            .iter()
+            .chain(plan.builds.iter())
+            .map(|i| i.name.as_str())
+            .collect();
         assert!(names.contains(&"xvfb-run"), "{names:?}");
         assert!(!names.iter().any(|n| n.contains("vopt_if")), "{names:?}");
 
@@ -1273,7 +1279,12 @@ mod tests {
             ..opts_con_orden(true, false, CandidateOrder::PreferBinary)
         };
         let plan = resolve(&targets(&["tool"]), &src, &opts).unwrap();
-        let names: Vec<&str> = plan.builds.iter().map(|b| b.name.as_str()).collect();
+        let names: Vec<&str> = plan
+            .installs
+            .iter()
+            .chain(plan.builds.iter())
+            .map(|i| i.name.as_str())
+            .collect();
         assert!(!names.contains(&"xvfb-run"), "{names:?}");
         assert!(!names.iter().any(|n| n.contains("vopt_if")), "{names:?}");
     }
