@@ -130,6 +130,12 @@ pub fn run<S: AsRef<str>>(args: &[S]) -> i32 {
         return 0;
     }
 
+    // Subcomandos con palabras (estilo kyoz): `vary install foo` ≡ `vary -S foo`.
+    if let Err(err) = command_line::apply_subcommand(&mut config) {
+        print_error(Style::new(), err);
+        return 2; // mal uso de CLI
+    }
+
     tracing::debug!("config: {config:?}");
 
     // Niveles finales tras CLI/TOML (H-028): RUST_LOG > -v > log_level.

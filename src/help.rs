@@ -11,6 +11,14 @@ pub fn help() {
     println!("    vary {{-R --remove}}      [options] <package(s)>");
     println!("    vary --repo <cmd>       Manage VUR repositories");
     println!();
+    println!("Subcommands (word form, kyoz-style):");
+    println!("    vary install <pkg...>   Same as -S <pkg...>");
+    println!("    vary update             Same as -Syu (refresh + rebuild + merge)");
+    println!("    vary remove <pkg...>   Same as -R <pkg...>   (alias: r)");
+    println!("    vary search <query>     Same as -Ss <query>    (alias: s)");
+    println!("    vary info <pkg...>      Same as -Si <pkg...>    (alias: i)");
+    println!("    vary list [pattern]     Same as -Q             (alias: ls)");
+    println!();
     println!("Sync options:");
     println!("    -s --search             Search for packages");
     println!("    -i --info               Show package information");

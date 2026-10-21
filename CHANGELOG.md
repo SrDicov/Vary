@@ -4,6 +4,13 @@ All notable changes to vary will be documented in this file.
 
 ## Unreleased
 
+- **Forma con palabras (estilo kyoz):** `vary install|update|remove|search|info|list`
+  (alias de una letra: `u`, `r`, `s`, `i`, `ls`) traducen a los flags que ya
+  existían (`-S`, `-Syu`, `-R`, `-Ss`, `-Si`, `-Q`): no hay una segunda ruta de
+  código, así que sets, planes, locks y confirmaciones se comportan igual. Con
+  un flag explícito la primera palabra sigue siendo un nombre de paquete
+  (`vary -S s` instala el paquete `s`).
+
 - **`-Q` (alias `--query`):** lista los paquetes instalados, una línea
   `nombre version` por paquete (solo lectura: sin lock, sin elevación). Con
   argumentos filtra por subcadena del nombre, como `pacman -Q`. Cierra el hueco

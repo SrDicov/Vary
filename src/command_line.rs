@@ -602,6 +602,53 @@ impl Config {
     }
 }
 
+/// Subcomandos con palabras (estilo kyoz) traducidos a los flags de Vary.
+///
+/// | subcomando | equivalente |
+/// |---|---|
+/// | `install` | `-S` |
+/// | `update` (`u`) | `-Syu` |
+/// | `remove` (`r`) | `-R` |
+/// | `search` (`s`) | `-Ss` |
+/// | `info` (`i`) | `-Si` |
+/// | `list` (`ls`) | `-Q` |
+///
+/// Se traducen a los flags EXISTENTES: no hay una segunda ruta de código, así
+/// que sets, planes, locks, confirmaciones y auditorías se comportan igual.
+///
+/// Reglas:
+/// - solo se traduce si NO hay op explícito (`-S`/`-R`): con op, la primera
+///   palabra es un NOMBRE de paquete (`vary -S s` instala el paquete `s`);
+/// - los alias de una letra coinciden con su flag equivalente (`u`/`r`/`s`/`i`),
+///   así que no hay sorpresas: `i` es info (como `-i`), no install.
+pub fn apply_subcommand(config: &mut Config) -> Result<()> {
+    if config.op != Op::Default {
+        // Con op explícita la palabra es un paquete: no se toca.
+        return Ok(());
+    }
+    let Some(word) = config.targets.first().cloned() else {
+        return Ok(());
+    };
+    let (op, flags): (Op, &[&str]) = match word.as_str() {
+        "install" => (Op::Sync, &[]),
+        "update" | "u" => (Op::Sync, &["y", "u"]),
+        "remove" | "r" => (Op::Remove, &[]),
+        "search" | "s" => (Op::Sync, &["s"]),
+        "info" | "i" => (Op::Sync, &["i"]),
+        "list" | "ls" => (Op::Default, &["Q"]),
+        _ => return Ok(()),
+    };
+    config.op = op;
+    for key in flags {
+        config.args.args.push(crate::args::Arg {
+            key: (*key).to_string(),
+            value: None,
+        });
+    }
+    config.targets.remove(0);
+    Ok(())
+}
+
 fn takes_value(arg: Arg) -> TakesValue {
     match arg {
         Arg::Long("sudo") => TakesValue::Required,
@@ -921,6 +968,57 @@ mod tests {
             assert!(config.deep_build, "{alias} debe fijar deep_build");
             assert!(!config.force_build);
         }
+    }
+
+    /// Los subcomandos con palabras (estilo kyoz) se traducen a los flags.
+    #[test]
+    fn subcomandos_se_traducen_a_los_flags() {
+        let mut config = Config::default();
+        parse_args(&mut config, &["install", "foo"]).expect("parse");
+        apply_subcommand(&mut config).expect("traducción");
+        assert_eq!(config.op, Op::Sync);
+        assert_eq!(config.targets, vec!["foo".to_string()]);
+        assert!(!config.args.has_arg("s", "search"));
+        assert!(!config.args.has_arg("i", "info"));
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["update"]).expect("parse");
+        apply_subcommand(&mut config).expect("traducción");
+        assert_eq!(config.op, Op::Sync);
+        assert!(config.args.has_arg("y", "refresh"));
+        assert!(config.args.has_arg("u", "sysupgrade"));
+        assert!(config.targets.is_empty());
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["remove", "foo"]).expect("parse");
+        apply_subcommand(&mut config).expect("traducción");
+        assert_eq!(config.op, Op::Remove);
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["search", "vim"]).expect("parse");
+        apply_subcommand(&mut config).expect("traducción");
+        assert!(config.args.has_arg("s", "search"));
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["info", "vim"]).expect("parse");
+        apply_subcommand(&mut config).expect("traducción");
+        assert!(config.args.has_arg("i", "info"));
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["list"]).expect("parse");
+        apply_subcommand(&mut config).expect("traducción");
+        assert!(config.args.has_arg("Q", "query"));
+    }
+
+    /// Con op explícita la palabra es un PAQUETE: `vary -S s` instala `s`.
+    #[test]
+    fn con_op_explicita_la_palabra_es_un_paquete() {
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "s"]).expect("parse");
+        apply_subcommand(&mut config).expect("traducción");
+        assert_eq!(config.op, Op::Sync);
+        assert_eq!(config.targets, vec!["s".to_string()]);
+        assert!(!config.args.has_arg("s", "search"));
     }
 
     /// `-Q` (listar instalados) y su alias largo `--query` se registran.

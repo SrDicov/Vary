@@ -40,6 +40,21 @@ vary --repo add https://github.com/SrDicov/z-packages z-packages --branch master
 
 Other commands available in the MVP: `-Si` (detailed info), `-Sw` (download without installing), `-R` (remove), `--repo list|remove|rekey|re-trust` (re-trust re-affirms a rotated repo key), `--force-build` (build from source even if a binary exists: prefers source candidates across repositories and overrides the official bucket when a VUR template exists — warns explicitly when it can't) and `--prefer-binary` (prefer signed binaries, switching repositories when needed; `--no-prefer-binary` forces the source path). Without these flags the historical precedence applies (official first, then the merged VUR candidate). `--yes` is an alias of `--noconfirm` (note: `-y` means refresh, not yes); `--asdeps`/`--asexplicit` are rejected (vary always installs as explicit). `-Sp` prints the install plan (topological levels, single binary batch, estimated elevations) without changing anything: script-parseable, no lock, no elevation (the VUP index may refresh its cache read-only, like `-Sy`). `--lock` (re)generates `~/.config/vary/vary.lock` (repos + packages pinned); install/upgrade warn on divergence. `--challenge <pkg> --experimental` rebuilds and compares against installed files. `--why <pkg>` explains what pulls a package; `--log [pkg]` shows the operation history. `-Q` (alias `--query`) lists the installed packages, one `name version` per line (read-only, no lock, no elevation); with arguments it filters by substring, like `pacman -Q`.
 
+### Word form (kyoz-style)
+
+Every operation also has a word form, so you don't have to remember the flags:
+
+```sh
+vary install <pkg...>   # = vary -S <pkg...>
+vary update             # = vary -Syu (refresh + rebuild + merge)
+vary remove <pkg...>    # = vary -R <pkg...>   (alias: r)
+vary search <query>     # = vary -Ss <query>    (alias: s)
+vary info <pkg...>      # = vary -Si <pkg...>    (alias: i)
+vary list [pattern]     # = vary -Q             (alias: ls)
+```
+
+The word form is a translation of the existing flags — same sets, same plans, same locks, same confirmations. One-letter aliases always match their flag (`i` is info, like `-i`; `u` is update, like `-u`), and with an explicit flag the first word is a **package name** (`vary -S s` installs the package `s`, `vary s` searches).
+
 ## Package sets (`@name`)
 
 Instead of package names, `-S` accepts special targets that `@`-expand into lists of packages (deduplicated, first-seen order preserved, mixed with literal package names):

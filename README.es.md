@@ -40,6 +40,21 @@ vary --repo add https://github.com/SrDicov/z-packages z-packages --branch master
 
 Otros comandos disponibles en el MVP: `-Si` (información detallada), `-Sw` (descargar sin instalar), `-R` (eliminar), `--repo list|remove|rekey|re-trust` (re-trust reafirma la llave rotada de un repo), `--force-build` (compilar desde fuente aunque exista binario: prefiere candidatos de fuente entre repositorios y evita el bucket official cuando hay template VUR — avisa explícitamente si no puede) y `--prefer-binary` (priorizar binarios firmados, cambiando de repositorio si hace falta; `--no-prefer-binary` fuerza la vía de fuente). Sin estos flags rige la precedencia histórica (official primero, luego el candidato VUR fusionado). `--yes` es alias de `--noconfirm` (ojo: `-y` significa refresh, no yes); `--asdeps`/`--asexplicit` se rechazan (vary instala siempre como explícito). `-Sp` imprime el plan de instalación (niveles topológicos, batch binaria única, elevaciones estimadas) sin cambiar nada: parseable por scripts, sin lock, sin elevación (el índice VUP puede refrescar su caché en solo-lectura, como `-Sy`). `--lock` (re)genera `~/.config/vary/vary.lock` (repos + paquetes pineados); install/upgrade avisan ante divergencias. `--challenge <pkg> --experimental` recompila y compara contra los ficheros instalados. `--why <pkg>` explica qué trae un paquete; `--log [pkg]` muestra el historial de operaciones. `-Q` (alias `--query`) lista los paquetes instalados, una línea `nombre version` por paquete (solo lectura, sin lock, sin elevación); con argumentos filtra por subcadena, como `pacman -Q`.
 
+### Forma con palabras (estilo kyoz)
+
+Toda operación tiene además su forma con palabras, para no tener que recordar los flags:
+
+```sh
+vary install <pkg...>   # = vary -S <pkg...>
+vary update             # = vary -Syu (refrescar + recompilar + fusionar)
+vary remove <pkg...>    # = vary -R <pkg...>   (alias: r)
+vary search <query>     # = vary -Ss <query>    (alias: s)
+vary info <pkg...>      # = vary -Si <pkg...>    (alias: i)
+vary list [pattern]     # = vary -Q             (alias: ls)
+```
+
+La forma con palabras es una **traducción** de los flags que ya existen: mismos sets, mismos planes, mismos locks, mismas confirmaciones. Los alias de una letra coinciden siempre con su flag (`i` es info, como `-i`; `u` es update, como `-u`), y con un flag explícito la primera palabra sigue siendo un **nombre de paquete** (`vary -S s` instala el paquete `s`; `vary s` busca).
+
 ## Conjuntos de paquetes (`@name`)
 
 Además de nombres de paquetes, `-S` acepta targets especiales que se expanden a listas de paquetes (dedup, orden de primera aparición, mezclables con nombres literales):
