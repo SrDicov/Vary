@@ -780,11 +780,12 @@ mod tests {
     fn shlibs_guarda_pkgver_y_la_auditoria_lo_detecta() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("shlibs");
-        std::fs::write(&path, "libpoppler.so.145 poppler-24.08.0_1\n").unwrap();
+        // El árbol exige una versión MAYOR que la pineada al instalar.
+        std::fs::write(&path, "libpoppler.so.145 poppler-25.02.0_1\n").unwrap();
         let map = parse_shlibs(&path);
         assert_eq!(
             map.get("libpoppler.so.145").map(String::as_str),
-            Some("poppler-24.08.0_1")
+            Some("poppler-25.02.0_1")
         );
         // El nombre del proveedor sigue disponible para consulta.
         let db = PortDb {
