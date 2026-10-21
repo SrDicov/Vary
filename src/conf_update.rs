@@ -27,9 +27,16 @@ fn original_for(file_name: &str) -> Option<String> {
 /// Escaneo recursivo sin seguir symlinks: pares (nuevo, original) ordenados
 /// por ruta.
 fn scan_pairs(root: &Path, out: &mut Vec<(PathBuf, PathBuf)>) -> std::io::Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        let ft = entry.file_type()?; // no sigue el symlink
+    // Best-effort: /etc tiene subdirs no legibles para un usuario normal
+    // (p. ej. /etc/ssl/private). Un directorio que falla no debe abortar el
+    // resto del escaneo.
+    let Ok(entries) = fs::read_dir(root) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else {
+            continue; // no sigue el symlink
+        };
         let path = entry.path();
         if ft.is_dir() {
             scan_pairs(&path, out)?;
@@ -62,7 +69,7 @@ fn parse_choice(line: &str) -> Option<Choice> {
 }
 
 fn show_diff(config: &Config, orig: &Path, new: &Path) -> std::io::Result<()> {
-    Command::new(&config.git_bin)
+    let _ = Command::new(&config.git_bin)
         .args(["diff", "--no-index", "--no-color", "--"])
         .arg(if orig.exists() {
             orig.as_os_str()
@@ -119,7 +126,8 @@ pub fn run(config: &Config) -> Result<i32> {
         return Ok(0);
     }
 
-    let list_only = config.no_confirm || !std::io::stdin().is_terminal();
+    let list_only =
+        config.no_confirm || !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal();
     if list_only {
         for (new, orig) in &pairs {
             println!("{} -> {}", new.display(), orig.display());
