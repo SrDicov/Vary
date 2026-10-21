@@ -439,6 +439,10 @@ con respaldo) y no existe donde sí la hay (la caché) → no es YAGNI.
    planes.** `git add docs/vary2/` se llevó los planes al merge; se
    devolvieron a untracked con un merge (sin reescribir historia publicada).
    La historia es evidencia inmutable; el árbol es la verdad.
+   **Precio real de incumplirla: dos merges de corrección en la misma sesión**
+   (la ley se escribió después del primer incidente y se incumplió después).
+   Regla operativa: `git add <ruta>` con la ruta explícita, o `git add -u` para
+   lo ya trackeado; NUNCA un directorio que mezcle verdad y planes.
 
 Fricción **medida** entre el binario viejo (`8c14628`) y el nuevo (`f27bc64`)
 en un Void limpio (contenedor, artefactos de CI):
