@@ -432,7 +432,12 @@ impl<'a> Ctx<'a> {
         let Some((repo, info)) = found else {
             // El paquete existe en algún VUR pero es incompatible con la
             // arquitectura actual: lo reportamos como tal en vez de "no encontrado".
-            if let Some((mrepo, _)) = self.source.vur_lookup_any_arch(name) {
+            // El lookup usa el nombre TRADUCIDO (virtual → real): el otro
+            // lookup de este bloque ya lo hace; con el nombre pedido, un
+            // virtual cuyo VUR solo define el paquete real daba el error
+            // equivocado ("no encontrado" en vez de "no disponible para tu
+            // arquitectura").
+            if let Some((mrepo, _)) = self.source.vur_lookup_any_arch(lookup_name) {
                 bail!(
                     "el paquete '{}' existe en VUR(s) {} pero no está disponible para tu arquitectura '{}'",
                     name,
@@ -477,8 +482,14 @@ impl<'a> Ctx<'a> {
                 self.warnings.push(format!(
                     "--force-build/--no-prefer-binary sin efecto sobre '{name}': solo existe como binario oficial"
                 ));
-                let item =
-                    Self::official_item(name, &self.arch, Action::Install(BinarySource::Official));
+                // Mismo nombre que las ramas anteriores (`lookup_name`): si
+                // no, el plan podía llevar el virtual y el real del mismo
+                // paquete (duplicado en el plan).
+                let item = Self::official_item(
+                    lookup_name,
+                    &self.arch,
+                    Action::Install(BinarySource::Official),
+                );
                 return Ok(self.push_item(item, dependent));
             }
             bail!(
