@@ -221,6 +221,25 @@ pub fn refresh_repos(config: &Config) -> Result<i32> {
             }
         }
     }
+    // ITEM 2: el clon de void-packages también se sincroniza (estaba
+    // congelado en el commit del clone) y el índice de fuentes se actualiza
+    // de forma incremental (frío si no existe). Best-effort: un fallo aquí
+    // no invalida la sincronización de los VURs.
+    match crate::portdb::sync_index(config) {
+        Ok(stats) if stats.reindexed > 0 => {
+            println!(
+                "void-packages indexado: {} paquete(s) ({}).",
+                stats.reindexed,
+                if stats.full_reindex {
+                    "índice completo"
+                } else {
+                    "incremental"
+                }
+            );
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!("no se pudo actualizar el índice de fuentes: {e:#}"),
+    }
     if any_failed {
         Ok(1)
     } else {

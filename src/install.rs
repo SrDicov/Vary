@@ -319,7 +319,12 @@ fn rebuild_candidates(
     if !config.newoptions && !config.changed_flags {
         return out;
     }
-    for (name, reasons) in crate::rebuild::candidates(config, None) {
+    // El índice de fuentes (ITEM 2) da la versión vigente: si es más nueva
+    // que la instalada, el paquete se recompila (NewVersion). Sin índice no
+    // hay señal de versión (no se inventa nada).
+    let index = crate::portdb::load(config.cache_dir.join("portdb.json")).ok();
+    let version_of = |pkg: &str| index.as_ref().and_then(|db| db.pkgver_of(pkg));
+    for (name, reasons) in crate::rebuild::candidates(config, Some(&version_of)) {
         // Cada dimensión se filtra por separado: un cambio de opciones no
         // puede tapar un cambio de banderas (y al revés).
         let hit = reasons.iter().find(|r| {

@@ -15,6 +15,7 @@ mod lockfile;
 mod logging;
 mod masterdir;
 mod metadata;
+mod portdb;
 mod preflight;
 mod rebuild;
 mod remove;
