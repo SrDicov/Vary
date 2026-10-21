@@ -346,6 +346,21 @@ Reglas de la semana (sin excepciones):
 - Cada roce con severidad >= S2 se tria el mismo día (¿bug, característica,
   o uso incorrecto?); los S3 se anotan y se agrupan.
 
+**DESVIACIÓN (2026-10-22):** la doble revisión subagent del fix de join
+A8-03 (`to_vur_info` valida el nombre del paquete del `index.json`) **no se pudo
+ejecutar**: 4 intentos (2 con el agente `reviewer`, 2 con `general`), todos con
+`all upstream attempts failed` → indisponibilidad del servicio de subagents, no
+un criterio del prompt. En su lugar, el autor hizo **2 pasadas propias con
+evidencia**: (1) *lente de join* — el `pkgname` validado es exactamente la
+clave que consume `install.rs` (`to_vur_info(pkgname, vpkg, arch)`), y si se
+descarta no entra en `vur_map`, ni en `vup_binary_urls`, ni en `binary_check`
+→ no llega al plan, ni a la DB, ni al nombre del artefacto; (2) *lente de
+datos* — todo lo que entra del remoto tiene puerta (`repo_urls` →
+`keys.rs:423 validate_repository_url`; PEM → `keys.rs:43 xbps_fingerprint_pem`
+→ `parse_rsa_spki_pubkey`; versión → `split_pkgver`; plist → tope antes de
+leer). **La revisión subagent queda PENDIENTE** para cuando la infra vuelva:
+es un fix de join y el gobierno no lo cierra sin dos revisores.
+
 **Leyes nuevas (de la propia auditoría):**
 
 1. **Artefacto mal identificado = dato podrido: hash antes de conclusión.** La
