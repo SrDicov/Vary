@@ -433,6 +433,37 @@ fn git_changed_paths(checkout: &Path, git_bin: &str, sha: &str) -> Result<Vec<St
         .collect())
 }
 
+/// Tabla de virtuals: `virtual` → paquete real.
+///
+/// Fuentes (en este orden, el segundo pisa al primero):
+/// - `etc/defaults.virtual` del clon (base de Void);
+/// - `etc/virtual` (override local: "EDIT etc/virtual INSTEAD").
+pub fn parse_virtuals(path: &Path) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return out;
+    };
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut fields = line.split_whitespace();
+        let (Some(virtual_name), Some(real)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        out.insert(virtual_name.to_string(), real.to_string());
+    }
+    out
+}
+
+/// Tabla de virtuals efectiva (base + override local).
+pub fn virtuals(checkout: &Path) -> BTreeMap<String, String> {
+    let mut out = parse_virtuals(&checkout.join("etc").join("defaults.virtual"));
+    out.extend(parse_virtuals(&checkout.join("etc").join("virtual")));
+    out
+}
+
 /// Carga el índice del caché (JSON). Si no existe, índice vacío.
 pub fn load(path: impl Into<PathBuf>) -> Result<PortDb> {
     let path = path.into();
@@ -686,6 +717,25 @@ mod tests {
             stats.reindexed,
             stats.full_reindex
         );
+    }
+
+    #[test]
+    fn virtuals_base_y_override() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("etc")).unwrap();
+        std::fs::write(
+            tmp.path().join("etc/defaults.virtual"),
+            "# comentario\nntp-daemon ntp\n\nfoo bar\n",
+        )
+        .unwrap();
+        let v = parse_virtuals(&tmp.path().join("etc/defaults.virtual"));
+        assert_eq!(v.get("ntp-daemon"), Some(&"ntp".to_string()));
+        assert_eq!(v.get("foo"), Some(&"bar".to_string()));
+        // El override local pisa a la base.
+        std::fs::write(tmp.path().join("etc/virtual"), "ntp-daemon chrony\n").unwrap();
+        let all = virtuals(tmp.path());
+        assert_eq!(all.get("ntp-daemon"), Some(&"chrony".to_string()));
+        assert_eq!(all.get("foo"), Some(&"bar".to_string()));
     }
 
     #[test]

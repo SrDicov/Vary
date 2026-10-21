@@ -172,6 +172,12 @@ pub struct ResolveOptions {
     /// banderas, parches o template cambiados) con su motivo. Se comportan
     /// como `source_always`: se compilan desde fuente.
     pub rebuild_reasons: std::collections::BTreeMap<String, crate::rebuild::RebuildReason>,
+    /// ITEM 3: opciones activas del usuario (para reducir deps condicionales
+    /// `$(vopt_if ...)` de los templates).
+    pub active_options: crate::use_reduce::ActiveOptions,
+    /// ITEM 3: virtuals (`etc/defaults.virtual` + override local): nombre
+    /// virtual → paquete real.
+    pub virtuals: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for ResolveOptions {
@@ -182,6 +188,8 @@ impl Default for ResolveOptions {
             order: CandidateOrder::Legacy,
             source_always: Vec::new(),
             rebuild_reasons: std::collections::BTreeMap::new(),
+            active_options: crate::use_reduce::ActiveOptions::default(),
+            virtuals: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -352,6 +360,16 @@ impl<'a> Ctx<'a> {
             return Ok(idx);
         }
 
+        // ITEM 3: si el nombre es un VIRTUAL (etc/defaults.virtual), se
+        // traduce al paquete real: las búsquedas (oficial/VUR) se hacen con
+        // el nombre real, no con el virtual.
+        let lookup_name = self
+            .opts
+            .virtuals
+            .get(name)
+            .map(|s| s.as_str())
+            .unwrap_or(name);
+
         // T-010: con preferencia de fuente explícita el bucket official NO
         // gana en automático (un template VUR existente se compila en su
         // lugar; ver rama sin-candidato abajo). Con Legacy o preferencia
@@ -365,12 +383,15 @@ impl<'a> Ctx<'a> {
         // (opciones/banderas/parches/template cambiados) aunque el usuario no
         // lo pida explícitamente: se comporta como `source_always`.
         let forced_source = source_always || self.needs_rebuild(name);
-        if self.source.official_exists(name)
+        if self.source.official_exists(lookup_name)
             && !matches!(self.opts.order, CandidateOrder::PreferSource)
             && !forced_source
         {
-            let item =
-                Self::official_item(name, &self.arch, Action::Install(BinarySource::Official));
+            let item = Self::official_item(
+                lookup_name,
+                &self.arch,
+                Action::Install(BinarySource::Official),
+            );
             return Ok(self.push_item(item, dependent));
         }
 
@@ -381,13 +402,13 @@ impl<'a> Ctx<'a> {
         let found: Option<(String, VurInfo)> = if matches!(self.opts.order, CandidateOrder::Legacy)
         {
             let mut candidate = None;
-            if let Some(found) = self.source.vur_lookup(name) {
+            if let Some(found) = self.source.vur_lookup(lookup_name) {
                 if self.arch_supported(&found.1) {
                     candidate = Some(found);
                 }
             }
             if candidate.is_none() {
-                if let Some(found) = self.source.vur_lookup_provides(name) {
+                if let Some(found) = self.source.vur_lookup_provides(lookup_name) {
                     if self.arch_supported(&found.1) {
                         candidate = Some(found);
                     }
@@ -395,10 +416,10 @@ impl<'a> Ctx<'a> {
             }
             candidate
         } else {
-            let mut cands = self.source.vur_lookup_all(name);
+            let mut cands = self.source.vur_lookup_all(lookup_name);
             if cands.is_empty() {
                 // provides sigue siendo fallback solo-nombre (igual que hoy).
-                if let Some(found) = self.source.vur_lookup_provides(name) {
+                if let Some(found) = self.source.vur_lookup_provides(lookup_name) {
                     cands = vec![found];
                 }
             }
@@ -427,13 +448,13 @@ impl<'a> Ctx<'a> {
             //   contrato del usuario; no hay nada que silenciar).
             // Sin ninguno de los dos, el flag no puede actuar -> AVISAR
             // (nunca callar) y seguir con el binario official.
-            if self.source.official_exists(name) {
+            if self.source.official_exists(lookup_name) {
                 if matches!(self.opts.order, CandidateOrder::PreferSource) || forced_source {
                     // Guardia de template: compilar un oficial sin template
                     // en void-packages/srcpkgs/<pkg> es imposible
                     // (xbps-src pkg fallaría). Avisar y degradar al binario
                     // official (que official_exists ya garantiza).
-                    if !self.source.has_template(name) {
+                    if !self.source.has_template(lookup_name) {
                         tracing::warn!(
                             "sin template en void-packages/srcpkgs/{name}: no se puede \
                              compilar el oficial desde fuente; se instala el binario official"
@@ -443,14 +464,14 @@ impl<'a> Ctx<'a> {
                              puede compilar; instalando binario official"
                         ));
                         let item = Self::official_item(
-                            name,
+                            lookup_name,
                             &self.arch,
                             Action::Install(BinarySource::Official),
                         );
                         return Ok(self.push_item(item, dependent));
                     }
                     self.note_rebuild(name);
-                    let item = Self::official_item(name, &self.arch, Action::BuildOfficial);
+                    let item = Self::official_item(lookup_name, &self.arch, Action::BuildOfficial);
                     return Ok(self.push_item(item, dependent));
                 }
                 self.warnings.push(format!(
@@ -460,7 +481,14 @@ impl<'a> Ctx<'a> {
                     Self::official_item(name, &self.arch, Action::Install(BinarySource::Official));
                 return Ok(self.push_item(item, dependent));
             }
-            bail!("paquete no encontrado en repos oficiales ni VURs: {name}");
+            bail!(
+                "paquete no encontrado en repos oficiales ni VURs: {name}{}",
+                if lookup_name != name {
+                    format!(" (virtual → {lookup_name})")
+                } else {
+                    String::new()
+                }
+            );
         };
 
         self.push_vur(name, repo, info, dependent)
@@ -542,14 +570,20 @@ impl<'a> Ctx<'a> {
         if matches!(self.items[idx as usize].action, Action::Build) {
             let deps = {
                 let info = &self.items[idx as usize].info;
-                let mut seen = HashSet::new();
-                let mut ordered = Vec::new();
-                for dep in info
+                let raw: Vec<String> = info
                     .hostmakedepends
                     .iter()
                     .chain(&info.makedepends)
                     .chain(&info.depends)
-                {
+                    .cloned()
+                    .collect();
+                // ITEM 3: `$(vopt_if ...)` se expande según las opciones
+                // activas del usuario (si no, el token `$(vopt_if` entraría
+                // en el grafo como nombre de paquete).
+                let active = self.opts.active_options.for_pkg(&info.pkgname);
+                let mut seen = HashSet::new();
+                let mut ordered = Vec::new();
+                for dep in crate::use_reduce::reduce(&raw, &active) {
                     if seen.insert(dep.clone()) {
                         ordered.push(dep.clone());
                     }
@@ -1111,6 +1145,8 @@ mod tests {
             order,
             source_always: Vec::new(),
             rebuild_reasons: Default::default(),
+            active_options: Default::default(),
+            virtuals: Default::default(),
         }
     }
 
@@ -1120,6 +1156,8 @@ mod tests {
         ResolveOptions {
             source_always: strs(pats),
             rebuild_reasons: Default::default(),
+            active_options: Default::default(),
+            virtuals: Default::default(),
             ..ResolveOptions::default()
         }
     }
@@ -1157,6 +1195,8 @@ mod tests {
         let opts = ResolveOptions {
             source_always: strs(&["linux*"]),
             rebuild_reasons: Default::default(),
+            active_options: Default::default(),
+            virtuals: Default::default(),
             ..opts_con_orden(true, true, CandidateOrder::PreferSource)
         };
         let plan = resolve(&targets(&["linux"]), &src, &opts).unwrap();
@@ -1184,6 +1224,60 @@ mod tests {
         assert_ne!(plan.builds[0].action, Action::BuildOfficial);
     }
 
+    /// ITEM 3: un virtual (`etc/defaults.virtual`) se traduce al paquete real.
+    #[test]
+    fn virtual_se_traduce_al_paquete_real() {
+        let src = MockSource {
+            official: ["ntp".into()],
+            ..MockSource::default()
+        };
+        let opts = ResolveOptions {
+            virtuals: [("ntp-daemon".to_string(), "ntp".to_string())]
+                .into_iter()
+                .collect(),
+            ..opts_con_orden(true, false, CandidateOrder::PreferBinary)
+        };
+        let plan = resolve(&targets(&["ntp-daemon"]), &src, &opts).unwrap();
+        assert_eq!(plan.installs.len(), 1);
+        assert_eq!(plan.installs[0].info.pkgname, "ntp");
+    }
+
+    /// ITEM 3: las deps condicionales `$(vopt_if ...)` se reducen según las
+    /// opciones activas del usuario. Sin reducción, `$(vopt_if` entraría en
+    /// el grafo como nombre de paquete (basura).
+    #[test]
+    fn deps_condicionales_se_reducen_segun_opciones_activas() {
+        let mut info = vur_info_ver("tool", "1.0", &["x86_64"]);
+        info.depends = strs(&["glibc", "$(vopt_if pgo 'xvfb-run dbus')"]);
+        let src = MockSource {
+            vur: [("tool", ("cnr", info))].into_iter().collect(),
+            ..MockSource::default()
+        };
+        // pgo activa: entra `xvfb-run` (y `dbus`), no el token.
+        let opts = ResolveOptions {
+            active_options: crate::use_reduce::ActiveOptions {
+                global: vec!["pgo".to_string()],
+                per_pkg: Default::default(),
+            },
+            ..opts_con_orden(true, false, CandidateOrder::PreferBinary)
+        };
+        let plan = resolve(&targets(&["tool"]), &src, &opts).unwrap();
+        let names: Vec<&str> = plan.builds.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"xvfb-run"), "{names:?}");
+        assert!(!names.iter().any(|n| n.contains("vopt_if")), "{names:?}");
+
+        // pgo inactiva: solo `glibc`.
+        let opts = ResolveOptions {
+            active_options: Default::default(),
+            virtuals: Default::default(),
+            ..opts_con_orden(true, false, CandidateOrder::PreferBinary)
+        };
+        let plan = resolve(&targets(&["tool"]), &src, &opts).unwrap();
+        let names: Vec<&str> = plan.builds.iter().map(|b| b.name.as_str()).collect();
+        assert!(!names.contains(&"xvfb-run"), "{names:?}");
+        assert!(!names.iter().any(|n| n.contains("vopt_if")), "{names:?}");
+    }
+
     /// ITEM 1: la auditoría marca un paquete -> se compila desde fuente
     /// (BuildOfficial) aunque el usuario no lo pida, y el plan explica por qué.
     #[test]
@@ -1199,6 +1293,8 @@ mod tests {
             )]
             .into_iter()
             .collect(),
+            active_options: Default::default(),
+            virtuals: Default::default(),
             ..opts_con_orden(true, false, CandidateOrder::PreferBinary)
         };
         let plan = resolve(&targets(&["linux"]), &src, &opts).unwrap();

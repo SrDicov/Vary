@@ -132,19 +132,7 @@ pub fn audit_all(
 /// `XBPS_PKG_OPTIONS_<pkg>` vacío y aplica las globales). Un `~opcion`
 /// desactiva: no cuenta como activa.
 pub fn effective_options(config: &Config, pkg: &str) -> Vec<String> {
-    let per_pkg = config.pkg_options.get(pkg);
-    let raw = match per_pkg {
-        Some(v) if !v.is_empty() => v,
-        _ => &config.make.global_options,
-    };
-    let mut opts: Vec<String> = raw
-        .iter()
-        .filter(|o| !o.starts_with('~'))
-        .cloned()
-        .collect();
-    opts.sort();
-    opts.dedup();
-    opts
+    crate::use_reduce::effective_options(&config.make.global_options, config.pkg_options.get(pkg))
 }
 
 /// Hash del template del paquete en el clon de void-packages (si está).

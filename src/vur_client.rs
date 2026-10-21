@@ -1059,6 +1059,15 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
             .filter(|s| !s.is_empty())
             .collect()
     };
+    // Deps: split consciente de `$( ... )` (ITEM 3): las construcciones
+    // `$(vopt_if ...)` deben sobrevivir enteras para poder reducirse según
+    // las opciones activas del usuario; con split por espacios se colarían
+    // tokens basura (`$(vopt_if`) como nombres de paquete.
+    let split_deps = |key: &str| -> Vec<String> {
+        vars.get(key)
+            .map(|s| crate::use_reduce::split_deps(s))
+            .unwrap_or_default()
+    };
     let split_list = |key: &str| -> Vec<String> {
         vars.get(key)
             .map(|s| s.split_whitespace().map(|v| v.to_string()).collect())
@@ -1098,9 +1107,8 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
                     .replace("$version", &version)
                     .replace("${revision}", &revision.to_string())
                     .replace("$revision", &revision.to_string());
-                expanded
-                    .split_whitespace()
-                    .map(|d| d.to_string())
+                crate::use_reduce::split_deps(&expanded)
+                    .into_iter()
                     .filter(|d| !d.trim().is_empty())
                     .collect()
             })
@@ -1125,10 +1133,10 @@ fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
         revision,
         archs,
         subpackages,
-        depends: split_list("depends"),
-        hostmakedepends: split_list("hostmakedepends"),
-        makedepends: split_list("makedepends"),
-        checkdepends: split_list("checkdepends"),
+        depends: split_deps("depends"),
+        hostmakedepends: split_deps("hostmakedepends"),
+        makedepends: split_deps("makedepends"),
+        checkdepends: split_deps("checkdepends"),
         build_style: vars.get("build_style").cloned().filter(|s| !s.is_empty()),
         distfiles: split_list("distfiles"),
         checksum,

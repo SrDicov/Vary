@@ -305,6 +305,13 @@ fn assemble_source(
         source_always: config.source_always.clone(),
         // ITEM 1: auditoría de discrepancias (opciones/banderas/parches).
         rebuild_reasons: rebuild_candidates(config),
+        // ITEM 3: opciones activas (reducción condicional de deps).
+        active_options: crate::use_reduce::ActiveOptions {
+            global: config.make.global_options.clone(),
+            per_pkg: config.pkg_options.clone(),
+        },
+        // ITEM 3: virtuals del clon de void-packages (base + override local).
+        virtuals: crate::portdb::virtuals(&config.void_packages_dir()),
     };
     (source, opts)
 }

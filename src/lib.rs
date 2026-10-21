@@ -358,6 +358,7 @@ mod overlay;
 mod review;
 mod search;
 mod upgrade;
+mod use_reduce;
 
 #[cfg(test)]
 mod tests {
