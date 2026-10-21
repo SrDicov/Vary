@@ -116,6 +116,13 @@ pesada): el índice de portdb **ya resuelve los alias `-devel` → sourcepkg**
 | Completo: además registrar los subpaquetes en la DB (entradas propias) y auditarlos | + `db.rs` + `upgrade.rs` | medio-alto |
 | (No hace falta para el mínimo) normalización subpkg→sourcepkg en el resolver | `resolver.rs` | medio, y con riesgo de identidad de nodos |
 
+> **El precio NO autoriza el arreglo.** Esta tabla es información, no un
+> crédito: "es barato" es exactamente el razonamiento que convierte un
+> diferido en feature sin que nadie lo vote. Lo único que abre el ítem es el
+> **trigger** (una actualización real que sustituya un subpaquete compilado
+> por el genérico). Cuando dispare, el diseño se decide **con ese caso**,
+> no con esta estimación.
+
 **B) Test de contrato del helper de sync — CANCELADO (y anotado por qué)**
 
 El helper `sync_source_index` **no es función pura**: hace I/O (`git pull`,
