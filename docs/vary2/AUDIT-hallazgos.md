@@ -553,6 +553,11 @@ base64, serde/JSON, tempfile, y **errores surfaceados vs loggeados**.
 
 - El `<data>` del plist (base64, del repo remoto) se decodificaba sin tope →
   OOM con un plist hostil. **Fix**: tope de 1 MiB (los reales pesan KB).
+- **Autorrevisión del autor (el primer fix llegaba tarde)**: el tope del bloque
+  `<data>` solo evitaba el *decode*, pero el plist **ya se había leído entero a
+  RAM** (`read_to_string`) → el pico ya había ocurrido. Ampliado: el tope se
+  comprueba **antes de leer** (path del filesystem: `metadata`) y en el path de
+  git con `git cat-file -s` (dice el tamaño **sin** leer el objeto).
 
 **ID: A8-03** · **S3** · `src/vup_index.rs::to_vur_info` → **ARREGLADO** (toca JOIN)
 
