@@ -53,6 +53,7 @@ pub fn help() {
     println!("    --no-prefer-binary      Always build from source");
     println!("    --newoptions            Rebuild source packages whose options, user patches or template changed");
     println!("    --changed-flags (-U)    Rebuild source packages compiled with different compiler flags");
+    println!("    --changed-deps          Rebuild source packages whose dependency changed version in the source tree");
     println!("    --sudo <bin>            privilege escalation tool: sudo, doas or run0 (default: auto-detected; unused as root)");
     println!("    --sudoflags <flags>     replace vary.conf flags for the elevation tool");
     println!("    --git <bin>             git binary to use");

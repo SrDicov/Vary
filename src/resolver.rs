@@ -289,7 +289,7 @@ impl<'a> Ctx<'a> {
     fn note_rebuild(&mut self, name: &str) {
         if let Some(reason) = self.opts.rebuild_reasons.get(name) {
             self.warnings
-                .push(format!("rebuild de '{name}': {}", reason.as_str()));
+                .push(format!("rebuild de '{name}': {}", reason.describe()));
         }
     }
 

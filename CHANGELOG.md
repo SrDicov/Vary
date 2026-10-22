@@ -77,6 +77,18 @@ All notable changes to vary will be documented in this file.
   anteriores a esta función) no hay señal: no se inventan rebuilds. Los
   binarios oficiales nunca se recompilan por esto. Sin short para
   `--newoptions`: `-N` ya significa "sin repos remotos" en xbps-src.
+- **Rebuild por dependencias desfasadas (`--changed-deps`):** vary graba, para
+  cada paquete compilado desde fuente, la versión en void-packages de cada
+  dependencia directa (runtime y de build). Con `--changed-deps`, los
+  paquetes cuya dependencia se movió en el árbol entran en el plan (en un
+  `-Syu`, en la misma transacción que el resto del upgrade). Es **opt-in**:
+  con enlace dinámico la librería nueva se carga igual en tiempo de
+  ejecución y un bump de SONAME ya se avisa por su cuenta
+  (`@preserved-rebuild`); importa cuando la dependencia es una entrada de
+  build (cabeceras, plantillas C++, header-only) o cuando el binario se
+  enlazó contra algo que el árbol ya no provee. Sin baseline no hay señal, y
+  una dependencia que solo existe en un VUR tampoco (el baseline es del
+  árbol oficial).
 - **Fix `XBPS_PKG_OPTIONS`:** xbps-src separa la lista de opciones por
   **comas** (`IFS=','` en `set_build_options`), pero vary la emitía con
   espacios: el token entero no matcheaba ninguna opción y todas las que no

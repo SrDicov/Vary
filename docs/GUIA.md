@@ -250,6 +250,7 @@ Usage:
 | `--no-prefer-binary` | Compila siempre desde fuente. |
 | `--newoptions` | Recompila los paquetes compilados cuyas **opciones**, parches de usuario o plantilla cambiaron. |
 | `--changed-flags` (`-U`) | Recompila los paquetes compilados con **otras banderas** de compilador. |
+| `--changed-deps` | Recompila los paquetes compilados cuya **dependencia cambió de versión** en el árbol de fuentes desde su build (opt-in). |
 | `--sudo <bin>` | Herramienta de elevación: `sudo`, `doas` o `run0`. |
 | `--sudoflags <flags>` | Sustituye los flags del wrapper de elevación. |
 | `--git <bin>` | Binario `git` a usar. |
@@ -785,10 +786,35 @@ mes ya no coincide con cómo lo compilarías hoy".
 ```sh
 vary -S --newoptions pkg     # cambió: opción, parche de usuario o plantilla
 vary -S --changed-flags pkg   # cambió: banderas del compilador (-U)
+vary -Syu --changed-deps      # cambió: una dependencia se movió en el árbol
 vary -S @preserved-rebuild     # lo mismo, para todo lo que lo necesite
 ```
 
 Ambas flags se pueden combinar con `-p` para ver el plan antes de compilar.
+
+### `--changed-deps` (dependencias desfasadas)
+
+Un paquete compilado puede quedar obsoleto aunque **él** no haya cambiado:
+si una dependencia se movió en el árbol de fuentes (cabeceras, plantillas
+C++, librerías header-only), lo compilado se quedó atrás.
+
+```sh
+vary -Syu --changed-deps      # los dependientes entran en el plan del upgrade
+```
+
+Es **opt-in** a propósito: con enlace dinámico la librería nueva se carga
+igual en tiempo de ejecución, y un bump de SONAME ya se avisa por su cuenta
+(`@preserved-rebuild`). Importa sobre todo cuando la dependencia es una
+*entrada de build* (cabeceras, plantillas C++, header-only).
+
+El baseline es la versión de la dependencia en void-packages en el momento
+del build:
+
+| Caso | Qué pasa |
+|---|---|
+| La dependencia solo existe en un VUR | Sin señal (el árbol no la conoce). |
+| Existe en void-packages **y** en un VUR | Se pinea la versión del árbol: un bump del árbol propone recompilar aunque el build usara la del VUR (un rebuild de más). |
+| La dependencia se **eliminó** del árbol | Sin señal (ese caso es de la maquinaria de SONAME). |
 
 ### Parches propios
 
@@ -993,6 +1019,7 @@ con los flags de motivo: `--asdeps`/`--asexplicit` **se rechazan con error**
 | `--no-prefer-binary` | Siempre fuente. |
 | `--newoptions` | Recompilar por opciones/parches/plantilla. |
 | `--changed-flags`, `-U` | Recompilar por banderas. |
+| `--changed-deps` | Recompilar por dependencia movida en el árbol (opt-in). |
 | `--sudo <bin>`, `--sudoflags <f>` | Elevación. |
 | `--git <bin>`, `--curl <bin>` | Binarios externos. |
 | `--repo <cmd>` | Gestión de VURs (`add`, `list`, `remove`, `rekey`, `re-trust`). |

@@ -570,6 +570,28 @@ pub fn sync_index(config: &crate::config::Config) -> Result<UpdateStats> {
     Ok(stats)
 }
 
+/// Garantiza que exista el índice de fuentes y lo devuelve.
+///
+/// `-Sy`/upgrade lo crean; si no existe (instalación desde fuente sin un
+/// upgrade previo) se construye aquí desde el checkout y se cachea. Sin
+/// índice no hay baseline de deps y la señal se perdería para siempre.
+///
+/// No hace `pull`: el clon solo se mueve en el upgrade, que también refresca
+/// el índice (índice y clon no se separan).
+pub fn ensure_index(config: &crate::config::Config) -> Result<PortDb> {
+    let path = config.cache_dir.join("portdb.json");
+    if let Ok(db) = load(&path) {
+        if !db.entries.is_empty() {
+            return Ok(db);
+        }
+    }
+    let checkout = config.void_packages_dir();
+    let mut db = index_checkout(&checkout)?;
+    db.void_commit = git_head(&checkout, &config.git_bin)?;
+    save(&db, &path)?;
+    Ok(db)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -317,13 +317,13 @@ fn assemble_source(
 }
 
 /// ITEM 1: paquetes instalados desde fuente que hay que recompilar según los
-/// flags de auditoría. Sin `--newoptions`/`--changed-flags` no se recalcula
-/// nada (cero coste en el camino normal).
+/// flags de auditoría. Sin `--newoptions`/`--changed-flags`/`--changed-deps`
+/// no se recalcula nada (cero coste en el camino normal).
 fn rebuild_candidates(
     config: &Config,
 ) -> std::collections::BTreeMap<String, crate::rebuild::RebuildReason> {
     let mut out = std::collections::BTreeMap::new();
-    if !config.newoptions && !config.changed_flags {
+    if !config.newoptions && !config.changed_flags && !config.changed_deps {
         return out;
     }
     // El índice de fuentes (ITEM 2) da la versión vigente: si es más nueva
@@ -334,16 +334,31 @@ fn rebuild_candidates(
     for (name, reasons) in crate::rebuild::candidates(config, Some(&version_of)) {
         // Cada dimensión se filtra por separado: un cambio de opciones no
         // puede tapar un cambio de banderas (y al revés).
-        let hit = reasons.iter().find(|r| {
-            (config.newoptions && r.triggers_options())
-                || (config.changed_flags && r.triggers_flags())
-        });
-        if let Some(reason) = hit {
-            tracing::info!("{name}: rebuild por {}", reason.as_str());
-            out.insert(name, *reason);
+        if let Some(reason) = select_reason(&reasons, config) {
+            tracing::info!("{name}: rebuild por {}", reason.describe());
+            out.insert(name, reason.clone());
         }
     }
     out
+}
+
+/// Primera razón que dispara alguno de los flags activos.
+///
+/// Cada dimensión se filtra por separado: un cambio de opciones no puede
+/// tapar un cambio de banderas (ni una dep cambiada). La primera razón que
+/// casa es la que se anuncia; el resto sigue en la lista completa.
+fn select_reason(
+    reasons: &[crate::rebuild::RebuildReason],
+    config: &Config,
+) -> Option<crate::rebuild::RebuildReason> {
+    reasons
+        .iter()
+        .find(|r| {
+            (config.newoptions && r.triggers_options())
+                || (config.changed_flags && r.triggers_flags())
+                || (config.changed_deps && r.triggers_deps())
+        })
+        .cloned()
 }
 
 /// ITEM 1: hechos de compilación que se registran por paquete instalado desde
@@ -357,6 +372,42 @@ fn build_facts(config: &Config, pkg: &str, action: &Action) -> crate::db::BuildF
         facts.template_sha256 = None;
     }
     facts
+}
+
+/// Baseline de deps de un paquete compilado desde fuente: para cada dep
+/// directa (runtime y de build) la versión del árbol de fuentes en el momento
+/// del build.
+///
+/// Es un PROXY del árbol oficial: una dep que solo existe en un VUR no está
+/// en el índice y no aporta baseline (sin señal, sin ruido). Los
+/// `hostmakedepends` se omiten: son herramientas de la máquina de build, no
+/// condicionan el artefacto.
+fn capture_deps_pins(
+    index: Option<&crate::portdb::PortDb>,
+    depends: &[String],
+    makedepends: &[String],
+) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    let Some(index) = index else {
+        return out;
+    };
+    for name in tracked_deps(depends, makedepends) {
+        if let Some(pkgver) = index.pkgver_of(name) {
+            out.insert(name.to_string(), pkgver);
+        }
+    }
+    out
+}
+
+/// Deps cuya versión se consulta: runtime y de build. Se quitan las
+/// restricciones (`libfoo>=1.2` → `libfoo`).
+fn tracked_deps<'a>(depends: &'a [String], makedepends: &'a [String]) -> Vec<&'a str> {
+    depends
+        .iter()
+        .chain(makedepends.iter())
+        .map(|d| crate::resolver::dep_name(d))
+        .filter(|n| !n.is_empty())
+        .collect()
 }
 
 /// P0-2: fecha el primer registro binario (best-effort con aviso; la
@@ -1927,6 +1978,9 @@ pub fn install(config: &mut Config) -> Result<i32> {
     }
 
     // 9. Record in db
+    // Baseline de deps: el índice de fuentes se carga UNA vez (lazy: solo si
+    // hay builds desde fuente).
+    let portdb: std::cell::OnceCell<Option<crate::portdb::PortDb>> = std::cell::OnceCell::new();
     for item in plan.installs.iter().chain(plan.builds.iter()) {
         // Only VUR packages (por nombre real: lo pedido puede ser virtual).
         let real = &item.info.pkgname;
@@ -1975,6 +2029,24 @@ pub fn install(config: &mut Config) -> Result<i32> {
             db.set_soname_pins(real, pins);
             // ITEM 1: hechos de compilación para la auditoría de rebuild.
             db.set_build_facts(real, &build_facts(config, real, &item.action));
+            // Baseline de deps: la versión del árbol de fuentes de cada dep
+            // en el momento del build (señal de `--changed-deps`).
+            let deps = capture_deps_pins(
+                portdb
+                    .get_or_init(|| match crate::portdb::ensure_index(config) {
+                        Ok(db) => Some(db),
+                        Err(e) => {
+                            tracing::warn!(
+                                "no se pudo obtener el índice de fuentes (sin baseline de deps): {e:#}"
+                            );
+                            None
+                        }
+                    })
+                    .as_ref(),
+                &item.info.depends,
+                &item.info.makedepends,
+            );
+            db.set_deps_pinned(real, deps);
         }
         // P2: diario (best-effort: nunca aborta un install válido).
         if let Err(e) = crate::journal::append(
@@ -2359,12 +2431,79 @@ mod tests {
             ldflags: None,
             patches_sha256: None,
             template_sha256: None,
+            deps_pinned: None,
         };
         assert!(suelta_repolock(Some(&source)));
         source.install_type = crate::db::InstallType::Binary;
         assert!(!suelta_repolock(Some(&source)));
         // Sin entrada en la DB: nada que soltar.
         assert!(!suelta_repolock(None));
+    }
+
+    /// Deps que se versionan para la baseline: runtime y de build, sin
+    /// restricciones (y las vacías se descartan).
+    #[test]
+    fn tracked_deps_quita_restricciones_y_omite_vacias() {
+        let depends = vec![
+            "libfoo>=1.2_3".to_string(),
+            "bar".to_string(),
+            ">=2".to_string(),
+        ];
+        let makedepends = vec!["libfoo-devel".to_string()];
+        assert_eq!(
+            tracked_deps(&depends, &makedepends),
+            vec!["libfoo", "bar", "libfoo-devel"]
+        );
+    }
+
+    /// Cada flag dispara solo su dimensión: `--changed-deps` NO recompila por
+    /// opciones ni por banderas, y `--newoptions` no recompila por deps.
+    #[test]
+    fn cada_flag_filtra_su_dimension() {
+        let opts = crate::rebuild::RebuildReason::OptionsChanged;
+        let flags = crate::rebuild::RebuildReason::FlagsChanged;
+        let deps = crate::rebuild::RebuildReason::DepChanged {
+            dep: "libfoo".to_string(),
+        };
+
+        // Solo --changed-deps: únicamente la dep dispara.
+        let config = Config {
+            changed_deps: true,
+            ..Default::default()
+        };
+        assert_eq!(select_reason(std::slice::from_ref(&opts), &config), None);
+        assert_eq!(select_reason(std::slice::from_ref(&flags), &config), None);
+        assert_eq!(
+            select_reason(std::slice::from_ref(&deps), &config),
+            Some(deps.clone())
+        );
+
+        // Solo --newoptions: la dep NO entra (una dimensión no tapa a otra).
+        let config = Config {
+            newoptions: true,
+            ..Default::default()
+        };
+        assert_eq!(select_reason(std::slice::from_ref(&deps), &config), None);
+        assert_eq!(
+            select_reason(std::slice::from_ref(&opts), &config),
+            Some(opts.clone())
+        );
+
+        // Solo --changed-flags.
+        let config = Config {
+            changed_flags: true,
+            ..Default::default()
+        };
+        assert_eq!(select_reason(std::slice::from_ref(&deps), &config), None);
+        assert_eq!(
+            select_reason(std::slice::from_ref(&flags), &config),
+            Some(flags.clone())
+        );
+
+        // Ningún flag: nada se recompila por esta vía.
+        let config = Config::default();
+        assert_eq!(select_reason(std::slice::from_ref(&deps), &config), None);
+        assert_eq!(select_reason(std::slice::from_ref(&opts), &config), None);
     }
 
     /// WorkerSandbox mínimo sin montar (los paths no necesitan existir para

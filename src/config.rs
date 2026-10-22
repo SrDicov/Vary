@@ -139,6 +139,9 @@ pub struct Config {
     /// ITEM 1: `--changed-flags`: recompila los paquetes desde fuente
     /// compilados con otras banderas (`-O2` → `-O3 -march=native`).
     pub changed_flags: bool,
+    /// `--changed-deps`: recompila los paquetes desde fuente cuya dep cambió
+    /// de versión en el árbol de fuentes desde su build (cabeceras/ABI).
+    pub changed_deps: bool,
     /// `vary --conf-update`: resuelve los `.new-*` de /etc.
     pub conf_update: bool,
     /// T-010: orden explícito entre candidatos multi-repo (los flags
@@ -342,6 +345,7 @@ impl Config {
             experimental: false,
             newoptions: false,
             changed_flags: false,
+            changed_deps: false,
             conf_update: false,
             candidate_order: crate::resolver::CandidateOrder::Legacy,
         }

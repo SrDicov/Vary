@@ -334,6 +334,7 @@ mod tests {
             ldflags: None,
             patches_sha256: None,
             template_sha256: None,
+            deps_pinned: None,
         }
     }
 
