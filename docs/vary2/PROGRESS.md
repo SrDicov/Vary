@@ -312,6 +312,7 @@ mergeada a main cuando empezó la auditoría).
 | 2026-10-21 | Sin `cargo test` local | regla del repo; los fallos se cazaron con `cargo check --all-targets` + revisores |
 | 2026-10-21 | Preservación física de `.so` NO implementada | parada obligatoria de ITEM 4 (root, caso ABI real, aprobación) |
 | 2026-10-21 | Registro de subpaquetes de builds oficiales NO implementado | la sonda lo mostró necesario, pero el arreglo toca 4 módulos → rewrite → orden manda parar y reportar |
+| 2026-10-22 | `cargo clippy` + `cargo test --lib` **locales** (clippy con `-A clippy::collapsible_match`; 362 tests verdes) | excepción de la regla: la CI estaba **en rojo** (clippy `field_reassign_with_default` + 2 tests nuevos mal escritos). El fix-forward (`9d25e20`) quedó verde en CI |
 
 ## Siguiente
 
@@ -454,3 +455,82 @@ en un Void limpio (contenedor, artefactos de CI):
 | refresh de un VUR caído | solo el WARN en el log | **"aviso: no se pudo clonar el repo VUR 'x'"** en consola |
 | paquete con `pkgname=../escape` | rechazado con aviso | igual (el falso positivo A3-01: ya lo rechazaba) |
 | `vary -Q` | 95 paquetes | 95 (idéntico) |
+
+## 2026-10-22 — Rebuild por dependencias desfasadas (`--changed-deps`)
+
+**Origen:** una hoja de ruta externa ("Vary → experiencia Gentoo") proponía 40
+cambios; al cotejarla con el código, **5 de sus 7 P0 estructurales ya estaban
+implementados**, 1 era derivable sin schema nuevo y 1 dependía de datos que
+nadie publica. Quedaban 2 huecos reales; este cierra el que sí tiene valor.
+
+**Lo que NO se re-propuso (medido, no de memoria):**
+
+| Propuesta | Realidad (fichero:línea) |
+|---|---|
+| "opciones globales" | `config.rs:205` + `use_reduce.rs:39` (semántica de sustitución ya resuelta) |
+| "fingerprint de build" | `db.rs:31` `BuildFacts` (opciones, banderas, parches, template) |
+| "auditoría de rebuild" | `rebuild.rs:74` `audit_all` + `--newoptions`/`--changed-flags` |
+| "sets de usuario" | `src/sets.rs:38` |
+| "mapa opción→deps en el schema" | `use_reduce.rs:147` `parse_vopt_if` ya lo extrae del template → **no hace falta campo nuevo** |
+| "fingerprint de binarios remotos" | `vup_index.rs:41` `VupPackage` no tiene campo para él; el binhost oficial no lo publica → **imposible hoy** |
+
+**Lo implementado** (`c050699`, `9d25e20`, merge `6e861d9` en `main`):
+
+- `db::Entry.deps_pinned` (dep → pkgver del árbol en el build), **opcional y sin
+  bumpear el schema** (un vary viejo lo ignora; uno nuevo lee los ficheros
+  antiguos sin baseline → ausencia de dato ≠ señal).
+- `install.rs`: baseline al instalar **desde fuente** (runtime + build; no
+  hostmakedepends: no condicionan el artefacto). Si el índice de fuentes no
+  existe, `portdb::ensure_index` lo construye desde el checkout (si no, la
+  baseline se perdería para siempre).
+- `rebuild.rs`: `RebuildReason::DepChanged` + `changed_deps()` puro; el cruce
+  usa el índice de fuentes, como el resto de la auditoría.
+- `upgrade.rs`: con `--changed-deps` los dependientes entran en el plan de la
+  **misma transacción** que el upgrade (como los consumidores de un bump de
+  SONAME) y se **anuncian después** del gate de diffs (un aviso que promete
+  una recompilación que el gate puede tirar es peor que ningún aviso).
+
+**Opt-in y por qué:** con enlace dinámico la librería nueva se carga igual en
+runtime, y un bump de SONAME ya lo avisa la maquinaria existente
+(`@preserved-rebuild`). Lo que aporta esta señal es el caso **entrada de
+build** (cabeceras, plantillas C++, header-only).
+
+**Doble revisión PAGADA (A y B, OK CON SALVEDADES)** — 8 salvedades aplicadas:
+
+- A-1 (MEDIA): el índice de fuentes solo lo crea `-Sy`/upgrade → sin índice la
+  baseline se perdía **para siempre** → `ensure_index`.
+- A-2 (MEDIA): dep presente en void-packages **y** en un VUR → el baseline es
+  el del árbol → falso positivo posible (un rebuild de más, opt-in) → documentado.
+- A-3 (BAJA): el pkgver comparison incluye el nombre del paquete fuente → un
+  re-parentado del árbol da señal sin bump real → techo documentado con
+  `// ponytail:` (comparar solo la versión evitaría ese falso positivo, pero
+  perdería los forks con la misma versión).
+- A-4 (BAJA): una dep **eliminada** del árbol no da señal → el texto de README
+  y GUIA ya no promete ese caso.
+- A-5 (BAJA): `dep_changed_consumers` sin test → ahora es pura (lookup
+  inyectado) y tiene test.
+- B-1 (MEDIA): el bloque `--changed-deps` anunciaba antes del gate de diffs →
+  ahora anuncia **después** (solo lo que sigue en el plan).
+- B-2 (MEDIA): el filtro por flag no tenía test → `select_reason()` extraído a
+  función pura + test (una dimensión no tapa a otra).
+- B-3/B-4/B-5 (BAJA): índice viejo al grabar la baseline (señal correcta, "from"
+  impreciso) → techo documentado; comentario de `rebuild_candidates`
+  desactualizado → corregido; falta el assert de que un `upsert` resetea la
+  baseline → añadido.
+
+**CI:** `c050699` **ROJO** (clippy `field_reassign_with_default` + 2 tests
+nuevos mal escritos) → fix-forward `9d25e20` → **VERDE** (fmt + clippy + test);
+merge a `main` en `6e861d9` → verde en `main`.
+
+### Hueco NUEVO detectado (no lo cubría el análisis de la hoja de ruta)
+
+El "keywords/ACCEPT_KEYWORDS" de la hoja de ruta era cargo cult (en Void/VUR
+el repo **es** la rama inestable), pero la **necesidad** que detrás escondía es
+real y **no está cubierta**: **fijar una versión antigua** (instalar `foo-1.2`
+cuando el VUR ya tiene `foo-2.0`). Hoy no hay `package.mask`/`package.unmask`
+equivalente: el resolver elige la versión más nueva del repo. `repolock` solo
+protege lo compilado desde fuente, no fija una versión.
+
+**Trigger:** el primer roce donde alguien necesite "quédate con la versión
+antigua" (un paquete roto en la última, un VUR que actualizó y rompió algo).
+**No implementado** (feature especulativa sin dolor medido).
