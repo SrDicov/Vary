@@ -109,7 +109,22 @@ como build (no como binario) y motivo visible en el plan.
 Sin el smoke, la feature habría sido un `CI verde + 362 tests` que no hacía
 nada en el caso más común.
 
+### Dos honestidades que el smoke debe (y este documento debe) decir
+
+1. **El bump del smoke (`ncurses` 6.6 → 6.6.1) es sintético**: esa versión
+   nunca existió upstream → su distfile da 404 → **el árbol queda sin
+   compilar** para lo que dependa de ncurses. Se midió el **plan** (que es lo
+   que la feature decide), no un rebuild real de la dep con esa versión.
+2. **El bump era el commit del tip**, que es el **único caso que el index
+   incremental ve** (`git diff-tree` de un commit, y en un clon shallow el
+   tip no tiene diff). El índice **no se refresca tras un pull real** →
+   la señal casi nunca se dispararía en el mundo real. Es un bug
+   preexistente del `portdb`, medido y anotado en `docs/vary2/PROGRESS.md`
+   con sus opciones; la feature queda verificada en su **mecanismo** y
+   bloqueada en su **trigger real** hasta que se arregle.
+
 **Lo que NO se ha ejercitado:** un paquete de **VUR** (la ruta del `.VURINFO`
 con deps ya evaluadas), un subpaquete, y el caso de un bump de SONAME
 interactuando con `--changed-deps` (deben ser señales distintas: la de
 soname ya la da `@preserved-rebuild`).
+
