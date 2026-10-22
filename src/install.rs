@@ -2466,32 +2466,44 @@ mod tests {
             dep: "libfoo".to_string(),
         };
 
-        let mut config = Config::default();
-        config.changed_deps = true;
-        assert_eq!(select_reason(&[opts.clone()], &config), Some(opts.clone()));
+        // Solo --changed-deps: únicamente la dep dispara.
+        let config = Config {
+            changed_deps: true,
+            ..Default::default()
+        };
+        assert_eq!(select_reason(std::slice::from_ref(&opts), &config), None);
+        assert_eq!(select_reason(std::slice::from_ref(&flags), &config), None);
         assert_eq!(
-            select_reason(&[flags.clone()], &config),
-            Some(flags.clone())
+            select_reason(std::slice::from_ref(&deps), &config),
+            Some(deps.clone())
         );
-        assert_eq!(select_reason(&[deps.clone()], &config), Some(deps.clone()));
 
-        let mut config = Config::default();
-        config.newoptions = true;
-        assert_eq!(select_reason(&[deps.clone()], &config), None);
-        assert_eq!(select_reason(&[opts.clone()], &config), Some(opts.clone()));
-
-        let mut config = Config::default();
-        config.changed_flags = true;
-        assert_eq!(select_reason(&[deps.clone()], &config), None);
+        // Solo --newoptions: la dep NO entra (una dimensión no tapa a otra).
+        let config = Config {
+            newoptions: true,
+            ..Default::default()
+        };
+        assert_eq!(select_reason(std::slice::from_ref(&deps), &config), None);
         assert_eq!(
-            select_reason(&[flags.clone()], &config),
+            select_reason(std::slice::from_ref(&opts), &config),
+            Some(opts.clone())
+        );
+
+        // Solo --changed-flags.
+        let config = Config {
+            changed_flags: true,
+            ..Default::default()
+        };
+        assert_eq!(select_reason(std::slice::from_ref(&deps), &config), None);
+        assert_eq!(
+            select_reason(std::slice::from_ref(&flags), &config),
             Some(flags.clone())
         );
 
         // Ningún flag: nada se recompila por esta vía.
         let config = Config::default();
-        assert_eq!(select_reason(&[deps.clone()], &config), None);
-        assert_eq!(select_reason(&[opts], &config), None);
+        assert_eq!(select_reason(std::slice::from_ref(&deps), &config), None);
+        assert_eq!(select_reason(std::slice::from_ref(&opts), &config), None);
     }
 
     /// WorkerSandbox mínimo sin montar (los paths no necesitan existir para

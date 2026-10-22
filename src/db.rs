@@ -681,6 +681,16 @@ mod tests {
                 .map(String::as_str),
             Some("libfoo-1.2.3_1")
         );
+        // Sin baseline el campo no se escribe (no hay "{}" vacío).
+        db.upsert(
+            "dep-pkg-sin-baseline",
+            "dep-pkg-sin-baseline-1.0_1",
+            "mi-repo",
+            InstallType::Source,
+            None,
+            None,
+        );
+        db.save().unwrap();
         let raw = std::fs::read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(v["schema_version"], 3);
@@ -688,8 +698,7 @@ mod tests {
             v["packages"]["dep-pkg"]["deps_pinned"]["libfoo"],
             "libfoo-1.2.3_1"
         );
-        // Sin baseline el campo no se escribe (no hay "{}" vacío).
-        assert!(v["packages"]["dep-pkg"]["deps_pinned"].is_null());
+        assert!(v["packages"]["dep-pkg-sin-baseline"]["deps_pinned"].is_null());
     }
 
     /// Un `upsert` posterior (p. ej. el paquete pasa a binario) deja la
