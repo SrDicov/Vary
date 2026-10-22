@@ -1,0 +1,12 @@
+[33m WARN[0m [2mvary::reposconf[0m[2m:[0m /home/tester/.config/vary/repos.conf no existe, usando configuración de repos por defecto
+[32m INFO[0m [2mvary::install[0m[2m:[0m sl: rebuild por dep cambiada (ncurses-devel)
+:: PRINT-ONLY plan for: sl (no changes will be made)
+installs [single binary transaction]:
+  (none)
+builds [topological levels]:
+  level 0:
+    sl official-source (lo compila xbps-src, deps y artefactos incluidos)
+elevations [estimated total: 1]:
+  repo-setup: 0
+  install-transaction: 1
+warning: rebuild de 'sl': dep cambiada (ncurses-devel)

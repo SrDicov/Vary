@@ -395,7 +395,28 @@ pub fn update_incremental(checkout: &Path, git_bin: &str, db: &mut PortDb) -> Re
                 needs_dynamic: true,
             },
         };
-        db.entries.insert(name, data);
+        db.entries.insert(name.clone(), data.clone());
+        // Los ALIASES (symlinks en srcpkgs/ → paquete fuente) comparten la
+        // plantilla de su padre: si el padre cambió, sus entradas quedan
+        // viejas. Sin refrescarlas, la versión del alias miente → cualquier
+        // comparación con ella (la señal de dep desfasada, el cruce de
+        // "versión nueva" de un subpaquete -devel) da señal falsa o deja
+        // pasar la real.
+        let aliases: Vec<String> = db
+            .entries
+            .iter()
+            .filter(|(k, e)| k.as_str() != name.as_str() && e.sourcepkg == name)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for alias in aliases {
+            if let Some(entry) = db.entries.get_mut(&alias) {
+                entry.version = data.version.clone();
+                entry.revision = data.revision;
+                entry.build_options = data.build_options.clone();
+                entry.build_options_default = data.build_options_default.clone();
+                entry.template_sha256 = data.template_sha256.clone();
+            }
+        }
         stats.reindexed += 1;
     }
     db.helpers_hash = helpers;
@@ -727,6 +748,37 @@ mod tests {
         );
         // Los demás no se tocan.
         assert_eq!(db.entries.get("pkg0").unwrap().version, "1.0");
+    }
+
+    /// Un ALIAS (symlink srcpkgs/foo-devel -> foo) comparte la plantilla de su
+    /// padre: si el padre cambia, la entrada del alias debe seguirlo (si no,
+    /// su versión miente y toda comparación con ella da señal falsa).
+    #[test]
+    fn incremental_refresca_los_alias_del_padre() {
+        let tmp = tempfile::tempdir().unwrap();
+        fixture(tmp.path());
+        // Alias: srcpkgs/pkg0-devel -> pkg0 (como en void-packages).
+        std::os::unix::fs::symlink("pkg0", tmp.path().join("srcpkgs/pkg0-devel")).unwrap();
+        let mut db = index_checkout(tmp.path()).unwrap();
+        db.void_commit = git_head(tmp.path(), "git").unwrap();
+        save(&db, tmp.path().join("portdb.json")).unwrap();
+        assert_eq!(db.entries.get("pkg0-devel").unwrap().version, "1.0");
+
+        // El padre sube de versión; el alias no se toca en el commit.
+        std::fs::write(
+            tmp.path().join("srcpkgs/pkg0/template"),
+            template("pkg0", "2.0", 1, "a b"),
+        )
+        .unwrap();
+        git(tmp.path(), &["add", "-A"]);
+        git(tmp.path(), &["commit", "-qm", "bump pkg0"]);
+
+        let mut db = load(tmp.path().join("portdb.json")).unwrap();
+        update_incremental(tmp.path(), "git", &mut db).unwrap();
+        assert_eq!(db.entries.get("pkg0").unwrap().version, "2.0");
+        // El alias sigue al padre (esto es lo que faltaba).
+        assert_eq!(db.entries.get("pkg0-devel").unwrap().version, "2.0");
+        assert_eq!(db.entries.get("pkg0-devel").unwrap().sourcepkg, "pkg0");
     }
 
     /// Si cambia un helper global -> reindex COMPLETO.

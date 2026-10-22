@@ -374,6 +374,25 @@ fn build_facts(config: &Config, pkg: &str, action: &Action) -> crate::db::BuildF
     facts
 }
 
+/// Deps de un paquete OFICIAL compilado desde fuente.
+///
+/// El resolver crea un `VurInfo` **placeholder** para los oficiales (nodo
+/// hoja: sus deps las resuelve xbps-src), así que `depends`/`makedepends`
+/// vienen vacíos. La baseline se saca de la plantilla real del clon de
+/// void-packages. `None` si no hay plantilla (se pierde la baseline, no el
+/// build).
+fn official_template_deps(config: &Config, pkg: &str) -> Option<(Vec<String>, Vec<String>)> {
+    let path = config
+        .void_packages_dir()
+        .join("srcpkgs")
+        .join(pkg)
+        .join("template");
+    let text = std::fs::read_to_string(path).ok()?;
+    let info =
+        crate::vur_client::parse_template_text(&text, &format!("srcpkgs/{pkg}/template")).ok()?;
+    Some((info.depends, info.makedepends))
+}
+
 /// Baseline de deps de un paquete compilado desde fuente: para cada dep
 /// directa (runtime y de build) la versión del árbol de fuentes en el momento
 /// del build.
@@ -2031,6 +2050,23 @@ pub fn install(config: &mut Config) -> Result<i32> {
             db.set_build_facts(real, &build_facts(config, real, &item.action));
             // Baseline de deps: la versión del árbol de fuentes de cada dep
             // en el momento del build (señal de `--changed-deps`).
+            //
+            // Para un oficial compilado desde fuente el plan trae un
+            // VurInfo placeholder (nodo hoja): sus deps salen de la
+            // plantilla real del clon de void-packages.
+            let (depends, makedepends) = match &item.action {
+                Action::BuildOfficial => official_template_deps(config, real).unwrap_or_default(),
+                _ => (item.info.depends.clone(), item.info.makedepends.clone()),
+            };
+            // Las deps condicionales (`$(vopt_if ...)`) se reducen con las
+            // opciones activas: si no, el token no se parece a ningún
+            // paquete y la dep se pierde en silencio.
+            let active = crate::use_reduce::effective_options(
+                &config.make.global_options,
+                config.pkg_options.get(real),
+            );
+            let depends = crate::use_reduce::reduce(&depends, &active);
+            let makedepends = crate::use_reduce::reduce(&makedepends, &active);
             let deps = capture_deps_pins(
                 portdb
                     .get_or_init(|| match crate::portdb::ensure_index(config) {
@@ -2043,8 +2079,8 @@ pub fn install(config: &mut Config) -> Result<i32> {
                         }
                     })
                     .as_ref(),
-                &item.info.depends,
-                &item.info.makedepends,
+                &depends,
+                &makedepends,
             );
             db.set_deps_pinned(real, deps);
         }

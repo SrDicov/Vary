@@ -945,7 +945,7 @@ fn expand_template_vars(
     expanded
 }
 
-fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
+pub(crate) fn parse_template_text(content: &str, debug_path: &str) -> Result<VurInfo> {
     // Unir continuaciones con \ y manejar valores multilínea entre comillas
     let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut raw_subpackages: Vec<(String, std::collections::HashMap<String, String>)> = Vec::new();
