@@ -1,0 +1,37 @@
+[32m INFO[0m [2mvary::masterdir[0m[2m:[0m ejecutando ./xbps-src binary-bootstrap (puede tardar)...
+[32m INFO[0m [2mvary::xbps[0m[2m:[0m salida de xbps-src → /home/tester/.cache/vary/logs/xbps-src.log
+[32m INFO[0m [2mvary::xbps[0m[2m:[0m xbps-src terminó OK (log: /home/tester/.cache/vary/logs/xbps-src.log)
+[33m WARN[0m [2mvary::reposconf[0m[2m:[0m /home/tester/.config/vary/repos.conf no existe, usando configuración de repos por defecto
+
+:: Packages to build (source):
+  sl (build oficial desde fuente; las deps las resuelve xbps-src)
+
+Builds son secuenciales (paralelismo vía XBPS_MAKEJOBS=4)
+
+[32m INFO[0m [2mvary::overlay[0m[2m:[0m overlay de sl: 0 parches, 0 archivos de usuario inyectados
+[32m INFO[0m [2mvary::install[0m[2m:[0m compilando sl (oficial) con xbps-src -c vary-1043-1 (makejobs: 4)...
+[32m INFO[0m [2mvary::xbps[0m[2m:[0m salida de xbps-src → /home/tester/.cache/vary/logs/xbps-src.log
+[32m INFO[0m [2mvary::xbps[0m[2m:[0m xbps-src terminó OK (log: /home/tester/.cache/vary/logs/xbps-src.log)
+[*] Updating repository `https://repo-default.voidlinux.org/current/x86_64-repodata' ...
+1 package will be installed:
+
+  sl-5.05_1 
+
+Size required on disk:          35KB
+Space available on disk:        30GB
+
+
+[*] Verifying package integrity
+sl-5.05_1: verifying SHA256 hash...
+
+[*] Collecting package files
+sl-5.05_1: collecting files...
+
+[*] Unpacking packages
+sl-5.05_1: unpacking ...
+
+[*] Configuring unpacked packages
+sl-5.05_1: configuring ...
+sl-5.05_1: installed successfully.
+
+0 downloaded, 1 installed, 0 updated, 1 configured, 0 removed, 0 on hold.

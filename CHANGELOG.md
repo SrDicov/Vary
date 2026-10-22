@@ -89,6 +89,16 @@ All notable changes to vary will be documented in this file.
   enlazó contra algo que el árbol ya no provee. Sin baseline no hay señal, y
   una dependencia que solo existe en un VUR tampoco (el baseline es del
   árbol oficial).
+- **Baseline de deps de los paquetes OFICIALES:** el resolver crea un
+  `VurInfo` placeholder para los oficiales (son nodos hoja: sus deps las
+  resuelve xbps-src), así que la versión de cada dependencia se lee ahora de
+  **la plantilla real** del clon de void-packages. Antes, un oficial
+  compilado desde fuente se quedaba sin baseline y la señal nunca salía.
+- **Índice de fuentes: los aliases siguen a su padre:** al reindexar un
+  paquete se propagan sus campos a los aliases (`srcpkgs/foo-devel` →
+  symlink a `foo`). Antes, un alias se quedaba con la versión vieja cuando
+  su padre cambiaba → la comparación con esa versión daba señal falsa (un
+  "versión nueva" espurio en subpaquetes `-devel`) y dejaba pasar la real.
 - **Fix `XBPS_PKG_OPTIONS`:** xbps-src separa la lista de opciones por
   **comas** (`IFS=','` en `set_build_options`), pero vary la emitía con
   espacios: el token entero no matcheaba ninguna opción y todas las que no

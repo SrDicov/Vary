@@ -1,0 +1,9 @@
+[33m WARN[0m [2mvary::reposconf[0m[2m:[0m /home/tester/.config/vary/repos.conf no existe, usando configuración de repos por defecto
+:: PRINT-ONLY plan for: sl (no changes will be made)
+installs [single binary transaction]:
+  official/sl
+builds [topological levels]:
+  (none)
+elevations [estimated total: 1]:
+  repo-setup: 0
+  install-transaction: 1
