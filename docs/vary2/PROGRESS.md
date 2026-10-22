@@ -746,3 +746,39 @@ real** por este bug preexistente del `portdb`.
 (la fricción S2 está medida), pero **su disparo en el mundo real depende de
 arreglar el `portdb`**. El commit queda abierto hasta que haya un `-Sy` real
 con el índice refrescado.
+
+## Noche automática 2026-10-22 (rama `agent/overnight-20261022-0204`)
+
+El contrato de la noche está en `AUDIT.md` (temporales o permanente hasta que
+se cierre). Cuatro commits, todos a defects **medidos** en el smoke y en la
+semana de uso:
+
+| Commit | Qué arregla |
+|---|---|
+| `38e6d2b` | El índice de fuentes se refresca con el **árbol**, no con el diff de git (en un clon shallow el tip no tiene diff → tras un pull no se reindexaba NADA) |
+| `9ce14dc` | La DB solo registra lo que está **instalado de verdad** (xbpsinstall puede devolver 0 pese a rechazar la instalación) |
+| `11a6539` | Un binario oficial sobre un build de fuente **retira** la entrada (el paquete deja de ser de vary) |
+| `58a9676` | Las 4 ALTA + 4 menores de la doble revisión (A y B) |
+
+**Por qué el P0-1 era el bloqueante de la feature:** sin índice frescos, la
+señal de `--changed-deps` (y el cruce de "versión nueva" que ya existía)
+casi nunca se disparaban tras un pull real. El smoke de hoy no lo vio porque
+su bump era **el commit del tip** (el único caso que el incremental veía).
+
+**Verificado en Void real tras el fix (contenador):** la señal dispara con el
+árbol modificado **sin commitear** (el caso real), en las tres rutas:
+oficial (`sl`), **VUR** (`hello-vur` con baseline desde el `.VURINFO`) y con
+bump de SONAME (las dos razones, sin duplicados).
+
+**Coste del barrido:** ~5 s por sync (15.135 templates) en el fs del
+contenedor; el `git pull` solo son 0,6 s. Es el precio de que el índice
+refleje el árbol.
+
+**Trigger disparado:** el diferido 5.5 ("registro de subpaquetes de builds
+oficiales") → con un build real de `gmp` (que produce `gmp-devel`) se vio que
+el subpaquete **no** tiene entrada propia en la DB (el `VurInfo` de los
+oficiales es un placeholder). **Anotado, no implementado.**
+
+**Inconsistencia anotada (P2, no implementada):** el aviso de bump de SONAME
+se imprime antes del gate de diffs y el de dep desfasada después → el primero
+puede prometer una recompilación que el gate cancela.
