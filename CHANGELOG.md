@@ -99,6 +99,27 @@ All notable changes to vary will be documented in this file.
   symlink a `foo`). Antes, un alias se quedaba con la versión vieja cuando
   su padre cambiaba → la comparación con esa versión daba señal falsa (un
   "versión nueva" espurio en subpaquetes `-devel`) y dejaba pasar la real.
+- **El índice de fuentes se refresca de verdad:** decide qué cambió con el
+  **árbol de trabajo** (el sha256 de cada template, que el índice ya guarda)
+  en vez de con `git diff-tree`. En un clon shallow (`--depth 1`, el de
+  vary) el tip es **frontera de profundidad** → `diff-tree` no devolvía
+  nada → tras un pull **no se reindexaba nada** (y mirando solo el tip, el
+  resto de commits del pull se ignoraba). Consecuencia: las versiones del
+  índice quedaban congeladas y las señales que dependen de ellas (la de
+  `--changed-deps`, el cruce de "versión nueva") casi nunca se disparaban.
+  El barrido borra `git_changed_paths` y la propagación manual de aliases
+  (un alias comparte el fichero con su padre: se actualiza solo). Coste
+  medido: ~5 s por sync (15.135 templates) en un fs lento.
+- **La DB solo dice la verdad:** antes de registrar una instalación se
+  verifica contra el sistema (`xbps-query -p pkgver`); si lo instalado no
+  es lo esperado, no se registra nada y la entrada anterior (y las de sus
+  subpaquetes) se retiran. Antes, xbpsinstall puede devolver 0 pese a
+  rechazar la instalación ("Package 'x' already installed") y la DB
+  acababa afirmando una versión que no estaba instalada.
+- **Un binario oficial deja de ser asunto de vary:** si el oficial sustituye
+  a un build de fuente, la entrada se retira (el paquete deja de ser de
+  vary). Antes sobrevivía un "source" con la baseline de un build que ya no
+  existía, y las auditorías podían proponer recompilar un binario oficial.
 - **Fix `XBPS_PKG_OPTIONS`:** xbps-src separa la lista de opciones por
   **comas** (`IFS=','` en `set_build_options`), pero vary la emitía con
   espacios: el token entero no matcheaba ninguna opción y todas las que no

@@ -96,28 +96,74 @@ no vio:
 
 ## P1 — cobertura de la feature nueva (la regla de la noche: smoke)
 
-### P1-1 · Re-ejercitar el smoke tras P0-1 (obligatorio)
+### P1-1 · Re-ejercitar el smoke tras P0-1 (obligatorio) — **HECHO**
 
 Sin el fix del índice, la señal no se dispararía tras un pull real. El smoke
 de hoy movió la dep en el **commit del tip** (el único caso que el incremental
 veía): con P0-1 el escenario pasa a ser el real (árbol modificado, sin tocar
 git).
 
-### P1-2 · Ruta de VUR sin ejercitar
+**Verificado en Void real (contenedor, `sl` compilado desde fuente):**
 
-`--changed-deps` solo se ejercitó con un paquete **oficial** (la ruta del
-`.VURINFO` con deps ya evaluadas no se probó). Es la ruta principal de un
-VUR → smoke en el contenedor.
+| Paso | Resultado |
+|---|---|
+| `vary -Sy` con el árbol modificado **sin commitear** | `indexado: 7 paquete(s)` → el índice ve el árbol ✅ |
+| `vary -Syu` (sin flag) | `VUR packages up to date.` → `sl` no entra ✅ |
+| `vary -Syu --changed-deps` | `sl (dep cambiada: ncurses-devel)` + `VUR upgrades available: sl` ✅ |
+| `vary -Sp --changed-deps sl` | `sl official-source` + `warning: rebuild de 'sl': dep cambiada (ncurses-devel)` ✅ |
 
-### P1-3 · Subpaquetes sin ejercitar
+**Coste medido del barrido:** `vary -Sy` = 5,2-6,0 s (el `git pull` solo = 0,6 s)
+→ el barrido de 15.135 templates ≈ 4,6-5,4 s en el fs del contenedor (overlay).
+Aceptable para un upgrade (minutos), pero es el precio de la corrección: el
+índice antes no se refrescaba **nada** tras un pull.
 
-Un build oficial con subpaquetes (`gmp` → `gmp-devel`): la baseline del
-subpaquete (¿se graba? ¿hereda?) y su señal.
+### P1-2 · Ruta de VUR sin ejercitar — **HECHO**
 
-### P1-4 · Interacción con un bump de SONAME
+VUR local real en el contenedor (`file:///home/tester/vur`, un paquete con
+plantilla y `.VURINFO` v1). **Verificado:**
 
-Deben ser **señales distintas**: la de soname la da `@preserved-rebuild` (que
-avisa), la de dep recompila. Verificar que no se pisan ni se duplican.
+- Baseline desde el `.VURINFO`: `"deps_pinned": { "readline": "readline-8.0.0_1",
+  "readline-devel": "libreadline8-8.2.010_1" }` (el alias `-devel` resuelve al
+  paquete fuente ✅).
+- `vary -Syu --changed-deps` tras mover `libreadline8` en el árbol (sin
+  commitear): `hello-vur (dep cambiada: readline-devel)` ✅.
+
+Nota de entorno: la imagen mínima no trae `bash` (el shebang de `xbps-src` lo
+exige) ni servidor http; el VUR se sirve por `file://` (esquema que
+`validate_repository_url` admite ✅) y `git clone --depth 1` sobre `file://` sí
+funciona (el transporte *dumb* de http no admite shallow ❌).
+
+### P1-3 · Subpaquetes sin ejercitar — **HECHO**
+
+Build real de `gmp` (que produce `gmp-devel`) en el contenedor:
+
+- La baseline del **padre** se graba: `"deps_pinned": { "zlib-devel":
+  "zlib-1.3.2_1" }` ✅.
+- El **subpaquete no tiene entrada propia** en la DB (el `VurInfo` de los
+  oficiales es un placeholder sin `subpackages`) → su señal la cubre la del
+  padre (recompilar el padre reconstruye el sub) ✅.
+- ⚠️ **Esto dispara el trigger del diferido 5.5** ("primer build local real con
+  subpaquetes") → el registro de subpaquetes de builds oficiales pasa a ser
+  candidato. **Anotado, no implementado** (queda fuera del contrato de la
+  noche).
+- La señal del padre funciona: al mover `zlib` en el árbol, `gmp (dep
+  cambiada: zlib-devel)` ✅.
+
+### P1-4 · Interacción con un bump de SONAME — **HECHO**
+
+Con un bump de proveedor en `common/shlibs` (`libreadline.so.8` →
+`libreadline8-9.9_1`):
+
+- **Sin** `--changed-deps`: `hello-vur (soname con bump: libreadline.so.8)` →
+  lo anuncia la maquinaria de sonames ✅ (no la de deps ✅).
+- **Con** `--changed-deps`: aparecen **las dos razones, cada una con su
+  motivo**, y el paquete aparece **una sola vez** en la lista ✅ (sin
+  duplicados ✅).
+
+⚠️ **Inconsistencia detectada (NO implementada, P2):** el aviso de soname se
+imprime **antes** del gate de diffs y el de dep **después** → el de soname
+puede prometer una recompilación que el gate cancela. Es la misma clase que
+se corrigió en la ruta de deps.
 
 ## P2 — higiene (sin contrato nuevo)
 
