@@ -35,7 +35,7 @@ el barrido lo actualiza solo). Tests: `incremental_reindexa_el_arbol_aunque_no_h
 **Pendiente:** verificarlo en Void real (P1-1) y medir el coste del barrido
 sobre los 15.135 paquetes.
 
-### P0-2 · La DB no se actualiza al sustituir un build de fuente por un oficial
+### P0-2 · La DB no se actualiza al sustituir un build de fuente por un oficial — **HECHO**
 
 **Medido:** el sistema tenía `sl-5.05_1` (binario oficial) y la DB decía
 `sl-5.04_1` / `install_type: source` **con su baseline `deps_pinned`**.
@@ -45,9 +45,11 @@ Causa: T-005 impide registrar oficiales (escribiría ficción), pero nadie
 baseline de un paquete que ya no es un build local → las auditorías pueden
 proponer rebuild sobre un **binario oficial**.
 
-**Fix:** al registrar una instalación, si la entrada anterior era `Source` y
-la nueva acción es un binario → la entrada se **retira** (vary ya no gestiona
-ese paquete: no es suyo).
+**Fix (HECHO):** cuando la acción es un binario **oficial** y la DB decía
+`source` → la entrada se **retira** (el paquete deja de ser de vary). Solo si
+lo que quedó instalado es el oficial: si la instalación falló, el build de
+fuente sigue ahí y su entrada es válida. Test:
+`la_entrada_se_retira_solo_si_quedo_el_oficial`.
 
 ### P0-3 · La DB afirma una versión que no está instalada — **HECHO**
 

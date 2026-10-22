@@ -385,6 +385,25 @@ fn record_decision(installed: Option<&str>, expected: &str) -> RecordDecision {
     }
 }
 
+/// Decide si la entrada de la DB se RETIRA tras una instalación.
+///
+/// Caso: un binario **oficial** sustituye a un build de fuente → ese paquete
+/// deja de ser de vary (su baseline de deps y sus hechos de compilación
+/// describirían un build que ya no está).
+///
+/// Solo si lo que quedó instalado es el oficial: si la instalación falló, el
+/// build de fuente sigue ahí y su entrada es válida.
+fn should_retire_entry(
+    action_official: bool,
+    db_is_source: bool,
+    installed: Option<&str>,
+    official_version: Option<&str>,
+) -> bool {
+    action_official
+        && db_is_source
+        && matches!((installed, official_version), (Some(i), Some(o)) if i == o)
+}
+
 /// ITEM 1: hechos de compilación que se registran por paquete instalado desde
 /// fuente. El hash de template solo se registra para builds OFICIALES (su
 /// template vive en void-packages); en builds VUR el template está en el clon
@@ -2027,6 +2046,31 @@ pub fn install(config: &mut Config) -> Result<i32> {
     for item in plan.installs.iter().chain(plan.builds.iter()) {
         // Only VUR packages (por nombre real: lo pedido puede ser virtual).
         let real = &item.info.pkgname;
+        // P0-2: un binario OFICIAL que sustituye a un build de fuente → la
+        // entrada se retira (el paquete deja de ser de vary: su baseline
+        // describiría un build que ya no está). T-005: los oficiales no se
+        // registran (escribiría ficción) → aquí solo se limpia lo que quedó.
+        if matches!(item.action, Action::Install(BinarySource::Official)) {
+            let installed = xbps::query_installed(real).ok().flatten().map(|i| i.pkgver);
+            let official = official_pkgver.get(real).map(|vr| format!("{real}-{vr}"));
+            let db_is_source = db
+                .get(real)
+                .map(|e| e.install_type == crate::db::InstallType::Source)
+                .unwrap_or(false);
+            if should_retire_entry(
+                true,
+                db_is_source,
+                installed.as_deref(),
+                official.as_deref(),
+            ) {
+                tracing::warn!(
+                    "{real}: el binario oficial sustituyó al build de fuente; \
+                     se retira su entrada de la DB (el paquete ya no es de vary)"
+                );
+                db.remove(real);
+            }
+            continue;
+        }
         // T-005: los oficiales los gestiona xbps; registrarlos aquí escribía
         // ficción. Solo Build y VulBinary dejan rastro. P0-5: los VulBinary
         // registran por su repo de acción (el gate `is_vur` los dejaba fuera
@@ -2525,6 +2569,44 @@ mod tests {
         assert!(!suelta_repolock(Some(&source)));
         // Sin entrada en la DB: nada que soltar.
         assert!(!suelta_repolock(None));
+    }
+
+    /// Un binario oficial sobre un build de fuente retira la entrada; si la
+    /// instalación falló (no quedó el oficial), el build sigue y su entrada
+    /// es válida.
+    #[test]
+    fn la_entrada_se_retira_solo_si_quedo_el_oficial() {
+        // Oficial instalado + la DB dice source → se retira.
+        assert!(should_retire_entry(
+            true,
+            true,
+            Some("sl-5.05_1"),
+            Some("sl-5.05_1")
+        ));
+        // La instalación falló (sigue el build de fuente) → no se retira.
+        assert!(!should_retire_entry(
+            true,
+            true,
+            Some("sl-5.04_1"),
+            Some("sl-5.05_1")
+        ));
+        // No se puede saber qué quedó → no se retira (no se inventa).
+        assert!(!should_retire_entry(true, true, None, Some("sl-5.05_1")));
+        assert!(!should_retire_entry(true, true, Some("sl-5.05_1"), None));
+        // La DB no decía source → nada que retirar.
+        assert!(!should_retire_entry(
+            true,
+            false,
+            Some("sl-5.05_1"),
+            Some("sl-5.05_1")
+        ));
+        // La acción no es un oficial → nada que retirar.
+        assert!(!should_retire_entry(
+            false,
+            true,
+            Some("sl-5.05_1"),
+            Some("sl-5.05_1")
+        ));
     }
 
     /// La DB solo dice la verdad si lo instalado es lo esperado.
