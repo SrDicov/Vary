@@ -1,0 +1,41 @@
+[32m INFO[0m [2mvary::masterdir[0m[2m:[0m ejecutando ./xbps-src binary-bootstrap (puede tardar)...
+[32m INFO[0m [2mvary::xbps[0m[2m:[0m salida de xbps-src → /home/tester/.cache/vary/logs/xbps-src.log
+[32m INFO[0m [2mvary::xbps[0m[2m:[0m xbps-src terminó OK (log: /home/tester/.cache/vary/logs/xbps-src.log)
+[33m WARN[0m [2mvary::reposconf[0m[2m:[0m /home/tester/.config/vary/repos.conf no existe, usando configuración de repos por defecto
+
+:: Packages to install (binary):
+  official/sl
+
+[*] Updating repository `https://repo-default.voidlinux.org/current/x86_64-repodata' ...
+1 package will be downloaded:
+
+  sl-5.05_1 
+1 package will be updated:
+
+  sl (5.04_1 -> 5.05_1) 
+
+Size to download:              9981B
+Size required on disk:          36KB
+Space available on disk:        33GB
+
+
+[*] Downloading packages
+sl-5.05_1.x86_64.xbps.sig2: [512B 100%] 41MB/s ETA: 00m00s
+sl-5.05_1.x86_64.xbps.sig2: 512B [avg rate: 41MB/s]
+sl-5.05_1.x86_64.xbps: [9469B 43%] 118MB/s ETA: 00m00s
+sl-5.05_1.x86_64.xbps: 9469B [avg rate: 274MB/s]
+sl-5.05_1: verifying RSA signature...
+
+[*] Collecting package files
+sl-5.05_1: collecting files...
+sl-5.04_1: collecting files...
+
+[*] Unpacking packages
+sl-5.04_1: updating to 5.05_1 ...
+sl-5.05_1: unpacking ...
+
+[*] Configuring unpacked packages
+sl-5.05_1: configuring ...
+sl-5.05_1: updated successfully.
+
+1 downloaded, 0 installed, 1 updated, 1 configured, 0 removed, 0 on hold.
