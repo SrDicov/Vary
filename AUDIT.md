@@ -184,6 +184,20 @@ se corrigió en la ruta de deps.
   local real con subpaquetes → **P1-3 lo provoca** → se anota, no se
   implementa aquí.
 
+## Cierre de la noche (2026-10-22)
+
+- **P0-1, P0-2, P0-3**: hechos, revisados por dos pares de ojos y verificados
+  en Void real.
+- **P1-1, P1-2, P1-3, P1-4**: hechos (señal en las tres rutas: oficial, VUR
+  y con bump de SONAME).
+- **P2-1**: hecho (un ceiling caducado eliminado). **P2-2**: sin cambios
+  necesarios (el CHANGELOG recoge lo user-facing; README/GUIA describen la
+  feature y siguen siendo certain).
+- **Lo que sale de aquí sin implementar, con su sitio**: registro de
+  subpaquetes de builds oficiales (trigger disparado) y orden del aviso de
+  bump de SONAME (P1 del próximo ciclo) → ambos en `docs/vary2/PROGRESS.md`
+  §5.5.
+
 ## Reglas de la noche
 
 - Un ítem, un commit, un gate. Nada de lote.
