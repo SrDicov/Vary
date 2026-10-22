@@ -64,6 +64,36 @@ paquete ya no es de vary). Sin xbps no se puede verificar → se registra como
 antes (no se inventa un fallo que no se ha visto). Test:
 `record_decision_compara_con_el_sistema`.
 
+### Revisión doble (A y B) aplicada — 4 ALTA + 4 menores
+
+Las dos revisiones (OK CON SALVEDADES) atraparon cosas que la lectura propia
+no vio:
+
+- **A-1 / B (ALTA):** P0-2 solo funcionaba en la ruta `BuildOfficial`:
+  `official_pkgver` solo se rellena en las ramas de build → en
+  `Install(Official)` (la ruta del caso medido) era `None` → **nunca
+  retiraba**. Ahora la señal es "lo que quedó instalado **no** es el build de
+  vary" (otra versión u otro repo) → no depende del mapa de oficiales.
+- **A-2 / B-1 (ALTA):** la retirada no se llevaba los **subpaquetes** → el
+  mismo defecto por la puerta de atrás. Ahora se retiran por su `version`
+  compartida con el padre (la DB guarda el pkgver del paquete fuente bajo la
+  clave del subpaquete) → funciona incluso con el `VurInfo` placeholder del
+  oficial, que no trae subpaquetes.
+- **B-2 (ALTA):** el `Drop` de P0-3 **borraba entradas verdaderas**: si
+  xbps devuelve 0 sin instalar (paquete en hold, repo desincronizado), lo que
+  sigue instalado es lo que la DB ya decía → la entrada era verdad y se
+  borraba. Ahora la decisión tiene **tres** vías: `Record` / `Keep` (la
+  entrada sigue siendo verdad → se conserva) / `Drop`.
+- **A-3 (MEDIA):** si el barrido del árbol falla, el índice se declaraba
+  al día sin haber mirado nada → ahora no se toca `void_commit` ni se guarda.
+- **A-3b (MEDIA):** un template ilegible (permisos/I/O) se confundía con un
+  paquete borrado → ahora "no se pudo leer" **conserva** la entrada.
+- **B-3 (MEDIA):** se consultaba el sistema incluso cuando no había nada que
+  retirar → ahora lo barato primero (si la DB no decía `source`, ni una
+  llamada a xbps).
+- **B-5 / B-7 (BAJA):** docstring huérfano tras borrar `git_changed_paths`;
+  y el fallo de `read_dir` avisaba en silencio → ahora avisa.
+
 ## P1 — cobertura de la feature nueva (la regla de la noche: smoke)
 
 ### P1-1 · Re-ejercitar el smoke tras P0-1 (obligatorio)

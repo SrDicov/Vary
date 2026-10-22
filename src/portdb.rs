@@ -347,7 +347,10 @@ pub fn update_incremental(checkout: &Path, git_bin: &str, db: &mut PortDb) -> Re
         return Ok(stats);
     }
 
-    let (changed, removed) = changed_packages(checkout, db);
+    let Some((changed, removed)) = changed_packages(checkout, db) else {
+        // No se pudo barrer: el índice NO se declara al día (ni se guarda).
+        return Ok(stats);
+    };
     for name in &removed {
         db.entries.remove(name);
         stats.reindexed += 1;
@@ -405,19 +408,38 @@ pub fn update_incremental(checkout: &Path, git_bin: &str, db: &mut PortDb) -> Re
 /// guarda. Es la fuente de verdad: el árbol de trabajo, no el diff de git
 /// (en un clon shallow el tip no tiene diff y solo se vería su commit).
 ///
+/// `None` = no se pudo barrer (el checkout no es legible): el índice **no**
+/// debe declararse al día en ese caso.
+///
 /// Devuelve `(cambiados, eliminados)`.
-fn changed_packages(checkout: &Path, db: &PortDb) -> (Vec<String>, Vec<String>) {
+fn changed_packages(checkout: &Path, db: &PortDb) -> Option<(Vec<String>, Vec<String>)> {
     let srcpkgs = checkout.join("srcpkgs");
     let mut changed = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    let Ok(entries) = std::fs::read_dir(&srcpkgs) else {
-        return (changed, Vec::new());
+    let entries = match std::fs::read_dir(&srcpkgs) {
+        Ok(e) => e,
+        Err(err) => {
+            tracing::warn!(
+                "no se pudo leer {}: {err:#} (el índice no se actualiza)",
+                srcpkgs.display()
+            );
+            return None;
+        }
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         let template = srcpkgs.join(&name).join("template");
-        // Sin template no es un paquete (o se borró): no se indexa.
         let Some(hash) = file_sha256(&template) else {
+            // Sin template: o no es un paquete, o se borró. Un fallo de
+            // lectura con el fichero presente (permisos, I/O) NO es un
+            // borrado → no se tira la entrada.
+            if template.exists() {
+                tracing::warn!(
+                    "{}: no se pudo leer (¿permisos?); se conserva su entrada",
+                    template.display()
+                );
+                seen.insert(name);
+            }
             continue;
         };
         seen.insert(name.clone());
@@ -436,7 +458,7 @@ fn changed_packages(checkout: &Path, db: &PortDb) -> (Vec<String>, Vec<String>) 
         .filter(|k| !seen.contains(*k))
         .cloned()
         .collect();
-    (changed, removed)
+    Some((changed, removed))
 }
 
 /// `git rev-parse HEAD` del clon.
@@ -455,7 +477,6 @@ fn git_head(checkout: &Path, git_bin: &str) -> Result<Option<String>> {
     ))
 }
 
-/// Rutas tocadas por el commit `sha` (`git diff-tree`, shallow-safe).
 /// Tabla de virtuals: `virtual` → paquete real.
 ///
 /// Fuentes (en este orden, el segundo pisa al primero):
