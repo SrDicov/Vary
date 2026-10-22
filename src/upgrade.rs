@@ -160,6 +160,31 @@ fn soname_bump_consumers(
     crate::soname::bump_consumers(&pins_by_pkg, &index.shlibs)
 }
 
+/// Paquetes compilados desde fuente cuya dep cambió de versión en el árbol
+/// de fuentes desde su build (`--changed-deps`).
+///
+/// Misma política que los consumidores de un bump de SONAME: si el árbol
+/// movió la dep, el binario quedó compilado contra una dep que ya no es la
+/// del árbol. Sin baseline no hay señal.
+fn dep_changed_consumers(
+    db: &InstalledDb,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (name, entry) in db.entries_snapshot() {
+        if entry.install_type != crate::db::InstallType::Source {
+            continue;
+        }
+        let Some(pinned) = entry.deps_pinned.as_ref().filter(|d| !d.is_empty()) else {
+            continue;
+        };
+        if let Some(dep) = crate::rebuild::changed_deps(pinned, lookup) {
+            out.push((name.clone(), dep));
+        }
+    }
+    out
+}
+
 /// Diff de template pendiente de revisión en un upgrade (A3).
 struct TemplateDiff {
     pkg: String,
@@ -525,6 +550,35 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         }
     }
 
+    // `--changed-deps`: los paquetes compilados contra una dep que el árbol
+    // de fuentes ya movió entran en el plan de esta misma transacción (igual
+    // que los consumidores de un bump de SONAME). Opt-in: por defecto no se
+    // recompila nada (un bump de dep no siempre rompe el binario).
+    //
+    // Entra en `outdated` ANTES del gate de diffs (para que pase por él como
+    // los demás) y se ANUNCIA después: si el gate lo tira (diff de plantilla
+    // sin aprobar), el mensaje no promete una recompilación que no va a
+    // ocurrir.
+    let dep_changed: Vec<(String, String)> = if config.changed_deps {
+        match crate::portdb::load(config.cache_dir.join("portdb.json")) {
+            Ok(index) => {
+                let lookup = |pkg: &str| index.pkgver_of(pkg);
+                dep_changed_consumers(&db, &lookup)
+            }
+            Err(e) => {
+                tracing::warn!("no se pudo leer el índice de fuentes: {e:#}");
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    for (name, _) in &dep_changed {
+        if !outdated.contains(name) {
+            outdated.push(name.clone());
+        }
+    }
+
     // Fase híbrida, después de la detección de builds VUR: oficiales Source
     // (DB) que matcheen `source_always` con template más nuevo que el
     // instalado. Se añaden a los targets del MISMO plan (sin reordenar
@@ -535,7 +589,6 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         let vur_managed: std::collections::HashSet<String> = current_map.keys().cloned().collect();
         add_official_source_upgrades(config, &db, &vur_managed, &mut outdated);
     }
-
     if outdated.is_empty() {
         if refresh_code != 0 {
             println!("VUR packages al día (salvo los repos sin refrescar: índice anterior).");
@@ -595,6 +648,18 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
         }
     }
 
+    // Las deps desfasadas se anuncian aquí (y no antes): el gate de diffs
+    // puede haberlas sacado del plan, y un aviso que promete una
+    // recompilación que no ocurre es peor que ningún aviso.
+    for (name, dep) in &dep_changed {
+        if outdated.contains(name) {
+            tracing::warn!(
+                "dep cambiada en el árbol: '{name}' se compiló contra otra versión de {dep}"
+            );
+            println!("  {name} (dep cambiada: {dep})");
+        }
+    }
+
     println!("\nVUR upgrades available: {}", outdated.join(", "));
     if !crate::util::ask(config, "Upgrade VUR packages?", true) {
         return Ok(1);
@@ -608,6 +673,62 @@ pub fn upgrade(config: &mut Config) -> Result<i32> {
 mod tests {
     use super::*;
     use crate::config::Config;
+
+    /// Los paquetes compilados contra una dep que el árbol ya movió se
+    /// detectan; los que no tienen baseline o cuya dep no cambió, no.
+    #[test]
+    fn dep_changed_consumers_solo_con_baseline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.json");
+        let mut db = InstalledDb::load(&path).unwrap();
+        db.upsert(
+            "con-dep",
+            "con-dep-1.0_1",
+            "mi-repo",
+            InstallType::Source,
+            None,
+            None,
+        );
+        db.set_deps_pinned(
+            "con-dep",
+            std::collections::BTreeMap::from([(
+                "libfoo".to_string(),
+                "libfoo-1.2.3_1".to_string(),
+            )]),
+        );
+        // Sin baseline: sin señal.
+        db.upsert(
+            "sin-baseline",
+            "sin-baseline-1.0_1",
+            "mi-repo",
+            InstallType::Source,
+            None,
+            None,
+        );
+        // Binario: la baseline de deps no aplica.
+        db.upsert(
+            "binario",
+            "binario-1.0_1",
+            "mi-repo",
+            InstallType::Binary,
+            None,
+            None,
+        );
+        db.set_deps_pinned(
+            "binario",
+            std::collections::BTreeMap::from([(
+                "libfoo".to_string(),
+                "libfoo-1.2.3_1".to_string(),
+            )]),
+        );
+
+        let lookup = |pkg: &str| match pkg {
+            "libfoo" => Some("libfoo-1.3.0_1".to_string()),
+            _ => None,
+        };
+        let out = dep_changed_consumers(&db, &lookup);
+        assert_eq!(out, vec![("con-dep".to_string(), "libfoo".to_string())]);
+    }
 
     // --- parseo/comparación de versión para la fase híbrida (fixtures) ---
 

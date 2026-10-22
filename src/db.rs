@@ -80,6 +80,12 @@ pub struct Entry {
     /// ITEM 1: hash del template con el que se compiló.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template_sha256: Option<String>,
+    /// Deps contra las que se compiló: `dep` → pkgver del árbol de fuentes en
+    /// el momento del build. Ausente = sin baseline → la auditoría no dice
+    /// nada (misma regla que los pins de sonames: ausencia de dato no es
+    /// señal).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deps_pinned: Option<BTreeMap<String, String>>,
 }
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
@@ -253,6 +259,7 @@ impl InstalledDb {
                 ldflags: None,
                 patches_sha256: None,
                 template_sha256: None,
+                deps_pinned: None,
             },
         );
     }
@@ -284,6 +291,17 @@ impl InstalledDb {
         }
         if let Some(entry) = self.entries.get_mut(name) {
             entry.soname_pins = Some(pins);
+        }
+    }
+
+    /// Guarda la baseline de deps (dep → pkgver del árbol de fuentes).
+    /// Solo si no es vacía; llamar tras `upsert`. Best-effort, nunca falla.
+    pub fn set_deps_pinned(&mut self, name: &str, deps: BTreeMap<String, String>) {
+        if deps.is_empty() {
+            return;
+        }
+        if let Some(entry) = self.entries.get_mut(name) {
+            entry.deps_pinned = Some(deps);
         }
     }
 
@@ -414,6 +432,7 @@ pub fn decode_bincode_entry(data: &[u8]) -> Option<Entry> {
         ldflags: None,
         patches_sha256: None,
         template_sha256: None,
+        deps_pinned: None,
     })
 }
 
@@ -628,6 +647,82 @@ mod tests {
         );
     }
 
+    /// La baseline de deps sobrevive al round-trip y NO bumpea el schema: el
+    /// campo es opcional, así que un vary viejo lo ignora y uno nuevo lee los
+    /// ficheros antiguos sin baseline (sin señal, sin ruido).
+    #[test]
+    fn deps_pinned_sobrevive_al_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.json");
+        let mut db = InstalledDb::load(&path).unwrap();
+        db.upsert(
+            "dep-pkg",
+            "dep-pkg-1.0_1",
+            "mi-repo",
+            InstallType::Source,
+            None,
+            None,
+        );
+        db.set_deps_pinned(
+            "dep-pkg",
+            BTreeMap::from([("libfoo".to_string(), "libfoo-1.2.3_1".to_string())]),
+        );
+        // Vacío no se guarda (sin baseline no hay señal).
+        db.set_deps_pinned("dep-pkg-vacio", BTreeMap::new());
+        db.save().unwrap();
+
+        let reloaded = InstalledDb::load(&path).unwrap();
+        let entry = reloaded.get("dep-pkg").unwrap();
+        assert_eq!(
+            entry
+                .deps_pinned
+                .as_ref()
+                .and_then(|d| d.get("libfoo"))
+                .map(String::as_str),
+            Some("libfoo-1.2.3_1")
+        );
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(v["schema_version"], 3);
+        assert_eq!(
+            v["packages"]["dep-pkg"]["deps_pinned"]["libfoo"],
+            "libfoo-1.2.3_1"
+        );
+        // Sin baseline el campo no se escribe (no hay "{}" vacío).
+        assert!(v["packages"]["dep-pkg"]["deps_pinned"].is_null());
+    }
+
+    /// Un `upsert` posterior (p. ej. el paquete pasa a binario) deja la
+    /// baseline en None: un binario no tiene baseline de compilación.
+    #[test]
+    fn upsert_resetea_la_baseline_de_deps() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.json");
+        let mut db = InstalledDb::load(&path).unwrap();
+        db.upsert(
+            "dep-pkg",
+            "dep-pkg-1.0_1",
+            "mi-repo",
+            InstallType::Source,
+            None,
+            None,
+        );
+        db.set_deps_pinned(
+            "dep-pkg",
+            BTreeMap::from([("libfoo".to_string(), "libfoo-1.2.3_1".to_string())]),
+        );
+        assert!(db.get("dep-pkg").unwrap().deps_pinned.is_some());
+        db.upsert(
+            "dep-pkg",
+            "dep-pkg-2.0_1",
+            "mi-repo",
+            InstallType::Binary,
+            None,
+            None,
+        );
+        assert!(db.get("dep-pkg").unwrap().deps_pinned.is_none());
+    }
+
     #[test]
     fn migracion_v2_a_v3_sin_perdida() {
         // Patrón H-005: fixture v2 (con build_date, sin pins) migra intacto.
@@ -699,6 +794,7 @@ mod tests {
             ldflags: None,
             patches_sha256: None,
             template_sha256: None,
+            deps_pinned: None,
         }
     }
 

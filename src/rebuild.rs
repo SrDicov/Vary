@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Por qué hay que recompilar un paquete.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RebuildReason {
     /// Hay versión nueva en el árbol de fuentes.
     // ponytail: sin consumidor hasta que ITEM 2 alimente el lookup de versión;
@@ -33,23 +33,27 @@ pub enum RebuildReason {
     PatchChanged,
     /// Cambió el template del paquete.
     TemplateChanged,
+    /// Una dep cambió de versión en el árbol de fuentes desde el build: el
+    /// binario quedó compilado contra una dep que ya no es la del árbol.
+    DepChanged { dep: String },
 }
 
 impl RebuildReason {
     /// Texto corto para el plan y los avisos.
-    pub fn as_str(self) -> &'static str {
+    pub fn describe(&self) -> String {
         match self {
-            Self::NewVersion => "versión nueva",
-            Self::OptionsChanged => "opciones cambiadas",
-            Self::FlagsChanged => "banderas cambiadas",
-            Self::PatchChanged => "parches de usuario cambiados",
-            Self::TemplateChanged => "template cambiado",
+            Self::NewVersion => "versión nueva".to_string(),
+            Self::OptionsChanged => "opciones cambiadas".to_string(),
+            Self::FlagsChanged => "banderas cambiadas".to_string(),
+            Self::PatchChanged => "parches de usuario cambiados".to_string(),
+            Self::TemplateChanged => "template cambiado".to_string(),
+            Self::DepChanged { dep } => format!("dep cambiada ({dep})"),
         }
     }
 
     /// ¿Lo dispara `--newoptions`? (cambios del lado fuente: opciones,
     /// parches de usuario y template).
-    pub fn triggers_options(self) -> bool {
+    pub fn triggers_options(&self) -> bool {
         matches!(
             self,
             Self::OptionsChanged | Self::PatchChanged | Self::TemplateChanged
@@ -57,8 +61,13 @@ impl RebuildReason {
     }
 
     /// ¿Lo dispara `--changed-flags`?
-    pub fn triggers_flags(self) -> bool {
+    pub fn triggers_flags(&self) -> bool {
         matches!(self, Self::FlagsChanged)
+    }
+
+    /// ¿Lo dispara `--changed-deps`? (una dep cambió de versión en el árbol).
+    pub fn triggers_deps(&self) -> bool {
+        matches!(self, Self::DepChanged { .. })
     }
 }
 
@@ -75,6 +84,7 @@ pub fn audit_all(
     entry: &Entry,
     target: &BuildTarget,
     portdb_version: Option<&str>,
+    dep_versions: Option<VersionLookup<'_>>,
 ) -> Vec<RebuildReason> {
     let mut out = Vec::new();
     // Un binario oficial puro no se recompila por esto: nunca se compiló
@@ -122,7 +132,41 @@ pub fn audit_all(
             out.push(RebuildReason::TemplateChanged);
         }
     }
+    // Una dep cambió de versión en el árbol de fuentes desde el build: el
+    // binario quedó ligado a una dep que ya no es la del árbol (cabeceras,
+    // ABI o comportamiento). Sin baseline no hay señal, y una dep que el
+    // árbol no conoce tampoco (ausencia de dato ≠ señal).
+    if let (Some(pinned), Some(lookup)) = (entry.deps_pinned.as_ref(), dep_versions) {
+        if let Some(dep) = changed_deps(pinned, lookup) {
+            out.push(RebuildReason::DepChanged { dep });
+        }
+    }
     out
+}
+
+/// Primera dep cuya versión en el árbol de fuentes cambió desde el build.
+///
+/// `pinned` = baseline (dep → pkgver del árbol al compilar); `lookup` =
+/// versión actual del árbol. `None` = sin señal: la dep no cambió, el árbol
+/// no la conoce, o no hay baseline. Pura y testeable.
+// ponytail: se compara el pkgver COMPLETO (nombre del paquete fuente +
+// versión), así que un cambio de nombre del paquete fuente en el árbol
+// (p. ej. `libfoo-devel` pasa a ser symlink de otro padre) da señal aunque
+// la versión no se mueva; comparar solo la versión evitaría ese falso
+// positivo, pero perdería los forks con la misma versión. Sube el coste a
+// un rebuild extra (opt-in), no la corrección.
+pub fn changed_deps(
+    pinned: &BTreeMap<String, String>,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    for (dep, old) in pinned {
+        if let Some(now) = lookup(dep) {
+            if now != *old {
+                return Some(dep.clone());
+            }
+        }
+    }
+    None
 }
 
 /// Opciones activas para `pkg`.
@@ -212,7 +256,7 @@ pub fn candidates(
         } else {
             None
         };
-        let reasons = audit_all(&entry, &target, version.as_deref());
+        let reasons = audit_all(&entry, &target, version.as_deref(), portdb_version);
         if !reasons.is_empty() {
             out.insert(name, reasons);
         }
@@ -244,6 +288,7 @@ mod tests {
             ldflags: Some(String::new()),
             patches_sha256: Some(vec!["sha256:aa".to_string()]),
             template_sha256: Some("sha256:bb".to_string()),
+            deps_pinned: None,
         }
     }
 
@@ -253,7 +298,9 @@ mod tests {
         target: &BuildTarget,
         portdb_version: Option<&str>,
     ) -> Option<RebuildReason> {
-        audit_all(entry, target, portdb_version).into_iter().next()
+        audit_all(entry, target, portdb_version, None)
+            .into_iter()
+            .next()
     }
 
     fn target() -> BuildTarget {
@@ -270,7 +317,7 @@ mod tests {
     #[test]
     fn sin_discrepancia_no_hay_rebuild() {
         assert_eq!(audit(&entry_source(), &target(), None), None);
-        assert!(audit_all(&entry_source(), &target(), None).is_empty());
+        assert!(audit_all(&entry_source(), &target(), None, None).is_empty());
     }
 
     /// El índice de fuentes es el de void-packages: su versión solo dice
@@ -379,7 +426,7 @@ mod tests {
         let mut t = target();
         t.active_options = vec!["wayland".to_string()];
         t.cflags = "-O3".to_string();
-        let reasons = audit_all(&entry_source(), &t, None);
+        let reasons = audit_all(&entry_source(), &t, None, None);
         assert!(reasons.contains(&RebuildReason::OptionsChanged));
         assert!(reasons.contains(&RebuildReason::FlagsChanged));
     }
@@ -408,5 +455,65 @@ mod tests {
         assert!(!RebuildReason::FlagsChanged.triggers_options());
         assert!(RebuildReason::FlagsChanged.triggers_flags());
         assert!(!RebuildReason::OptionsChanged.triggers_flags());
+    }
+
+    /// Dep desfasada: la dep del árbol cambió de versión desde el build.
+    #[test]
+    fn dep_cambiada_en_el_arbol_es_rebuild() {
+        let mut e = entry_source();
+        e.deps_pinned = Some(BTreeMap::from([(
+            "libfoo".to_string(),
+            "libfoo-1.2.3_1".to_string(),
+        )]));
+        let lookup = |pkg: &str| match pkg {
+            "libfoo" => Some("libfoo-1.3.0_1".to_string()),
+            _ => None,
+        };
+        let reasons = audit_all(&e, &target(), None, Some(&lookup));
+        assert!(reasons.contains(&RebuildReason::DepChanged {
+            dep: "libfoo".to_string()
+        }));
+        assert!(RebuildReason::DepChanged {
+            dep: "libfoo".to_string()
+        }
+        .triggers_deps());
+        assert!(!RebuildReason::DepChanged {
+            dep: "libfoo".to_string()
+        }
+        .triggers_options());
+    }
+
+    /// La dep no cambió → no hay rebuild (ni ruido).
+    #[test]
+    fn dep_sin_cambio_no_es_rebuild() {
+        let mut e = entry_source();
+        e.deps_pinned = Some(BTreeMap::from([(
+            "libfoo".to_string(),
+            "libfoo-1.2.3_1".to_string(),
+        )]));
+        let lookup = |pkg: &str| match pkg {
+            "libfoo" => Some("libfoo-1.2.3_1".to_string()),
+            _ => None,
+        };
+        assert!(audit_all(&e, &target(), None, Some(&lookup)).is_empty());
+    }
+
+    /// Sin baseline no hay señal; una dep que el árbol no conoce tampoco
+    /// (ausencia de dato ≠ señal).
+    #[test]
+    fn dep_sin_baseline_o_desconocida_no_es_rebuild() {
+        let lookup = |pkg: &str| match pkg {
+            "libfoo" => Some("libfoo-1.3.0_1".to_string()),
+            _ => None,
+        };
+        // Sin baseline.
+        assert!(audit_all(&entry_source(), &target(), None, Some(&lookup)).is_empty());
+        // Con baseline, pero la dep no está en el árbol.
+        let mut e = entry_source();
+        e.deps_pinned = Some(BTreeMap::from([(
+            "solo-vur".to_string(),
+            "solo-vur-1.0_1".to_string(),
+        )]));
+        assert!(audit_all(&e, &target(), None, Some(&lookup)).is_empty());
     }
 }

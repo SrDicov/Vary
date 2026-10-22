@@ -423,6 +423,11 @@ impl Config {
                 // ITEM 1: recompila lo compilado con otras banderas.
                 self.changed_flags = true;
             }
+            Arg::Long("changed-deps") => {
+                // Recompila lo compilado contra una dep que ya no es la del
+                // árbol de fuentes (cabeceras/ABI).
+                self.changed_deps = true;
+            }
             Arg::Long("no-prefer-binary") => {
                 self.prefer_binary = false;
                 self.candidate_order = crate::resolver::CandidateOrder::PreferSource;
@@ -1051,5 +1056,19 @@ mod tests {
         let mut config = Config::default();
         parse_args(&mut config, &["-S", "foo", "-U"]).expect("parse");
         assert!(config.changed_flags);
+    }
+
+    /// `--changed-deps` es opt-in: por defecto no recompila nada.
+    #[test]
+    fn changed_deps_es_opt_in() {
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "foo", "--changed-deps"]).expect("parse");
+        assert!(config.changed_deps);
+        assert!(!config.newoptions);
+        assert!(!config.changed_flags);
+
+        let mut config = Config::default();
+        parse_args(&mut config, &["-S", "foo"]).expect("parse");
+        assert!(!config.changed_deps);
     }
 }

@@ -96,18 +96,21 @@ Notas: solo aplica a compilados por vary (la DB no guarda pins de installs binar
 
 `--deep` (alias `--deep-build`) pasa `-N` a xbps-src: construye sin repos remotos, compilando desde fuente las dependencias que falten y reutilizando el repo local (`hostdir/binpkgs`) para lo ya compilado. Puede fallar si falta la fuente o el distfile de alguna dependencia; flag solo de CLI (no existe opción en `vary.conf`).
 
-### Recompilar cuando cambian las entradas (`--newoptions`, `--changed-flags`)
+### Recompilar cuando cambian las entradas (`--newoptions`, `--changed-flags`, `--changed-deps`)
 
 Al instalar un paquete **desde fuente**, vary graba con qué se compiló: las opciones de build activas, las banderas del compilador, los hashes de tus propios parches/ficheros de configuración y el hash del template. Un paquete cuyo `pkgver` no cambió puede estar obsoleto igual: cambiaste `-O2` por `-O3 -march=native`, añadiste un parche, o void-packages cambió el template.
 
-`--newoptions` recompila los paquetes compilados por vary cuyas **opciones, parches de usuario o template** cambiaron; `--changed-flags` (short `-U`) recompila los que se compilaron con otras **banderas**:
+`--newoptions` recompila los paquetes compilados por vary cuyas **opciones, parches de usuario o template** cambiaron; `--changed-flags` (short `-U`) recompila los que se compilaron con otras **banderas**; `--changed-deps` recompila los cuya **dependencia se movió en el árbol de fuentes**:
 
 ```sh
 vary -S --changed-flags        # cambiaste CFLAGS en vary.conf
 vary -S --newoptions           # tocaste tus parches/opciones o el template
+vary -Syu --changed-deps       # una dep del árbol cambió de versión desde el build
 ```
 
 Notas: la auditoría solo mira paquetes **compilados por vary** (los binarios oficiales nunca se recompilan por esto) y solo cuando hay baseline registrado — un paquete instalado antes de esta función no tiene baseline, así que no se toca (no se inventan rebuilds). El baseline se registra para el **paquete fuente**: los subpaquetes de un build oficial desde fuente (`gmpxx`, `gmp-devel`, …) no tienen entrada propia y no se auditan individualmente (recompilar el padre los recompila a todos). El plan explica cada rebuild (`rebuild de 'linux': banderas cambiadas`). `--newoptions` no lleva short: `-N` ya significa "sin repos remotos" en xbps-src y lo usa `--deep`. La auditoría es una decisión **en tiempo de plan**: no recompila nada por su cuenta, tú sigue pidiendo la instalación.
+
+`--changed-deps` es **opt-in** porque un cambio de versión de una dependencia no siempre rompe un binario: con enlace dinámico la librería nueva se carga en tiempo de ejecución, y un bump de SONAME ya se avisa por su cuenta (`@preserved-rebuild`). Importa cuando la dependencia es una *entrada de build* (cabeceras, plantillas C++, librerías header-only). El baseline es la versión de la dependencia en void-packages en el momento del build, así que: una dependencia que solo existe en un VUR no da señal (sin dato, sin ruido); una que existe **tanto** en void-packages como en un VUR se pinea a la versión del árbol, de modo que un bump del árbol propone recompilar aunque el build usara la versión del VUR (un rebuild de más, opt-in); una dependencia **eliminada** del árbol tampoco da señal (ese caso es de la maquinaria de SONAME).
 
 ## Conflictos de ficheros de configuración (`--conf-update`)
 

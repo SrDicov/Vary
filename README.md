@@ -99,18 +99,21 @@ Notes: only source-built packages (the DB carries no pins for binary installs), 
 
 `--deep` (alias `--deep-build`) passes `-N` to xbps-src: it builds without remote repositories, compiling missing dependencies from source while reusing the local repo (`hostdir/binpkgs`) for what was already built. It can fail if any dependency's source or distfile is not available; CLI flag only (no `vary.conf` option).
 
-### Rebuilding when the inputs change (`--newoptions`, `--changed-flags`)
+### Rebuilding when the inputs change (`--newoptions`, `--changed-flags`, `--changed-deps`)
 
 When vary installs a package **from source**, it records what it was built with: the active build options, the compiler flags, the hashes of your own patches/config files and the hash of the template. A package whose `pkgver` did not change can still be obsolete: you switched `-O2` for `-O3 -march=native`, added a patch, or void-packages changed the template.
 
-`--newoptions` rebuilds the source-built packages whose **options, user patches or template** changed; `--changed-flags` (short `-U`) rebuilds those whose **compiler flags** changed:
+`--newoptions` rebuilds the source-built packages whose **options, user patches or template** changed; `--changed-flags` (short `-U`) rebuilds those whose **compiler flags** changed; `--changed-deps` rebuilds those whose **dependency moved in the source tree**:
 
 ```sh
 vary -S --changed-flags        # cambiaste CFLAGS en vary.conf
 vary -S --newoptions           # tocaste tus parches/opciones o el template
+vary -Syu --changed-deps       # una dep del árbol cambió de versión desde el build
 ```
 
 Notes: the audit only considers packages **built by vary** (official binaries are never rebuilt for this) and only when there is a baseline recorded — a package installed before this feature has no baseline, so it is not touched (no invented rebuilds). The baseline is recorded for the **source package**: the subpackages of an official source build (`gmpxx`, `gmp-devel`, …) get no entry of their own, so they are not audited individually (rebuilding the parent rebuilds them all). The plan explains each rebuild (`rebuild de 'linux': banderas cambiadas`). There is no short flag for `--newoptions`: `-N` already means "no remote repositories" in xbps-src and is used by `--deep`. The audit is a **plan-time** decision: it never rebuilds anything on its own, you still have to ask for the install.
+
+`--changed-deps` is **opt-in** because a dependency version bump does not always break a binary: with dynamic linking the new library is picked up at run time, and a SONAME bump is already reported on its own (`@preserved-rebuild`). It matters when the dependency is a *build* input (headers, C++ templates, header-only libraries). The baseline is the dependency version in void-packages at build time, so: a dependency that only exists in a VUR gives no signal (no data, no noise); a dependency that exists in **both** void-packages and a VUR is pinned to the tree's version, so a tree bump proposes a rebuild even if the build used the VUR's version (one extra rebuild, opt-in); a dependency **removed** from the tree gives no signal either (that case belongs to the SONAME machinery).
 
 ## Config file conflicts (`--conf-update`)
 
