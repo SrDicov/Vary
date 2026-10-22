@@ -534,3 +534,61 @@ protege lo compilado desde fuente, no fija una versión.
 **Trigger:** el primer roce donde alguien necesite "quédate con la versión
 antigua" (un paquete roto en la última, un VUR que actualizó y rompió algo).
 **No implementado** (feature especulativa sin dolor medido).
+
+### SMOKE en Void real de `--changed-deps` (2026-10-22) — 2 huecos encontrados
+
+Informe: `test/SMOKE-changed-deps.md` (evidencia cruda en `test/smoke-changed-deps/`).
+Binario `target/debug/vary` local; contenedor `voidlinux/voidlinux:latest`
+(glibc), usuario normal + sudo. Escenario: `sl` compilado desde fuente →
+se mueve `ncurses` en el árbol → el dependiente debe entrar en el plan **solo**
+con `--changed-deps`.
+
+**Resultado:** la feature **no hacía nada** en el caso más común. Dos fixes:
+
+1. **La baseline no se grababa para los OFICIALES.** El resolver crea un
+   `VurInfo` **placeholder** para los oficiales (nodo hoja: sus deps las
+   resuelve xbps-src) → `depends`/`makedepends` vacíos → baseline vacía. La
+   feature solo habría funcionado para paquetes de VUR. Fix: para
+   `Action::BuildOfficial` las deps salen de la **plantilla real** del clon
+   (`parse_template_text`, ahora `pub(crate)`) y se reducen con las opciones
+   activas.
+2. **Los ALIASES del índice se quedaban viejos** (bug **preexistente** del
+   `portdb`): al reindexar un paquete se refrescaba su entrada, no las de sus
+   aliases (`srcpkgs/foo-devel` → symlink a `foo`). Medido en el clon real:
+   `ncurses` 6.6.1 y **`ncurses-devel` 6.6**. Dos efectos: la señal no salía
+   para ninguna dep `-devel` (la mayoría) y el cruce de "versión nueva" de un
+   subpaquete `-devel` **ya daba un falso positivo**. Fix: al reindexar un
+   paquete se propagan sus campos a los aliases cuyo `sourcepkg` es ese
+   paquete (+ test `incremental_refresca_los_alias_del_padre`).
+
+**Verificado en Void real:**
+
+| Paso | Resultado |
+|---|---|
+| Build real desde fuente | `sl-5.05_1` compilado e instalado (bootstrap `binary-bootstrap` OK) |
+| Baseline | `"deps_pinned": { "ncurses-devel": "ncurses-6.6_1" }` |
+| `vary -Syu` (sin flag) | `VUR packages up to date.` → `sl` **no** entra |
+| `vary -Syu --changed-deps` | `sl (dep cambiada: ncurses-devel)` + `VUR upgrades available: sl` |
+| `vary -Sp --changed-deps sl` | build `sl official-source` + `warning: rebuild de 'sl': dep cambiada (ncurses-devel)` |
+| `vary -Sp sl` (sin flag) | `installs: official/sl` → el binario oficial **pisaría** el build local |
+
+→ El valor de la feature, medido: sin el flag vary **reemplaza** el build local
+por el binario oficial; con él, **recompila desde fuente** y dice por qué.
+
+**Desviación registrada:** `cargo build` local (la operativa lo prohíbe salvo
+caída de CI) porque el smoke exige binario con el código nuevo y CI no entrega
+binarios; mismo precedente que `SMOKE-0.4.0.md`. Solo build; sin test/clippy
+local (la CI estaba verde).
+
+**Lección (la misma que el `git add`):** `CI verde + 362 tests` NO es "la
+feature funciona": los tests no pueden ver que el `VurInfo` de un oficial está
+vacío, ni que un alias del índice queda viejo. **Sin ejecución real, la
+arquitectura es una hipótesis.**
+
+**Sin ejercitar todavía** (para el siguiente smoke): un paquete de **VUR** (la
+ruta del `.VURINFO` con deps ya evaluadas), un subpaquete, y la interacción
+con un bump de SONAME (deben ser señales distintas: la de soname la da
+`@preserved-rebuild`).
+
+**Typo en un asunto ya publicado** (`a881511`: "al跟着"): la historia
+publicada no se reescribe (es evidencia); queda anotado aquí.
