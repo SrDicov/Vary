@@ -319,16 +319,19 @@ pub struct UpdateStats {
 
 /// Actualización incremental tras `git pull --ff-only`.
 ///
-/// Shallow-safe: `git diff-tree` de UN commit (no hay rango OLD..NEW).
+/// **Qué cambió se decide con el ÁRBOL DE TRABAJO, no con el diff de git**:
+/// en un clon shallow (`--depth 1`) el tip es frontera de profundidad (su
+/// padre no está) → `git diff-tree` no devuelve nada → tras un pull no se
+/// reindexaba NADA; y mirando solo el tip, el resto de commits del pull se
+/// ignoraba. El índice ya guarda el sha256 de cada template → se compara con
+/// el del árbol y se reparsea solo lo que cambia (un alias `-devel` comparte
+/// el fichero con su padre → se actualiza solo, sin trucos).
 pub fn update_incremental(checkout: &Path, git_bin: &str, db: &mut PortDb) -> Result<UpdateStats> {
     let mut stats = UpdateStats::default();
     let head = git_head(checkout, git_bin)?;
     let Some(head) = head else {
         return Ok(stats);
     };
-    if db.void_commit.as_deref() == Some(head.as_str()) {
-        return Ok(stats); // nada nuevo
-    }
     stats.new_commit = Some(head.clone());
 
     let helpers = helpers_hash(checkout);
@@ -344,26 +347,16 @@ pub fn update_incremental(checkout: &Path, git_bin: &str, db: &mut PortDb) -> Re
         return Ok(stats);
     }
 
-    let touched = git_changed_paths(checkout, git_bin, &head)?;
-    let mut names: Vec<String> = Vec::new();
-    for path in &touched {
-        let mut parts = path.split('/');
-        if parts.next() != Some("srcpkgs") {
-            continue;
-        }
-        if let Some(name) = parts.next() {
-            if !name.is_empty() && !names.contains(&name.to_string()) {
-                names.push(name.to_string());
-            }
-        }
+    let (changed, removed) = changed_packages(checkout, db);
+    for name in &removed {
+        db.entries.remove(name);
+        stats.reindexed += 1;
     }
-    // El mapa de SONAMEs del árbol también es parte del índice: si el commit
-    // lo toca, se refresca (si no, el mapa queda congelado y los bumps
-    // nuevos no se ven hasta que cambie un helper).
-    if touched.iter().any(|p| p == "common/shlibs") {
-        db.shlibs = parse_shlibs(&checkout.join("common").join("shlibs"));
-    }
-    for name in names {
+    // El mapa de SONAMEs del árbol también es parte del índice: se reparsa
+    // siempre (un fichero, ~10 ms) para que los bumps nuevos se vean sin
+    // depender de qué commit los trajo.
+    db.shlibs = parse_shlibs(&checkout.join("common").join("shlibs"));
+    for name in changed {
         let dir = checkout.join("srcpkgs").join(&name);
         let template = dir.join("template");
         let Some(hash) = file_sha256(&template) else {
@@ -395,33 +388,55 @@ pub fn update_incremental(checkout: &Path, git_bin: &str, db: &mut PortDb) -> Re
                 needs_dynamic: true,
             },
         };
-        db.entries.insert(name.clone(), data.clone());
-        // Los ALIASES (symlinks en srcpkgs/ → paquete fuente) comparten la
-        // plantilla de su padre: si el padre cambió, sus entradas quedan
-        // viejas. Sin refrescarlas, la versión del alias miente → cualquier
-        // comparación con ella (la señal de dep desfasada, el cruce de
-        // "versión nueva" de un subpaquete -devel) da señal falsa o deja
-        // pasar la real.
-        let aliases: Vec<String> = db
-            .entries
-            .iter()
-            .filter(|(k, e)| k.as_str() != name.as_str() && e.sourcepkg == name)
-            .map(|(k, _)| k.clone())
-            .collect();
-        for alias in aliases {
-            if let Some(entry) = db.entries.get_mut(&alias) {
-                entry.version = data.version.clone();
-                entry.revision = data.revision;
-                entry.build_options = data.build_options.clone();
-                entry.build_options_default = data.build_options_default.clone();
-                entry.template_sha256 = data.template_sha256.clone();
-            }
-        }
+        // El alias (`srcpkgs/foo-devel` → symlink a `foo`) comparte el
+        // fichero con su padre: el barrido del árbol lo ve con el hash
+        // nuevo → se reindexa solo, sin propagación.
+        db.entries.insert(name, data);
         stats.reindexed += 1;
     }
     db.helpers_hash = helpers;
     db.void_commit = Some(head);
     Ok(stats)
+}
+
+/// Paquetes cuyo template cambió (o son nuevos) y los que desaparecieron.
+///
+/// Compara el sha256 de cada `srcpkgs/*/template` con el que el índice ya
+/// guarda. Es la fuente de verdad: el árbol de trabajo, no el diff de git
+/// (en un clon shallow el tip no tiene diff y solo se vería su commit).
+///
+/// Devuelve `(cambiados, eliminados)`.
+fn changed_packages(checkout: &Path, db: &PortDb) -> (Vec<String>, Vec<String>) {
+    let srcpkgs = checkout.join("srcpkgs");
+    let mut changed = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let Ok(entries) = std::fs::read_dir(&srcpkgs) else {
+        return (changed, Vec::new());
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let template = srcpkgs.join(&name).join("template");
+        // Sin template no es un paquete (o se borró): no se indexa.
+        let Some(hash) = file_sha256(&template) else {
+            continue;
+        };
+        seen.insert(name.clone());
+        let known = db
+            .entries
+            .get(&name)
+            .map(|e| e.template_sha256 == hash)
+            .unwrap_or(false);
+        if !known {
+            changed.push(name);
+        }
+    }
+    let removed = db
+        .entries
+        .keys()
+        .filter(|k| !seen.contains(*k))
+        .cloned()
+        .collect();
+    (changed, removed)
 }
 
 /// `git rev-parse HEAD` del clon.
@@ -441,22 +456,6 @@ fn git_head(checkout: &Path, git_bin: &str) -> Result<Option<String>> {
 }
 
 /// Rutas tocadas por el commit `sha` (`git diff-tree`, shallow-safe).
-fn git_changed_paths(checkout: &Path, git_bin: &str, sha: &str) -> Result<Vec<String>> {
-    let out = std::process::Command::new(git_bin)
-        .arg("-C")
-        .arg(checkout)
-        .args(["diff-tree", "--no-commit-id", "--name-only", "-r", sha])
-        .output()
-        .with_context(|| format!("no se pudo invocar {git_bin} diff-tree"))?;
-    if !out.status.success() {
-        return Ok(Vec::new());
-    }
-    Ok(String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect())
-}
-
 /// Tabla de virtuals: `virtual` → paquete real.
 ///
 /// Fuentes (en este orden, el segundo pisa al primero):
@@ -806,7 +805,53 @@ mod tests {
         db.void_commit = git_head(tmp.path(), "git").unwrap();
         let stats = update_incremental(tmp.path(), "git", &mut db).unwrap();
         assert_eq!(stats.reindexed, 0);
-        assert!(stats.new_commit.is_none());
+    }
+
+    /// El incremental mira el ÁRBOL, no el diff de git: un template modificado
+    /// (aun sin commit) se reindexa. Con `git diff-tree` esto no pasaba: tras
+    /// un pull (tip de un clon shallow = frontera de profundidad, sin diff) no
+    /// se reindexaba NADA y el índice quedaba congelado.
+    #[test]
+    fn incremental_reindexa_el_arbol_aunque_no_haya_commit() {
+        let tmp = tempfile::tempdir().unwrap();
+        fixture(tmp.path());
+        let mut db = index_checkout(tmp.path()).unwrap();
+        db.void_commit = git_head(tmp.path(), "git").unwrap();
+        save(&db, tmp.path().join("portdb.json")).unwrap();
+
+        // Se modifica el template SIN commitear: el árbol es la verdad.
+        std::fs::write(
+            tmp.path().join("srcpkgs/pkg1/template"),
+            template("pkg1", "2.0", 3, "a b c"),
+        )
+        .unwrap();
+
+        let mut db = load(tmp.path().join("portdb.json")).unwrap();
+        let stats = update_incremental(tmp.path(), "git", &mut db).unwrap();
+        assert!(!stats.full_reindex);
+        assert_eq!(stats.reindexed, 1, "{stats:?}");
+        assert_eq!(db.entries.get("pkg1").unwrap().version, "2.0");
+        assert_eq!(db.entries.get("pkg1").unwrap().revision, 3);
+        // Los demás no se tocan.
+        assert_eq!(db.entries.get("pkg0").unwrap().version, "1.0");
+    }
+
+    /// Un paquete que desaparece del árbol sale del índice.
+    #[test]
+    fn incremental_saca_los_paquetes_borrados() {
+        let tmp = tempfile::tempdir().unwrap();
+        fixture(tmp.path());
+        let mut db = index_checkout(tmp.path()).unwrap();
+        db.void_commit = git_head(tmp.path(), "git").unwrap();
+        save(&db, tmp.path().join("portdb.json")).unwrap();
+
+        std::fs::remove_dir_all(tmp.path().join("srcpkgs/pkg2")).unwrap();
+
+        let mut db = load(tmp.path().join("portdb.json")).unwrap();
+        let stats = update_incremental(tmp.path(), "git", &mut db).unwrap();
+        assert_eq!(stats.reindexed, 1, "{stats:?}");
+        assert!(!db.entries.contains_key("pkg2"));
+        assert!(db.entries.contains_key("pkg1"));
     }
 
     /// Medición REAL sobre el clon local (necesita
