@@ -49,15 +49,18 @@ proponer rebuild sobre un **binario oficial**.
 la nueva acción es un binario → la entrada se **retira** (vary ya no gestiona
 ese paquete: no es suyo).
 
-### P0-3 · La DB afirma una versión que no está instalada
+### P0-3 · La DB afirma una versión que no está instalada — **HECHO**
 
 **Medido:** con `sl-5.04_1` compilado y `sl-5.05_1` ya instalado, xbps
 devolvió **0** pese al `ERROR: Package 'sl' already installed` → vary registró
 `sl-5.04_1` (source) y el sistema siguió con `5.05_1`.
 
-**Fix:** antes de escribir la entrada, **verificar** la versión realmente
-instalada (`xbps-query -p pkgver`); si no es la esperada → no se registra la
-baseline y se avisa (el estado que se guarda tiene que ser verdad).
+**Fix (HECHO):** antes de escribir la entrada se **verifica contra el
+sistema** (`xbps-query -p pkgver`): si lo instalado no es lo esperado → no se
+registra y la entrada anterior (y las de sus subpaquetes) se **retiran** (ese
+paquete ya no es de vary). Sin xbps no se puede verificar → se registra como
+antes (no se inventa un fallo que no se ha visto). Test:
+`record_decision_compara_con_el_sistema`.
 
 ## P1 — cobertura de la feature nueva (la regla de la noche: smoke)
 

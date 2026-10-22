@@ -361,6 +361,30 @@ fn select_reason(
         .cloned()
 }
 
+/// Qué hacer con la entrada de la DB de un paquete, según lo que dice el
+/// SISTEMA frente a lo que vary esperaba instalar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecordDecision {
+    /// Se registra: lo instalado es lo esperado.
+    Record,
+    /// No se registra y se retira la entrada anterior: lo instalado no es lo
+    /// que vary iba a instalar → ese paquete ya no es de vary (y su entrada
+    /// con baseline mentiría).
+    Drop,
+}
+
+/// Decide con la versión REALMENTE instalada (`None` = no está instalado).
+///
+/// La DB tiene que decir la verdad: xbpsinstall puede devolver 0 pese a
+/// rechazar la instalación (`Package 'x' already installed`) → registrar la
+/// versión esperada afirmaría algo falso.
+fn record_decision(installed: Option<&str>, expected: &str) -> RecordDecision {
+    match installed {
+        Some(v) if v == expected => RecordDecision::Record,
+        _ => RecordDecision::Drop,
+    }
+}
+
 /// ITEM 1: hechos de compilación que se registran por paquete instalado desde
 /// fuente. El hash de template solo se registra para builds OFICIALES (su
 /// template vive en void-packages); en builds VUR el template está en el clon
@@ -2027,6 +2051,33 @@ pub fn install(config: &mut Config) -> Result<i32> {
             .unwrap_or_else(|| item.info.pkgver());
         let repo_commit = repo_head_commit(&config.vurs_dir().join(&repo_name), &config.git_bin);
         let artifact_sha256 = package_artifact_hash(&binpkgs_root, &version, &arch);
+        // P0-3: la DB solo dice verdad si lo instalado es lo que acabamos de
+        // instalar. xbpsinstall puede devolver 0 pese a rechazar la
+        // instalación ("Package 'x' already installed") → registrar la
+        // versión esperada afirmaría una versión que no está.
+        match xbps::query_installed(real) {
+            Ok(info) => {
+                let installed = info.map(|i| i.pkgver);
+                if record_decision(installed.as_deref(), &version) == RecordDecision::Drop {
+                    tracing::warn!(
+                        "{real}: lo instalado ({installed:?}) no es lo esperado ({version}); \
+                         se retira la entrada de la DB (el paquete ya no es de vary)"
+                    );
+                    db.remove(real);
+                    // Los subpaquetes vienen del mismo build: si este no es el
+                    // esperado, sus entradas tampoco.
+                    for sub in &item.info.subpackages {
+                        db.remove(&sub.pkgname);
+                    }
+                    continue;
+                }
+            }
+            Err(e) => {
+                // Sin xbps no se puede verificar: se registra como antes (no
+                // se inventa un fallo que no se ha visto).
+                tracing::debug!("{real}: no se pudo verificar la versión instalada: {e:#}");
+            }
+        }
         for w in crate::db::drift_warnings(db.get(real), &version, &repo_commit, &artifact_sha256) {
             tracing::warn!("{w}");
         }
@@ -2474,6 +2525,23 @@ mod tests {
         assert!(!suelta_repolock(Some(&source)));
         // Sin entrada en la DB: nada que soltar.
         assert!(!suelta_repolock(None));
+    }
+
+    /// La DB solo dice la verdad si lo instalado es lo esperado.
+    #[test]
+    fn record_decision_compara_con_el_sistema() {
+        // Lo instalado es lo esperado → se registra.
+        assert_eq!(
+            record_decision(Some("sl-5.04_1"), "sl-5.04_1"),
+            RecordDecision::Record
+        );
+        // Otra versión → no se registra (xbps rechazó la instalación).
+        assert_eq!(
+            record_decision(Some("sl-5.05_1"), "sl-5.04_1"),
+            RecordDecision::Drop
+        );
+        // No está instalado → tampoco.
+        assert_eq!(record_decision(None, "sl-5.04_1"), RecordDecision::Drop);
     }
 
     /// Deps que se versionan para la baseline: runtime y de build, sin
