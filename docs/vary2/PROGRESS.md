@@ -673,3 +673,76 @@ datos persistidos, el smoke la reproduce antes de cerrar el commit.
    **sin** `--changed-deps` → observar si el binario oficial pisa el build
    local; (c) correr `vary -Syu --changed-deps` → observar si el dependiente
    entra en el plan y se anuncia; (d) apuntar la fila.
+
+### Semana de uso — fila 2 (2026-10-22): el daño, MEDIDO (S2)
+
+| Fecha | Comando | Qué esperaba | Qué pasó | Severidad |
+|-------|---------|--------------|----------|-----------|
+| 2026-10-22 | `vary -S sl --noconfirm` (build local `sl-5.04_1` instalado; el oficial es `5.05_1`) | Que mi build local sobreviviera, o que vary avisara | **El binario oficial sustituyó al build local**: `sl-5.04_1: updating to 5.05_1 ... updated successfully`. Sin aviso. La DB de vary quedó **desincronizada** (dice `sl-5.04_1`/`source` mientras el sistema tiene el binario `5.05_1`) y **conservó la baseline** `deps_pinned` de un paquete que ya no es un build local | **S2** |
+
+→ **La fricción de la feature es REAL y medida**: sin `--changed-deps`, un
+`vary -S <pkg>` explícito **reemplaza tu build local por el binario oficial**.
+Con `--changed-deps`, el mismo comando da `sl official-source` (rebuild). El
+commit se justifica como **necesario**.
+
+Para medirlo hubo que crear el hueco de versiones (build local 5.04 < oficial
+5.05): con versiones iguales, xbps responde `Package 'sl' already installed` y
+no hace nada (fila 1, S3). El hueco se hizo con un `sl` 5.04 parcheado en el
+clon (distfile y checksum reales); el contenedor quedó **restaurado** a las
+versiones de upstream (`sl` 5.05, `ncurses` 6.6) y reconstruido.
+
+### Dos hallazgos de integridad de datos (preexistentes; NO implementados)
+
+1. **La DB no se actualiza al sustituir un build de fuente por un oficial.**
+   T-005 impide registrar oficiales (escribiría ficción), pero nadie **borra**
+   ni **actualiza** la entrada anterior → queda un "source" con baseline de
+   un paquete que ya no es un build local. Consecuencia medida: las
+   auditorías (`--newoptions`, `--changed-flags`, `--changed-deps`) pueden
+   proponer rebuild sobre un **binario oficial**.
+   **Trigger:** el primer rebuild propuesto sobre un paquete que ya no es
+   build local.
+2. **La DB afirma una versión que no está instalada.** Con `sl` 5.04
+   compilado y `sl` 5.05 ya instalado, xbpsinstall devolvió **0** pese al
+   `ERROR: Package 'sl' already installed` → vary registró `sl-5.04_1`
+   (source) y el sistema siguió con `5.05_1`. La DB affirmed una versión
+   inexistente ("artefacto mal identificado = dato podrido").
+   **Trigger:** el primer install que xbps rechace con "already installed" y
+   una versión distinta de la instalada.
+
+### BLOQUEANTE REAL de la feature: el índice de fuentes no se refresca tras un pull
+
+**Medido en el clon real (depth 1):**
+
+- `git diff-tree --no-commit-id --name-only -r <tip>` → **0 paths**: el tip
+  de un clon shallow es **frontera de profundidad** (su padre no está), así
+  que git no puede diffearlo. Un `pull` deja el tip nuevo exactamente así →
+  `update_incremental` **no reindexa NADA**.
+- Y solo mira **un** commit (el tip): los demás commits del pull se ignoran
+  (medido: un commit intermedio con ncurses revertido **no** se reindexó
+  mientras el tip sí).
+
+**Consecuencia:** las versiones del índice quedan congeladas en el primer
+reindexado completo → la señal de `--changed-deps` (y el cruce de "versión
+nueva" que ya existía) **casi nunca se disparan** tras un pull real. El smoke
+no lo vio porque su bump era **el commit del tip** (el único caso que el
+incremental ve) ✓.
+
+**Opciones (NO implementadas):**
+1. Diff de **rango**: `git diff --name-only <índice>..<nuevo>` → exige que el
+   clon tenga el commit viejo (con `--depth 1` no está) → hay que dejar de
+   hacer pull shallow o profundizar el clon (coste: tamaño del clon).
+2. **Reindexado completo** cuando el clon es shallow: correcto, pero
+   tumba el diseño incremental (~15 s por pull).
+3. Comparar los hashes de plantilla del árbol contra los del índice (el
+   índice ya los guarda): correcto, coste parecido al reindexado.
+
+**Trigger:** el primer `vary -Sy` en un sistema real donde un paquete del
+árbol haya cambiado de versión y el índice no lo haya visto (es decir: la
+primera vez que la señal no aparece y debería). Hasta entonces: la feature
+está **verificada en su mecanismo** (smoke) pero **bloqueada en su trigger
+real** por este bug preexistente del `portdb`.
+
+**Consecuencia para el veredicto del commit:** la feature no es "sobrante"
+(la fricción S2 está medida), pero **su disparo en el mundo real depende de
+arreglar el `portdb`**. El commit queda abierto hasta que haya un `-Sy` real
+con el índice refrescado.
