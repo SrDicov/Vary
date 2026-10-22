@@ -592,3 +592,50 @@ con un bump de SONAME (deben ser señales distintas: la de soname la da
 
 **Typo en un asunto ya publicado** (`a881511`: "al跟着"): la historia
 publicada no se reescribe (es evidencia); queda anotado aquí.
+
+### Regla que sale del smoke (institucionalizar)
+
+**Toda feature que toque DATOS PERSISTIDOS (DB, índice, lock, caché) se
+ejercita en Void real antes de darse por buena.** Motivo medido: la feature
+`--changed-deps` pasó la doble revisión (2 revisores, 8 salvedades
+aplicadas) y la CI verde (362 tests) **y no hacía nada** en el caso más
+común. La revisión estática y la ejecución real atrapan cosas distintas: la
+revisión vio el "índice ausente" (MEDIA) y el execution vio el `VurInfo`
+placeholder de los oficiales y los aliases stale del índice. **Sin
+ejecución, la arquitectura es una hipótesis** (y esta era falsa).
+
+El smoke es barato cuando el escenario es real: un paquete pequeño
+(`sl`), un clon de void-packages y un bump de versión. El coste está en
+elegir el paquete, no en el smoke.
+
+**Trigger de la regla:** la próxima feature que escriba en `installed.json`,
+`portdb.json`, `repos.conf` o `vary.lock` → smoke antes de merge a `main`.
+
+### Fricción candidata anotada (NO es bug; es decisión de CLI)
+
+`vary --print` **no se combina con `-u`**: `vary -Spu` →
+`error: --print no se combina con -u (solo '-Sp <pkg>')`. Es una decisión
+del parser (el print de un upgrade no tiene un plan que mostrar sin
+ejecutar el upgrade), no un defecto.
+
+**Trigger:** el primer usuario que intente `vary -Spu` (o que pida ver el
+plan de un upgrade antes de ejecutarlo). **No implementado** (sin dolor
+medido). Si aparece, el camino natural es: el upgrade con print imprime la
+lista de `outdated` + las razones y no ejecuta (como hace `--changed-deps`
+con su anuncio).
+
+### Entorno de la semana de uso
+
+El host es Artix (sin xbps) → la semana de uso se hace en Void. El contenedor
+del smoke queda **detenido pero conservado** con el estado ya montado
+(`sl` compilado desde fuente, clon de void-packages con `ncurses` movido a
+6.6.1, índice refrescado):
+
+```sh
+docker start vary-smoke
+docker exec -u tester -e HOME=/home/tester vary-smoke sh -c 'vary -Syu --changed-deps'
+```
+
+Fricción de esta semana = filas de la plantilla de arriba (fecha | comando |
+qué esperaba | qué pasó | severidad). Con la regla nueva: si una fila toca
+datos persistidos, el smoke la reproduce antes de cerrar el commit.
