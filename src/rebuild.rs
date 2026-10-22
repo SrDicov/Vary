@@ -22,8 +22,6 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RebuildReason {
     /// Hay versión nueva en el árbol de fuentes.
-    // ponytail: sin consumidor hasta que ITEM 2 alimente el lookup de versión;
-    // la rama existe para no reescribir la auditoría cuando llegue.
     NewVersion,
     /// Cambió el conjunto de opciones activas.
     OptionsChanged,

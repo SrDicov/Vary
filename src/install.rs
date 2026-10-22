@@ -361,6 +361,79 @@ fn select_reason(
         .cloned()
 }
 
+/// Qué hacer con la entrada de la DB de un paquete, según lo que dice el
+/// SISTEMA frente a lo que vary esperaba instalar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecordDecision {
+    /// Se registra: lo instalado es lo esperado.
+    Record,
+    /// La entrada existente **sigue siendo verdad** (describe lo que hay
+    /// instalado) → se conserva; no se registra lo nuevo. Ocurre cuando la
+    /// instalación no llegó a happening (xbpsinstall devuelve 0 sin instalar:
+    /// paquete en hold, repo desincronizado) y lo que sigue instalado es
+    /// justo lo que la DB ya decía.
+    Keep,
+    /// No se registra y se retira la entrada anterior: lo instalado no es lo
+    /// que la DB describe → ese paquete ya no es de vary (y su entrada con
+    /// baseline mentiría).
+    Drop,
+}
+
+/// Decide con la versión REALMENTE instalada (`None` = no está instalado) y
+/// la que la DB tenía.
+///
+/// La DB tiene que decir la verdad: xbpsinstall puede devolver 0 pese a
+/// rechazar la instalación (`Package 'x' already installed`) → registrar la
+/// versión esperada afirmaría algo falso… pero borrar la entrada anterior
+/// también sería falso si lo que sigue instalado es lo que la DB ya decía.
+fn record_decision(
+    installed: Option<&str>,
+    expected: &str,
+    db_version: Option<&str>,
+) -> RecordDecision {
+    match installed {
+        Some(v) if v == expected => RecordDecision::Record,
+        Some(v) if Some(v) == db_version => RecordDecision::Keep,
+        _ => RecordDecision::Drop,
+    }
+}
+
+/// Retira la entrada de un paquete y las de sus subpaquetes.
+///
+/// Los subpaquetes de un build comparten el `version` del padre (la DB guarda
+/// el pkgver del paquete fuente bajo la clave del subpaquete) → se retiran
+/// por esa versión, sin depender del plan (que para un oficial es un
+/// placeholder sin subpaquetes).
+fn retire_entry_and_subs(db: &mut crate::db::InstalledDb, name: &str) {
+    let version = db.get(name).map(|e| e.version.clone());
+    let subs: Vec<String> = match &version {
+        Some(v) => db
+            .entries_snapshot()
+            .iter()
+            .filter(|(n, e)| n != name && &e.version == v)
+            .map(|(n, _)| n.clone())
+            .collect(),
+        None => Vec::new(),
+    };
+    db.remove(name);
+    for sub in subs {
+        db.remove(&sub);
+    }
+}
+
+/// Decide si la entrada de la DB se RETIRA tras una instalación.
+///
+/// Caso: un binario **oficial** sustituye a un build de fuente → ese paquete
+/// deja de ser de vary (su baseline de deps y sus hechos de compilación
+/// describirían un build que ya no está).
+///
+/// `not_ours` = lo que quedó instalado **no** es el build de vary (otra
+/// versión o otro repo). Solo si lo que quedó es el oficial: si la
+/// instalación falló, el build de fuente sigue ahí y su entrada es válida.
+fn should_retire_entry(action_official: bool, db_is_source: bool, not_ours: bool) -> bool {
+    action_official && db_is_source && not_ours
+}
+
 /// ITEM 1: hechos de compilación que se registran por paquete instalado desde
 /// fuente. El hash de template solo se registra para builds OFICIALES (su
 /// template vive en void-packages); en builds VUR el template está en el clon
@@ -2003,6 +2076,40 @@ pub fn install(config: &mut Config) -> Result<i32> {
     for item in plan.installs.iter().chain(plan.builds.iter()) {
         // Only VUR packages (por nombre real: lo pedido puede ser virtual).
         let real = &item.info.pkgname;
+        // P0-2: un binario OFICIAL que sustituye a un build de fuente → la
+        // entrada se retira (el paquete deja de ser de vary: su baseline
+        // describiría un build que ya no está). T-005: los oficiales no se
+        // registran (escribiría ficción) → aquí solo se limpia lo que quedó.
+        if matches!(item.action, Action::Install(BinarySource::Official)) {
+            // Primero lo barato: si la DB no decía "source", no hay nada que
+            // retirar y no se pregunta al sistema (un spawn por paquete).
+            let db_is_source = db
+                .get(real)
+                .map(|e| e.install_type == crate::db::InstallType::Source)
+                .unwrap_or(false);
+            if db_is_source {
+                let db_version = db.get(real).map(|e| e.version.clone());
+                let installed = xbps::query_installed(real).ok().flatten();
+                // Lo que quedó instalado puede ser el build de vary (mismo
+                // repo local y misma versión) o el binario oficial, que lo
+                // sustituyó.
+                let local_repo = md.hostdir_binpkgs_root().to_string_lossy().to_string();
+                let still_ours = match (&installed, &db_version) {
+                    (Some(i), Some(v)) => {
+                        i.pkgver == *v && i.repository.as_deref() == Some(local_repo.as_str())
+                    }
+                    _ => false,
+                };
+                if should_retire_entry(true, db_is_source, !still_ours) {
+                    tracing::warn!(
+                        "{real}: el binario oficial sustituyó al build de fuente; \
+                         se retira su entrada de la DB (el paquete ya no es de vary)"
+                    );
+                    retire_entry_and_subs(&mut db, real);
+                }
+            }
+            continue;
+        }
         // T-005: los oficiales los gestiona xbps; registrarlos aquí escribía
         // ficción. Solo Build y VulBinary dejan rastro. P0-5: los VulBinary
         // registran por su repo de acción (el gate `is_vur` los dejaba fuera
@@ -2027,6 +2134,42 @@ pub fn install(config: &mut Config) -> Result<i32> {
             .unwrap_or_else(|| item.info.pkgver());
         let repo_commit = repo_head_commit(&config.vurs_dir().join(&repo_name), &config.git_bin);
         let artifact_sha256 = package_artifact_hash(&binpkgs_root, &version, &arch);
+        // P0-3: la DB solo dice verdad si lo instalado es lo que acabamos de
+        // instalar. xbpsinstall puede devolver 0 pese a rechazar la
+        // instalación ("Package 'x' already installed") → registrar la
+        // versión esperada afirmaría una versión que no está.
+        match xbps::query_installed(real) {
+            Ok(info) => {
+                let installed = info.map(|i| i.pkgver);
+                let db_version = db.get(real).map(|e| e.version.clone());
+                match record_decision(installed.as_deref(), &version, db_version.as_deref()) {
+                    RecordDecision::Record => {}
+                    RecordDecision::Keep => {
+                        // La instalación no ocurrió, pero lo que hay instalado
+                        // es lo que la DB ya decía → su entrada sigue siendo
+                        // verdad: se conserva.
+                        tracing::warn!(
+                            "{real}: la instalación no ocurrió (lo instalado es {installed:?}, \
+                             no {version}); se conserva la entrada anterior"
+                        );
+                        continue;
+                    }
+                    RecordDecision::Drop => {
+                        tracing::warn!(
+                            "{real}: lo instalado ({installed:?}) no es lo esperado ({version}); \
+                             se retira la entrada de la DB (el paquete ya no es de vary)"
+                        );
+                        retire_entry_and_subs(&mut db, real);
+                        continue;
+                    }
+                }
+            }
+            Err(e) => {
+                // Sin xbps no se puede verificar: se registra como antes (no
+                // se inventa un fallo que no se ha visto).
+                tracing::debug!("{real}: no se pudo verificar la versión instalada: {e:#}");
+            }
+        }
         for w in crate::db::drift_warnings(db.get(real), &version, &repo_commit, &artifact_sha256) {
             tracing::warn!("{w}");
         }
@@ -2474,6 +2617,85 @@ mod tests {
         assert!(!suelta_repolock(Some(&source)));
         // Sin entrada en la DB: nada que soltar.
         assert!(!suelta_repolock(None));
+    }
+
+    /// La DB solo dice la verdad si lo instalado es lo esperado.
+    #[test]
+    fn record_decision_compara_con_el_sistema() {
+        // Lo instalado es lo esperado → se registra.
+        assert_eq!(
+            record_decision(Some("sl-5.04_1"), "sl-5.04_1", Some("sl-5.03_1")),
+            RecordDecision::Record
+        );
+        // Otra versión y la DB decía otra cosa → no se registra y se retira.
+        assert_eq!(
+            record_decision(Some("sl-5.05_1"), "sl-5.04_1", Some("sl-5.03_1")),
+            RecordDecision::Drop
+        );
+        // La instalación no ocurrió: lo instalado es lo que la DB ya decía →
+        // la entrada sigue siendo verdad → se conserva.
+        assert_eq!(
+            record_decision(Some("sl-5.04_1"), "sl-5.05_1", Some("sl-5.04_1")),
+            RecordDecision::Keep
+        );
+        // No está instalado → tampoco.
+        assert_eq!(
+            record_decision(None, "sl-5.04_1", Some("sl-5.03_1")),
+            RecordDecision::Drop
+        );
+    }
+
+    /// Un binario oficial sobre un build de fuente retira la entrada; si lo
+    /// que sigue instalado es el build de vary, no.
+    #[test]
+    fn la_entrada_se_retira_solo_si_quedo_el_oficial() {
+        // Oficial instalado + la DB decía source → se retira.
+        assert!(should_retire_entry(true, true, true));
+        // Sigue el build de vary → no se retira.
+        assert!(!should_retire_entry(true, true, false));
+        // La DB no decía source → nada que retirar.
+        assert!(!should_retire_entry(true, false, true));
+        // La acción no es un oficial → nada que retirar.
+        assert!(!should_retire_entry(false, true, true));
+    }
+
+    /// Los subpaquetes de un build se retiran con el padre (comparten su
+    /// `version`: la DB guarda el pkgver del paquete fuente bajo la clave del
+    /// subpaquete).
+    #[test]
+    fn la_retirada_se_lleva_los_subpaquetes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.json");
+        let mut db = crate::db::InstalledDb::load(&path).unwrap();
+        db.upsert(
+            "gmp",
+            "gmp-1.2_3",
+            "official",
+            crate::db::InstallType::Source,
+            None,
+            None,
+        );
+        db.upsert(
+            "gmp-devel",
+            "gmp-1.2_3",
+            "official",
+            crate::db::InstallType::Source,
+            None,
+            None,
+        );
+        db.upsert(
+            "otro",
+            "otro-9.9_1",
+            "official",
+            crate::db::InstallType::Source,
+            None,
+            None,
+        );
+        retire_entry_and_subs(&mut db, "gmp");
+        assert!(db.get("gmp").is_none());
+        assert!(db.get("gmp-devel").is_none());
+        // Un paquete sin relación sigue ahí.
+        assert!(db.get("otro").is_some());
     }
 
     /// Deps que se versionan para la baseline: runtime y de build, sin
