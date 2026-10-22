@@ -1,0 +1,10 @@
+[32m INFO[0m [2mvary::masterdir[0m[2m:[0m ejecutando ./xbps-src binary-bootstrap (puede tardar)...
+[32m INFO[0m [2mvary::xbps[0m[2m:[0m salida de xbps-src → /home/tester/.cache/vary/logs/xbps-src.log
+[32m INFO[0m [2mvary::xbps[0m[2m:[0m xbps-src terminó OK (log: /home/tester/.cache/vary/logs/xbps-src.log)
+[33m WARN[0m [2mvary::reposconf[0m[2m:[0m /home/tester/.config/vary/repos.conf no existe, usando configuración de repos por defecto
+
+:: Packages to install (binary):
+  official/sl
+
+ERROR: Package `sl' already installed.
+[*] Updating repository `https://repo-default.voidlinux.org/current/x86_64-repodata' ...

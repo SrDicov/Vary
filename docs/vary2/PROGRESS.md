@@ -639,3 +639,37 @@ docker exec -u tester -e HOME=/home/tester vary-smoke sh -c 'vary -Syu --changed
 Fricción de esta semana = filas de la plantilla de arriba (fecha | comando |
 qué esperaba | qué pasó | severidad). Con la regla nueva: si una fila toca
 datos persistidos, el smoke la reproduce antes de cerrar el commit.
+
+### Semana de uso — fila 1 (2026-10-22): la fricción de esta feature es de EXPECTATIVA
+
+| Fecha | Comando | Qué esperaba | Qué pasó | Severidad |
+|-------|---------|--------------|----------|-----------|
+| 2026-10-22 | `vary -S sl --noconfirm` (contenedor Void; `sl` compilado desde fuente; **sin** `--changed-deps`) | Que el build local sobreviviera, o al menos que vary avisara de que iba a sustituirlo por el binario oficial | El plan ofreció **`official/sl`** (binario) → **sin ningún aviso** de que el build desde fuente se sustituye (el repolock se suelta en silencio). La instalación **no** ocurrió: la versión oficial coincidía (`ERROR: Package 'sl' already installed`) → el build local y su `deps_pinned` quedaron **intactos**. Con `--changed-deps`, el mismo comando da `sl official-source` (rebuild) | **S3** (fricción de expectativa; el daño no se materializó) |
+
+**Lo que esta fila deja escrito (importante para cerrar el commit):**
+
+1. **La fricción de esta feature NO se tropieza sola.** No es una rotura
+   (eso lo cubre `@preserved-rebuild` con SONAME): es "esperaba que el
+   default hiciera X". Las fricciones de expectativa hay que **buscarlas**:
+   esta fila existe porque el escenario se **ejercitó**, no porque algo
+   fallara.
+2. **"Cerrado como sobrante" ≠ "innecesario".** Significa "no lo pidió nadie
+   en una semana". Si alguien lo tropieza dentro de tres meses, el ledger
+   tiene que explicar que se cerró por falta de fricción, **no** por estar
+   mal pensado. Queda escrito aquí para ese día.
+3. **El daño se materializa cuando la versión oficial avanza**: entonces
+   xbps instala el binario encima del build local (y con él se pierden tus
+   banderas/opciones/parches). Con las versiones iguales, xbps no hace nada →
+   el escenario del smoke (`installs: official/sl`) es real en el **plan**,
+   pero inocuo en la **ejecución** hasta que el repo oficial se mueve.
+4. **Fricción candidata nueva (NO implementada):** el plan no dice "esto va
+   a sustituir un build desde fuente". Hoy el `repolock` se suelta en
+   silencio (`repounlock_if_source`). Con una línea de aviso en el plan, la
+   fricción sería visible antes de que ocurra.
+   **Trigger:** el primer build local sustituido por un binario oficial sin
+   que el usuario se entere. No implementado (sin daño medido todavía).
+5. **Protocolo activo de la semana** (para que la fricción de expectativa
+   salga): (a) compilar un paquete desde fuente; (b) correr `vary -S <pkg>`
+   **sin** `--changed-deps` → observar si el binario oficial pisa el build
+   local; (c) correr `vary -Syu --changed-deps` → observar si el dependiente
+   entra en el plan y se anuncia; (d) apuntar la fila.
