@@ -57,10 +57,33 @@ Contrato de la noche: `AUDIT.md`.
 3. Cuando aparezca la primera fila de fricción real, mirar si el trigger del
    diferido 5.5 (subpaquetes) exige ya el registro.
 
-## Decisión necesaria
+## Decisiones tomadas (cerradas 2026-10-22)
 
-- **¿Se acepta el coste de ~5 s por sync** a cambio de que el índice refleje
-  el árbol? La alternativa (barrido por mtime+size, con un campo nuevo en la
-  caché) lo dejaría en ~1 s, pero añade un campo y un modo de fallo más.
-- **¿El registro de subpaquetes de builds oficiales entra en el próximo
-  ciclo?** Su trigger ya se ha disparado (build real con subpaquetes).
+1. **Se aceptan los ~5 s por sync.** El barrido por mtime+size añadiría un
+   campo a la caché y un modo de fallo **silencioso y corruptor** (mtime puede
+   mentir tras un `checkout`, un rsync sin `--times` o un fs con granularidad
+   de 1 s) → exactamente el bug que P0-1 acaba de corregir. Antes el índice no
+   se refrescaba **nada**: 5 s es estrictamente mejor que 0.
+   **Trigger para revisarlo:** el primer usuario que reporte que 5 s de sync le
+   resultan fricción. Si no aparece, se queda.
+2. **El registro de subpaquetes de builds oficiales entra en el próximo
+   ciclo.** Su trigger ya se ha disparado (build real de `gmp` → `gmp-devel`
+   sin entrada en la DB) y es el mismo patrón que los tres P0 de la noche:
+   "la DB no sabe algo que debería saber". Alcance sugerido: leer los
+   subpaquetes de la plantilla real del clon (como ya se hace con las deps),
+   registrarlos con su `version` heredada y un test de que `gmp-devel` aparece
+   en `vary -Q` tras un build de `gmp`.
+3. **El orden del aviso de bump de SONAME sube de P2 a P1 del próximo ciclo.**
+   Es la misma clase de bug que el aviso de dep desfasada (que sí se corrigió),
+   su fallo es **silencioso para el usuario** (promete una recompilación que el
+   gate cancela) y el coste es bajo (mover el anuncio tras el gate + test).
+   No esperar a la fricción: una fricción que el usuario no puede ni nombrar
+   es una fricción que nunca llega.
+
+## Cerrado en esta noche
+
+- **`--changed-deps` se cierra como NECESARIO** (ledger): la fricción lo tocó
+  dos veces con los dos lados medidos (el daño: el binario oficial pisa el
+  build local; el bloqueo: sin el fix del índice la feature no disparaba
+  nunca en un clon shallow) y está verificado en Void real por tres rutas
+  (oficial, VUR, SONAME).

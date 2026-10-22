@@ -91,7 +91,8 @@ sin cambios reindexa 0 paquetes y NO hace reindexado completo ✓.
 | Ítem | Trigger (evento observable) | Coste al disparar | Fecha |
 |------|----------------------------|-------------------|-------|
 | Preservación física de `.so` | primera actualización real en Void con consumidores binarios instalados que dispare el detector |medio: diseño + fixture + `ldconfig` + aprobación de root | 2026-10-21 |
-| Registro de subpaquetes de builds oficiales (+ repolock) | primera actualización oficial que sustituya un subpaquete compilado por vary (hoy: `gmpxx` sin repolock) | **medio-bajo** para el mínimo útil (parser `subpackages` + repolock al instalar: 2 módulos); medio-alto para el completo (con entradas y auditoría propias en la DB). Workaround manual mientras tanto (ver ORDEN v4/A) | 2026-10-21 |
+| Registro de subpaquetes de builds oficiales (+ repolock) | **DISPARADO 2026-10-22**: build real de `gmp` → `gmp-devel` queda instalado pero **sin entrada en la DB** (el `VurInfo` de los oficiales es un placeholder sin `subpackages`) → el audit no puede auditarlo ni proponer su rebuild | **medio-bajo** para el mínimo útil (parser `subpackages` + repolock al instalar: 2 módulos); medio-alto para el completo (con entradas y auditoría propias en la DB). Workaround manual mientras tanto (ver ORDEN v4/A) | 2026-10-21 |
+| Orden del aviso de bump de SONAME (P1 del próximo ciclo) | sin trigger: el fallo es **silencioso para el usuario** (promete una recompilación que el gate de diffs cancela) → esperar a que lo reporte es esperar a que nunca se arregle. Misma clase que el aviso de dep desfasada, que sí se corrigió | bajo: mover el anuncio tras el gate + test | 2026-10-22 |
 | Normalización subpkg→sourcepkg en el resolver | evidencia medida de trabajo duplicado (varios nodos de build del mismo sourcepkg en un plan real) | medio: identidad de nodos (plan, DB, lockfile, install) | 2026-10-21 |
 | Fallback dinámico del índice | primera resolución en frío de una plantilla `needs_dynamic` que no se resuelva por `xbps-src show` en el upgrade | bajo: llamada en paralelo con cap | 2026-10-21 |
 | Medición E2E del índice | próxima ventana de upgrade real | bajo: un comando | 2026-10-21 |
@@ -611,6 +612,21 @@ elegir el paquete, no en el smoke.
 **Trigger de la regla:** la próxima feature que escriba en `installed.json`,
 `portdb.json`, `repos.conf` o `vary.lock` → smoke antes de merge a `main`.
 
+**Extensión (2026-10-22, la noche):** además, **toda feature que toque el
+índice de fuentes se ejercita con un clon `--depth 1` real**, no con un clon
+completo ni con `diff-tree` mockeado. El bug de `git_changed_paths` (que
+dejó el índice congelado → `--changed-deps` muerto en el 100 % de los casos
+reales) **solo se manifiesta en un clon shallow**: el tip es frontera de
+profundidad y no tiene diff. La integración con el entorno real (shallow,
+working tree, mtimes) es parte del contrato de la feature, no del test.
+
+**Patrón (tercera vez que el entorno real atrapa algo que la CI no ve):**
+(1) el `VurInfo` placeholder de los oficiales hacía que la feature no
+hiciera nada en el caso común; (2) `xbpsinstall` devuelve 0 pese a rechazar
+la instalación; (3) `diff-tree` sobre un tip shallow devuelve vacío.
+**Revisión estática + smoke + Void real = tres capas, y las tres hacen
+falta.**
+
 ### Fricción candidata anotada (NO es bug; es decisión de CLI)
 
 `vary --print` **no se combina con `-u`**: `vary -Spu` →
@@ -673,6 +689,28 @@ datos persistidos, el smoke la reproduce antes de cerrar el commit.
    **sin** `--changed-deps` → observar si el binario oficial pisa el build
    local; (c) correr `vary -Syu --changed-deps` → observar si el dependiente
    entra en el plan y se anuncia; (d) apuntar la fila.
+
+### VEREDICTO DE LA FEATURE `--changed-deps`: **NECESARIO** (cerrada 2026-10-22)
+
+El commit se cerraba "como necesario si la fricción lo toca, o como sobrante
+si no en una semana". **Lo tocó, dos veces, y con los dos lados medidos:**
+
+1. **El daño (fila 2, S2):** sin `--changed-deps`, un `vary -S <pkg>` sobre un
+   build local **sustituye el build por el binario oficial** (medido:
+   `sl-5.04_1: updating to 5.05_1 ... updated successfully`), sin aviso.
+   Con el flag: `sl official-source` (rebuild) + el motivo en el plan.
+2. **El bloqueo (P0-1, la noche):** sin el fix del índice, la feature
+   **nunca** habría disparado en uso real (vary clona `--depth 1` → el tip no
+   tiene diff → el índice no se refrescaba → las versiones congeladas).
+
+Verificado en Void real en **tres rutas**: oficial (`sl`), **VUR**
+(`hello-vur`, baseline desde el `.VURINFO`) y con bump de SONAME (las dos
+razones, el paquete una sola vez).
+
+→ **Se cierra como NECESARIO.** La nota "sobrante en una semana ≠
+innecesario" queda respondida: no fue sobrante, y lo sabemos porque la noche
+lo demostró con evidencia de uso real.
+
 
 ### Semana de uso — fila 2 (2026-10-22): el daño, MEDIDO (S2)
 
