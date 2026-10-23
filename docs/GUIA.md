@@ -183,7 +183,7 @@ Requiere Rust ≥ 1.88 (`rust-version` en `Cargo.toml`).
 
 ```sh
 vary --version
-# vary 0.4.1
+# vary 0.5.0
 ```
 
 ---
