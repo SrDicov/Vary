@@ -6,7 +6,17 @@ P2-soname **implementados y cerrados con CI+XBPS verdes**; P2-404 **no se
 implementa** (decisión de diseño, ver abajo). Cada ítem restante es SPEC con
 criterios de aceptación.
 
-## 0.5.0 — POR DEFINIR (P1-3/H-015 se cerró en 0.4.1; no hay ítems pendientes del roadmap)
+## 0.5.0 — PUBLICADA 2026-10-22 (no es ítem de este roadmap)
+
+El roadmap post-auditoría cerró en 0.4.1. 0.5.0 recoge el trabajo posterior:
+auditoría total (45 módulos), `docs/GUIA.md`, `--changed-deps` (rebuild por
+deps desfasadas) y los fixes de la noche automática (índice de fuentes con
+el árbol, DB que solo registra lo instalado, retirada de entradas al ser
+sustituidas por un binario oficial).
+
+Los dos ítems del **próximo ciclo** viven en `docs/vary2/PROGRESS.md` §5.5:
+registro de subpaquetes de builds oficiales (trigger disparado) y orden del
+aviso de bump de SONAME (P1).
 
 ---
 

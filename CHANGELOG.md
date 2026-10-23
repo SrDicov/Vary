@@ -2,7 +2,7 @@
 
 All notable changes to vary will be documented in this file.
 
-## Unreleased
+## 0.5.0 (2026-10-22) — auditoría total, guía de uso y rebuild por deps desfasadas
 
 ### Auditoría total (2026-10-22)
 
